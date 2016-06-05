@@ -18,7 +18,7 @@ func MaxStackCount()
 {
 	if (this)
 	{
-		if (Contained() && Contained()->~IsLiquidContainer())
+		if (Contained() && Contained()->~IsLiquidContainer() && Contained()->~GetLiquidContainerMaxFillLevel() > 0)
 		{
 			// Stack limit is: [what is already inside the stack] + [free space in the container].
 			return GetLiquidAmount() + Contained()->~GetLiquidAmountRemaining();
@@ -155,17 +155,27 @@ func CalcValue(object in_base, int for_plr)
 /** 
 Inserts liquid into the object.
 @param liquid_name: Material to insert
-@param amount: Max Amount of Material being inserted 
+@param amount: Max amount of material being inserted.
+               Nil parameter is treated as 0, because the
+               object can hold very much liquid. 
 @param source: Object which inserts the liquid
 @return returned_amount: The inserted amount
 */
-func PutLiquid(string liquid_name, int amount, object source)
+func PutLiquid(liquid_name, int amount, object source)
 {
+	amount = amount ?? 0;
+
 	if (amount < 0)
 	{
 		FatalError(Format("You can insert positive amounts of liquid only, got %d", amount));
 	}
+	
+	if (GetType(liquid_name) != C4V_String && GetType(liquid_name) != C4V_Def)
+	{
+		FatalError(Format("The first parameter of PutLiquid() must either be a string or definition. You passed %v.", GetType(liquid_name)));
+	}
 
+	if (GetType(liquid_name) == C4V_Def) liquid_name = liquid_name->~GetLiquidType();
 	if (liquid_name == GetLiquidType())
 	{
 		amount = BoundBy(MaxStackCount() - GetLiquidAmount(), 0, amount);
@@ -190,15 +200,21 @@ Extracts liquid from the object.
 	   - returned_liquid: Material being extracted
 	   - returned_amount: Amount being extracted
 */
-func RemoveLiquid(string liquid_name, int amount, object destination)
+func RemoveLiquid(liquid_name, int amount, object destination)
 {
 	if (amount < 0)
 	{
 		FatalError(Format("You can remove positive amounts of liquid only, got %d", amount));
 	}
+	
+	if (GetType(liquid_name) != C4V_String && GetType(liquid_name) != C4V_Def)
+	{
+		FatalError(Format("The first parameter of RemoveLiquid() must either be a string or definition. You passed %v.", GetType(liquid_name)));
+	}
 
 	// default parameters if nothing is provided: the current material and level
 	liquid_name = liquid_name ?? GetLiquidType();
+	if (GetType(liquid_name) == C4V_Def) liquid_name = liquid_name->~GetLiquidType();
 	amount = amount ?? GetLiquidAmount();
 
 	//Wrong material?

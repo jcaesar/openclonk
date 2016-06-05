@@ -1590,6 +1590,7 @@ void C4AulCompiler::ConstexprEvaluator::visit(const ::aul::ast::ArrayLit *n)
 		n->values[i]->accept(this);
 		a->SetItem(i, v);
 	}
+	a->Freeze();
 	v = C4VArray(a.release());
 }
 

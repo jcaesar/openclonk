@@ -300,11 +300,11 @@ public func ProductionCosts(id item_id)
 {
 	/* NOTE: This may be overloaded by the producer */
 	var comp_list = [];
-	var component_id, index = 0;
-	while (component_id = GetComponent(nil, index, nil, item_id))
+	var comp_id, index = 0;
+	while (comp_id = item_id->GetComponent(nil, index))
 	{
-		var amount = GetComponent(component_id, index, nil, item_id);
-		comp_list[index] = [component_id, amount];
+		var amount = item_id->GetComponent(comp_id);
+		comp_list[index] = [comp_id, amount];
 		index++;		
 	}
 	return comp_list;
@@ -803,11 +803,10 @@ public func IsCollectionAllowed(object item)
 	for (var product in products)
 	{
 		var i = 0, component_id;
-		while (component_id = GetComponent(nil, i, nil, product))
+		while (component_id = product->GetComponent(nil, i))
 		{
 			if (component_id == item_id)
 				return true;
-
 			i++;
 		}
 	}
@@ -823,6 +822,7 @@ public func IsCollectionAllowed(object item)
 	// This extremely special case is used by the ice object only, and should be removed in my opinion,
 	// but it is included for compatibility reasons at the moment.
 	// TODO 
+	//Log("Checking for conversion: queue is %v", queue);
 	if (item->~CanConvertToLiquidType())
 	{
 		for (var queued in queue)
@@ -830,7 +830,7 @@ public func IsCollectionAllowed(object item)
 			var product = queued.Product;
 		
 			var i = 0, component_id;
-			while (component_id = GetComponent(nil, i, nil, product))
+			while (component_id = product->GetComponent(nil, i))
 			{
 				if (component_id->~GetLiquidType() == item->~CanConvertToLiquidType())
 				{
@@ -871,6 +871,10 @@ private func ConvertToLiquid(object obj)
 	if (liquid)
 	{
 		liquid->Enter(this);
+		for (var item in FindObjects(Find_Container(this)))
+		{
+			//Log("* %v %s", item, item->GetName());
+		}
 		obj->RemoveObject();
 	}
 }
