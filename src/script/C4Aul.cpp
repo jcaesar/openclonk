@@ -289,3 +289,27 @@ void C4AulFuncMap::Remove(C4AulFunc * func)
 	*pFunc = (*pFunc)->MapNext;
 	--FuncCnt;
 }
+
+C4AulFunc * C4AulFuncMap::iterator::operator *() {
+	return cur;
+}
+C4AulFuncMap::iterator& C4AulFuncMap::iterator::operator++() {
+	if(cur && cur->MapNext)
+		cur = cur->MapNext;
+	while(idx < HashSize && !parent_map.Funcs[++idx]);
+	if(idx < HashSize)
+		cur = parent_map.Funcs[idx];
+	else
+		cur = nullptr;
+	return *this;
+}
+bool C4AulFuncMap::iterator::operator!=(const C4AulFuncMap::iterator& other) {
+	assert(&parent_map == &other.parent_map);
+	return cur != other.cur || idx != other.idx;
+}
+
+C4AulFuncMap::iterator& C4AulFuncMap::iterator::GotoStart() {
+	idx = 0; cur = nullptr;
+	++(*this);
+	return *this;
+}

@@ -60,16 +60,32 @@ public:
 
 class C4AulFuncMap
 {
+private:
+	class iterator;
 public:
 	C4AulFuncMap();
 	~C4AulFuncMap();
 	C4AulFunc * GetFirstFunc(const char * Name);
 	C4AulFunc * GetNextSNFunc(const C4AulFunc * After);
+	iterator begin() { return iterator(*this).GotoStart(); }
+	iterator end() { return iterator(*this); }
 private:
 	enum { HashSize = 1025 };
 	C4AulFunc * Funcs[HashSize];
 	int FuncCnt;
 	static unsigned int Hash(const char * Name);
+	class iterator {
+	private:
+		int idx = HashSize;
+		C4AulFunc * cur = nullptr;
+		C4AulFuncMap& parent_map;
+	public:
+		iterator(C4AulFuncMap& parent_map) : parent_map(parent_map) {}
+		C4AulFunc * operator *();
+		iterator& operator++();
+		bool operator!=(const iterator &);
+		iterator& GotoStart();
+	};
 protected:
 	void Add(C4AulFunc * func);
 	void Remove(C4AulFunc * func);
