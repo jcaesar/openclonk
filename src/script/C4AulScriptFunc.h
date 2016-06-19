@@ -169,6 +169,9 @@ private:
 	}
 };
 
+namespace llvm { class Function; }
+typedef llvm::Function llvmFunction;
+
 // script function class
 class C4AulScriptFunc : public C4AulFunc
 {
@@ -177,6 +180,9 @@ public:
 	void SetOverloaded(C4AulFunc *);
 	C4AulScriptFunc *SFunc() { return this; } // type check func...
 protected:
+	llvmFunction* llvmFunc;
+
+	// TODO: Remove all these
 	void AddBCC(C4AulBCCType eType, intptr_t = 0, const char * SPos = 0); // add byte code chunk and advance
 	void RemoveLastBCC();
 	void ClearCode();

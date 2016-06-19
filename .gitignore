@@ -25,6 +25,7 @@ planet/CMakeFiles
 planet/CMakeCache.txt
 CPackConfig.cmake
 CPackSourceConfig.cmake
+cmake/FindLLVM.cmake
 *.rule
 editor-icons.h
 oc-icon.h

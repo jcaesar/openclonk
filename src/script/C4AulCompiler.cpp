@@ -44,9 +44,10 @@
 #include <llvm/PassManager.h>
 #include <llvm/Support/TargetSelect.h>
 #include <llvm/Transforms/Scalar.h>
-using llvm::Module; using llvm::BasicBlock; using llvm::IRBuilder; using llvm::getGlobalContext; using llvm::Value; using llvm::FunctionType; using llvm::ExecutionEngine; using llvm::EngineBuilder; using llvm::FunctionPassManager; using llvm::APInt; using llvm::ConstantInt; using llvm::ConstantStruct; using llvm::AllocaInst; using llvm::StructType; using llvm::Constant; using llvm::CmpInst; using llvm::PHINode;
+using llvm::Module; using llvm::BasicBlock; using llvm::IRBuilder; using llvm::getGlobalContext; using llvm::FunctionType; using llvm::ExecutionEngine; using llvm::EngineBuilder; using llvm::FunctionPassManager; using llvm::APInt; using llvm::ConstantInt; using llvm::ConstantStruct; using llvm::AllocaInst; using llvm::StructType; using llvm::Constant; using llvm::CmpInst; using llvm::PHINode;
 typedef llvm::Function llvmFunction;
 typedef llvm::Type llvmType;
+typedef llvm::Value llvmValue;
 using std::unique_ptr; using std::make_unique;
 
 static std::string vstrprintf(const char *format, va_list args)
@@ -315,11 +316,14 @@ private:
 	// host: The C4ScriptHost where the script actually resides in
 	C4ScriptHost *host = nullptr;
 
-	// LLVM stuff
+	// LLVM stuff necessary for compilations
 	Module* mod; // owned by execution engine
 	ExecutionEngine* executionengine;
 	unique_ptr<FunctionPassManager> funcpassmgr;
 	unique_ptr<IRBuilder<>> m_builder;
+
+	// TODO: If there are more declarations like these, out-source them in a namespace or whatnot.
+	llvmFunction *LLVMEngineFunctionCallByPFunc;
 public:
 	CodegenAstVisitor(C4ScriptHost *host, C4ScriptHost *source_host) : target_host(host), host(source_host) { init(); }
 	explicit CodegenAstVisitor(C4AulScriptFunc *func) : Fn(func), target_host(func->pOrgScript), host(target_host) { init(); }
@@ -354,14 +358,18 @@ public:
 	//virtual void visit(const ::aul::ast::VarDecl *n) override;
 	virtual void visit(const ::aul::ast::FunctionDecl *n) override;
 
-	
 	void DumpLLVM() { mod->dump(); }
 	void CompileScriptFunc(C4AulScriptFunc *func, const ::aul::ast::Function *def);
 private:
 	template<class... T>
 	C4AulParseError Error(const std::string msg, T &&...args)
 	{
-		return ::Error(target_host, host, static_cast<const char*>(nullptr), nullptr, msg.c_str(), std::forward<T>(args)...);
+		return ::Error(target_host, host, static_cast<const char*>(nullptr), Fn, msg.c_str(), std::forward<T>(args)...);
+	}
+	template<class... T>
+	C4AulParseError Error(const ::aul::ast::Node *n, const std::string msg, T &&...args)
+	{
+		return ::Error(target_host, host, n, Fn, msg.c_str(), std::forward<T>(args)...);
 	}
 	template<typename T>
 	T* checkCompile(T* t) {
@@ -372,6 +380,8 @@ private:
 
 	void init();
 	void FnDecls();
+
+	llvmValue* constLLVMPointer(void * ptr);
 };
 
 
@@ -396,7 +406,7 @@ void C4AulCompiler::Compile(C4AulScriptFunc *func, const ::aul::ast::Function *d
 	//v.CompileScriptFunc(func, def);
 }
 
-void C4AulCompiler::CodegenAstVisitor::init() 
+void C4AulCompiler::CodegenAstVisitor::init()
 {
 	llvm::InitializeNativeTarget();
 	mod = new Module("mm", getGlobalContext()); // TODO: name
@@ -421,35 +431,162 @@ void C4AulCompiler::CodegenAstVisitor::init()
 	FnDecls();
 }
 
-void C4AulCompiler::CodegenAstVisitor::FnDecls() {
-	for(auto func: ::ScriptEngine.FuncLookUp) {
-		FunctionType *ft = FunctionType::get(llvmType::getVoidTy(getGlobalContext()), {}, false); // TODO: parameter types
-		checkCompile(llvmFunction::Create(ft, llvmFunction::ExternalLinkage, func->GetName(), mod));
-	}
-}
-
 void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::FunctionDecl *n)
 {
 	fprintf(stderr, "compiling %s\n", n->name.c_str());
 	m_builder = make_unique<IRBuilder<>>(getGlobalContext());
-	llvmFunction* f = mod->getFunction(n->name); // TODO: GetMangledName?
-	if(!f)
-		throw Error("Internal Error: Compiling nonexistent function");
-	BasicBlock* bb = BasicBlock::Create(getGlobalContext(), "entrybb", f);
+	llvmFunction* lf = mod->getFunction(n->name); // TODO: GetMangledName?
+	if(!lf)
+		throw Error(n, "internal error: unable to find function definition for %s", n->name.c_str());
+	BasicBlock* bb = BasicBlock::Create(getGlobalContext(), "entrybb", lf);
 	m_builder->SetInsertPoint(bb);
+
+	C4PropListStatic *Parent = n->is_global ? target_host->Engine->GetPropList() : target_host->GetPropList();
+	C4AulFunc *f = Parent->GetFunc(n->name.c_str());
+	while (f)
+	{
+		if (f->SFunc() && f->SFunc()->pOrgScript == host && f->Parent == Parent)
+		{
+			if (Fn)
+				Warn(target_host, host, n, Fn, "function declared multiple times");
+			Fn = f->SFunc();
+		}
+		f = f->SFunc() ? f->SFunc()->OwnerOverloaded : 0;
+	}
+
+	assert(Fn && "CodegenAstVisitor: unable to find function definition");
+	if (!Fn)
+		throw Error(n, "internal error: unable to find function definition for %s", n->name.c_str());
+
+	// If this isn't a global function, but there is a global one with
+	// the same name, and this function isn't overloading a different
+	// one, add the global function to the overload chain
+	if (!n->is_global && !Fn->OwnerOverloaded)
+	{
+		C4AulFunc *global_parent = target_host->Engine->GetFunc(Fn->GetName());
+		if (global_parent)
+			Fn->SetOverloaded(global_parent);
+	}
 
 	n->body->accept(this);
 
 	// TODO: nil return with correct return type
 	m_builder->CreateRet(nullptr);
-			
-	f->dump();
-	llvm::verifyFunction(*f);
+
+	//f->dump();
+	llvm::verifyFunction(*lf);
+
+	Fn = nullptr;
+
+}
+
+llvmValue* C4AulCompiler::CodegenAstVisitor::constLLVMPointer(void * ptr)
+{
+	llvmValue* ic = ConstantInt::get(getGlobalContext(), APInt(sizeof(ptr) * CHAR_BIT, reinterpret_cast<size_t>(ptr), false));
+	return m_builder->CreateIntToPtr(ic, llvmType::getInt8PtrTy(getGlobalContext()));
 }
 
 void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::CallExpr *n)
 {
-	// Dummy, so we can see something at all.
-	m_builder->CreateAlloca(llvmType::getInt32Ty(getGlobalContext()), 0);
-	DefaultRecursiveVisitor::visit(n);
+	const char *cname = n->callee.c_str();
+
+	if (n->context)
+		n->context->accept(this);
+	for (const auto &arg : n->args)
+		arg->accept(this); /* TODO: Save result. Current object context might also become a parameter */
+
+	C4AulFunc *callee = nullptr;
+
+
+	// TODO: Special handling for overloading
+	if (n->callee == C4AUL_Inherited || n->callee == C4AUL_SafeInherited)
+	{
+		throw Error(n, "Call to inherited not supported yet.");
+	}
+
+
+	unsigned int fn_argc = C4AUL_MAX_Par;
+	// Functions without explicit context can be resolved directly
+	if (!n->context)
+	{
+		if (!callee)
+			callee = Fn->Parent->GetFunc(cname);
+		if (!callee)
+			callee = target_host->Engine->GetFunc(cname);
+
+		if (callee)
+			fn_argc = callee->GetParCount();
+		else
+			throw Error(n, "called function not found: '%s'", cname);
+
+		if (n->args.size() > fn_argc)
+		{
+			// Pop off any args that are over the limit
+			Warn(target_host, host, n->args[fn_argc].get(), Fn,
+					"call to %s passes %d parameters, of which only %d are used", cname, n->args.size(), fn_argc);
+		}
+	}
+	else
+		throw Error(n, "Call to '%s': context (->) not supported yet.", cname);
+
+	// TODO: return the value
+	C4AulScriptFunc *sf = callee->SFunc();
+	if (sf)
+	{
+		assert(sf->llvmFunc);
+		checkCompile(m_builder->CreateCall(sf->llvmFunc, std::vector<llvmValue*>{}));
+	}
+	else
+	{
+		checkCompile(m_builder->CreateCall(LLVMEngineFunctionCallByPFunc, std::vector<llvmValue*>{
+			constLLVMPointer(callee), // TODO: Create named constants or annotate in some other way to ease reading the IR a bit…
+			ConstantInt::get(getGlobalContext(), APInt(32, callee->GetParCount(), false))
+		}));
+	}
+
+}
+
+#define LLVM_PFUNC_CALL "$LLVMAulPFuncCall"
+
+// TODO: Right place for this?
+extern "C" {
+	void LLVMAulPFuncCall(uint8_t * func_i8, uint32_t par_count, ...)
+	{
+		C4AulFunc *func = reinterpret_cast<C4AulFunc *>(func_i8);
+
+		C4Value pars[func->GetParCount()]; // Initialized to zero
+		va_list par_list;
+		va_start(par_list, par_count);
+		for(uint32_t i = 0; i < std::max<uint32_t>(par_count, func->GetParCount()); ++i); // TODO
+		va_end(par_list);
+		if(par_count != 0)
+			throw C4AulExecError(FormatString("Calling Engine functions with parameters is not yet supported. (in call of \"%s\")", func->GetName()).getData());
+
+		C4Value rv = func->Exec(nullptr /* TODO: Context. */, pars, false);
+		// return rv
+	}
+
+}
+
+void C4AulCompiler::CodegenAstVisitor::FnDecls() {
+	auto llvmvoid = llvmType::getVoidTy(getGlobalContext());
+
+	// Calling engine functions
+	FunctionType *efct = FunctionType::get(llvmvoid, std::vector<llvmType*>{
+			llvmType::getInt8PtrTy(getGlobalContext()), // "Note that LLVM does not permit pointers to void (void*) [...]. Use i8* instead."
+			llvmType::getInt32Ty(getGlobalContext())
+		}, true);
+	LLVMEngineFunctionCallByPFunc = checkCompile(llvmFunction::Create(efct, llvmFunction::ExternalLinkage, LLVM_PFUNC_CALL, mod));
+	executionengine->addGlobalMapping(LLVMEngineFunctionCallByPFunc, reinterpret_cast<void*>(LLVMAulPFuncCall));
+
+	// Declarations for script functions
+	for(auto func: ::ScriptEngine.FuncLookUp) {
+		C4AulScriptFunc *sf = func->SFunc();
+		if(!sf)
+			continue;
+		FunctionType *ft = FunctionType::get(llvmvoid, {}, false); // TODO: parameter types
+		sf->llvmFunc = checkCompile(llvmFunction::Create(ft, llvmFunction::ExternalLinkage, func->GetName(), mod));
+	}
+
+
 }
