@@ -44,7 +44,7 @@
 #include <llvm/PassManager.h>
 #include <llvm/Support/TargetSelect.h>
 #include <llvm/Transforms/Scalar.h>
-using llvm::Module; using llvm::BasicBlock; using llvm::IRBuilder; using llvm::getGlobalContext; using llvm::FunctionType; using llvm::ExecutionEngine; using llvm::EngineBuilder; using llvm::FunctionPassManager; using llvm::APInt; using llvm::ConstantInt; using llvm::ConstantStruct; using llvm::AllocaInst; using llvm::StructType; using llvm::Constant; using llvm::CmpInst; using llvm::PHINode;
+using llvm::Module; using llvm::BasicBlock; using llvm::IRBuilder; using llvm::getGlobalContext; using llvm::FunctionType; using llvm::ExecutionEngine; using llvm::EngineBuilder; using llvm::FunctionPassManager; using llvm::APInt; using llvm::ConstantInt; using llvm::ConstantStruct; using llvm::AllocaInst; using llvm::StructType; using llvm::Constant; using llvm::CmpInst;
 typedef llvm::Function llvmFunction;
 typedef llvm::Type llvmType;
 typedef llvm::Value llvmValue;
@@ -324,6 +324,26 @@ private:
 
 	// TODO: If there are more declarations like these, out-source them in a namespace or whatnot.
 	llvmFunction *LLVMEngineFunctionCallByPFunc;
+	llvmValue *tmp_expr; // result from recursive expression code generation
+
+	class C4CompilerValue
+	{
+	private:
+		C4V_Type valType;
+		llvmValue *llvmVal;
+
+		const ::aul::ast::Node *n;
+		const CodegenAstVisitor &compiler;
+
+	public:
+		llvmValue *getInt() const;
+		llvmValue *getBool() const;
+		llvmValue *getString() const;
+		llvmValue *getArray() const;
+		llvmValue *getPropList() const;
+		llvmValue *getValue(C4V_Type t) const;
+	};
+
 public:
 	CodegenAstVisitor(C4ScriptHost *host, C4ScriptHost *source_host) : target_host(host), host(source_host) { init(); }
 	explicit CodegenAstVisitor(C4AulScriptFunc *func) : Fn(func), target_host(func->pOrgScript), host(target_host) { init(); }
@@ -333,15 +353,15 @@ public:
 	using DefaultRecursiveVisitor::visit;
 	//virtual void visit(const ::aul::ast::Noop *) override;
 	//virtual void visit(const ::aul::ast::StringLit *n) override;
-	//virtual void visit(const ::aul::ast::IntLit *n) override;
-	//virtual void visit(const ::aul::ast::BoolLit *n) override;
+	virtual void visit(const ::aul::ast::IntLit *n) override;
+	virtual void visit(const ::aul::ast::BoolLit *n) override;
 	//virtual void visit(const ::aul::ast::ArrayLit *n) override;
 	//virtual void visit(const ::aul::ast::ProplistLit *n) override;
 	//virtual void visit(const ::aul::ast::NilLit *n) override;
 	//virtual void visit(const ::aul::ast::ThisLit *n) override;
 	//virtual void visit(const ::aul::ast::VarExpr *n) override;
-	//virtual void visit(const ::aul::ast::UnOpExpr *n) override;
-	//virtual void visit(const ::aul::ast::BinOpExpr *n) override;
+	virtual void visit(const ::aul::ast::UnOpExpr *n) override;
+	virtual void visit(const ::aul::ast::BinOpExpr *n) override;
 	//virtual void visit(const ::aul::ast::SubscriptExpr *n) override;
 	//virtual void visit(const ::aul::ast::SliceExpr *n) override;
 	virtual void visit(const ::aul::ast::CallExpr *n) override;
@@ -362,12 +382,12 @@ public:
 	void CompileScriptFunc(C4AulScriptFunc *func, const ::aul::ast::Function *def);
 private:
 	template<class... T>
-	C4AulParseError Error(const std::string msg, T &&...args)
+	C4AulParseError Error(const std::string msg, T &&...args) const
 	{
 		return ::Error(target_host, host, static_cast<const char*>(nullptr), Fn, msg.c_str(), std::forward<T>(args)...);
 	}
 	template<class... T>
-	C4AulParseError Error(const ::aul::ast::Node *n, const std::string msg, T &&...args)
+	C4AulParseError Error(const ::aul::ast::Node *n, const std::string msg, T &&...args) const
 	{
 		return ::Error(target_host, host, n, Fn, msg.c_str(), std::forward<T>(args)...);
 	}
@@ -406,6 +426,66 @@ void C4AulCompiler::Compile(C4AulScriptFunc *func, const ::aul::ast::Function *d
 	//v.CompileScriptFunc(func, def);
 }
 
+llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompilerValue::getInt() const
+{
+	if(valType == C4V_Int)
+	{
+		return llvmVal;
+	} else {
+		throw compiler.Error(n, "Error: value is not an Int!");
+	} 
+}
+
+llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompilerValue::getArray() const
+{
+	if(valType == C4V_Array)
+	{
+		return llvmVal;
+	} else {
+		throw compiler.Error(n, "Error: value is not an Array!");
+	} 
+}
+
+llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompilerValue::getPropList() const
+{
+	if(valType == C4V_PropList)
+	{
+		return llvmVal;
+	} else {
+		throw compiler.Error(n, "Error: value is not a PropList!");
+	} 
+}
+
+llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompilerValue::getString() const
+{
+	if(valType == C4V_String)
+	{
+		return llvmVal;
+	} else {
+		throw compiler.Error(n, "Error: value is not a String!");
+	} 
+}
+
+llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompilerValue::getBool() const
+{
+	if(valType == C4V_Bool)
+	{
+		return llvmVal;
+	} else {
+		throw compiler.Error(n, "Error: value is not a Bool!");
+	} 
+}
+
+llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompilerValue::getValue(C4V_Type t) const
+{
+	if(valType == t)
+	{
+		return llvmVal;
+	} else {
+		throw compiler.Error(n, "Error: value does not match type!");
+	} 
+}
+
 void C4AulCompiler::CodegenAstVisitor::init()
 {
 	llvm::InitializeNativeTarget();
@@ -429,6 +509,61 @@ void C4AulCompiler::CodegenAstVisitor::init()
 	executionengine->addModule(mod);
 
 	FnDecls();
+}
+
+void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::IntLit *n)
+{
+	fprintf(stderr, "compiling %d\n", n->value);
+
+	tmp_expr = llvm::ConstantInt::get(getGlobalContext(), APInt(32, n->value, true));
+}
+
+void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::BoolLit *n)
+{
+	fprintf(stderr, "compiling %s\n", n->value ? "True":"False");
+
+	tmp_expr = llvm::ConstantInt::get(getGlobalContext(), APInt(8, (int) n->value, true));
+}
+
+void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::UnOpExpr *n)
+{
+	// TODO: for which type of expression should we call 'visit'?
+	n->operand->accept(this);
+	llvmValue *operand = tmp_expr;
+	// TODO: what is the semantics of n->op? Which value corresponds to which symbol?
+
+	switch(C4ScriptOpMap[n->op].Code) {
+		
+	}
+
+}
+
+void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::BinOpExpr *n)
+{
+	// TODO: for which type of expression should we call 'visit'?
+	n->lhs->accept(this);
+	llvmValue *left  = tmp_expr;
+	n->rhs->accept(this);
+	llvmValue *right = tmp_expr;
+	// TODO: what is the semantics of n->op? Which value corresponds to which symbol?
+	
+	switch(C4ScriptOpMap[n->op].Code) {
+		case AB_Sum:
+			tmp_expr = m_builder->CreateAdd(left, right, "tmp_add");
+			break;
+		case AB_Sub:
+			tmp_expr = m_builder->CreateSub(left, right, "tmp_sub");
+			break;
+		case AB_Mul:
+			tmp_expr = m_builder->CreateMul(left, right, "tmp_mul");
+			break;
+		case AB_Div:
+			tmp_expr = m_builder->CreateSDiv(left, right, "tmp_div");
+			break;
+		case AB_Pow:
+			// TODO
+			break;
+	}
 }
 
 void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::FunctionDecl *n)
