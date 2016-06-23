@@ -554,7 +554,7 @@ extern "C" {
 	{
 		C4AulFunc *func = reinterpret_cast<C4AulFunc *>(func_i8);
 
-		C4Value pars[func->GetParCount()]; // Initialized to zero
+		std::vector<C4Value> pars(func->GetParCount()); // Values initialized to zero
 		va_list par_list;
 		va_start(par_list, par_count);
 		for(uint32_t i = 0; i < std::max<uint32_t>(par_count, func->GetParCount()); ++i); // TODO
@@ -562,7 +562,7 @@ extern "C" {
 		if(par_count != 0)
 			throw C4AulExecError(FormatString("Calling Engine functions with parameters is not yet supported. (in call of \"%s\")", func->GetName()).getData());
 
-		C4Value rv = func->Exec(nullptr /* TODO: Context. */, pars, false);
+		C4Value rv = func->Exec(nullptr /* TODO: Context. */, pars.data(), false);
 		// return rv
 	}
 
