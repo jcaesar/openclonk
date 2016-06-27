@@ -403,6 +403,12 @@ private:
 	void FnDecls();
 
 	llvmValue* constLLVMPointer(void * ptr);
+	llvmValue* buildInt(int i) const {
+		return llvm::ConstantInt::get(getGlobalContext(), APInt(32, i, true));
+	}
+	llvmValue* buildBool(bool b) const {
+		return llvm::ConstantInt::get(getGlobalContext(), APInt(1, (int) b, true));
+	}
 };
 
 
@@ -477,6 +483,8 @@ llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompiledValue::getBool() const
 	if(valType == C4V_Bool)
 	{
 		return llvmVal;
+	} else if(valType == C4V_Int) {
+		return compiler->m_builder->CreateICmpNE(llvmVal, compiler->buildInt(0));
 	} else {
 		throw compiler->Error(n, "Error: value is not a Bool!");
 	} 
@@ -521,14 +529,14 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::IntLit *n)
 {
 	fprintf(stderr, "compiling %d\n", n->value);
 
-	tmp_expr = make_unique<C4CompiledValue>(C4V_Int, llvm::ConstantInt::get(getGlobalContext(), APInt(32, n->value, true)), n, this);
+	tmp_expr = make_unique<C4CompiledValue>(C4V_Int, buildInt(n->value), n, this);
 }
 
 void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::BoolLit *n)
 {
 	fprintf(stderr, "compiling %s\n", n->value ? "True":"False");
 
-	tmp_expr = make_unique<C4CompiledValue>(C4V_Bool, llvm::ConstantInt::get(getGlobalContext(), APInt(1, (int) n->value, true)), n, this);
+	tmp_expr = make_unique<C4CompiledValue>(C4V_Bool, buildBool(n->value), n, this);
 }
 
 void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::UnOpExpr *n)
@@ -576,6 +584,50 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::BinOpExpr *n)
 			break;
 		case AB_Pow:
 			// TODO
+			break;
+		case AB_LeftShift:
+			tmp_expr = make_unique<C4CompiledValue>(C4V_Int, m_builder->CreateShl(left->getInt(), right->getInt(), "tmp_shl"), n, this);
+			break;
+		case AB_RightShift:
+			tmp_expr = make_unique<C4CompiledValue>(C4V_Int, m_builder->CreateLShr(left->getInt(), right->getInt(), "tmp_shr"), n, this);
+			break;
+		case AB_LessThan:
+			tmp_expr = make_unique<C4CompiledValue>(C4V_Bool, m_builder->CreateICmpSLT(left->getInt(), right->getInt(), "tmp_lt"), n, this);
+			break;
+		case AB_LessThanEqual:
+			tmp_expr = make_unique<C4CompiledValue>(C4V_Bool, m_builder->CreateICmpSLE(left->getInt(), right->getInt(), "tmp_le"), n, this);
+			break;
+		case AB_GreaterThan:
+			tmp_expr = make_unique<C4CompiledValue>(C4V_Bool, m_builder->CreateICmpSGT(left->getInt(), right->getInt(), "tmp_gt"), n, this);
+			break;
+		case AB_GreaterThanEqual:
+			tmp_expr = make_unique<C4CompiledValue>(C4V_Bool, m_builder->CreateICmpSGE(left->getInt(), right->getInt(), "tmp_ge"), n, this);
+			break;
+		case AB_Equal:
+			// TODO: implement for C4V_Any
+			tmp_expr = make_unique<C4CompiledValue>(C4V_Bool, m_builder->CreateICmpEQ(left->getInt(), right->getInt(), "tmp_eq"), n, this);
+			break;
+		case AB_NotEqual:
+			// TODO: implement for C4V_Any
+			tmp_expr = make_unique<C4CompiledValue>(C4V_Bool, m_builder->CreateICmpNE(left->getInt(), right->getInt(), "tmp_neq"), n, this);
+			break;
+		case AB_BitAnd:
+			tmp_expr = make_unique<C4CompiledValue>(C4V_Int, m_builder->CreateAnd(left->getInt(), right->getInt(), "tmp_and"), n, this);
+			break;
+		case AB_BitXOr:
+			tmp_expr = make_unique<C4CompiledValue>(C4V_Int, m_builder->CreateXor(left->getInt(), right->getInt(), "tmp_xor"), n, this);
+			break;
+		case AB_BitOr:
+			tmp_expr = make_unique<C4CompiledValue>(C4V_Int, m_builder->CreateOr(left->getInt(), right->getInt(), "tmp_or"), n, this);
+			break;
+		case AB_JUMPAND:
+			// Beware! Not functional yet!
+			BasicBlock *evaluate_right = BasicBlock::Create(getGlobalContext(), "tmp_jmpand_eval_r");
+			BasicBlock *fail_early     = BasicBlock::Create(getGlobalContext(), "tmp_jmpand_fail");
+			BasicBlock *merge          = BasicBlock::Create(getGlobalContext(), "tmp_jmpand_merge");,
+			tmp_expr = m_builder->CreateCondBr(left->getBool(), evaluate_right, fail_early);
+
+			m_builder->CreateBr(merge);
 			break;
 	}
 }
