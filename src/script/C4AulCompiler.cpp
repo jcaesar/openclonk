@@ -310,6 +310,25 @@ void C4AulCompiler::PreparseAstVisitor::visit(const ::aul::ast::IncludePragma *n
 class C4AulCompiler::CodegenAstVisitor : public ::aul::DefaultRecursiveVisitor
 {
 private:
+	class C4CompiledValue
+	{
+	private:
+		C4V_Type valType;
+		llvmValue *llvmVal;
+
+		const ::aul::ast::Node *n;
+		const CodegenAstVisitor *compiler;
+
+	public:
+		C4CompiledValue(const C4V_Type &valType, llvmValue *llvmVal, const ::aul::ast::Node *n, const CodegenAstVisitor *compiler);
+		llvmValue *getInt() const;
+		llvmValue *getBool() const;
+		llvmValue *getString() const;
+		llvmValue *getArray() const;
+		llvmValue *getPropList() const;
+		llvmValue *getValue(C4V_Type t) const;
+	};
+
 	C4AulScriptFunc *Fn = nullptr;
 	// target_host: The C4ScriptHost on which compilation is done
 	C4ScriptHost *target_host = nullptr;
@@ -324,25 +343,7 @@ private:
 
 	// TODO: If there are more declarations like these, out-source them in a namespace or whatnot.
 	llvmFunction *LLVMEngineFunctionCallByPFunc;
-	llvmValue *tmp_expr; // result from recursive expression code generation
-
-	class C4CompilerValue
-	{
-	private:
-		C4V_Type valType;
-		llvmValue *llvmVal;
-
-		const ::aul::ast::Node *n;
-		const CodegenAstVisitor &compiler;
-
-	public:
-		llvmValue *getInt() const;
-		llvmValue *getBool() const;
-		llvmValue *getString() const;
-		llvmValue *getArray() const;
-		llvmValue *getPropList() const;
-		llvmValue *getValue(C4V_Type t) const;
-	};
+	unique_ptr<C4CompiledValue> tmp_expr; // result from recursive expression code generation
 
 public:
 	CodegenAstVisitor(C4ScriptHost *host, C4ScriptHost *source_host) : target_host(host), host(source_host) { init(); }
@@ -378,7 +379,7 @@ public:
 	//virtual void visit(const ::aul::ast::VarDecl *n) override;
 	virtual void visit(const ::aul::ast::FunctionDecl *n) override;
 
-	void DumpLLVM() { mod->dump(); }
+	void DumpLLVM() const { mod->dump(); }
 	void CompileScriptFunc(C4AulScriptFunc *func, const ::aul::ast::Function *def);
 private:
 	template<class... T>
@@ -392,7 +393,7 @@ private:
 		return ::Error(target_host, host, n, Fn, msg.c_str(), std::forward<T>(args)...);
 	}
 	template<typename T>
-	T* checkCompile(T* t) {
+	T* checkCompile(T* t) const {
 		if(!t)
 			throw Error("Internal Error: unexpected empty llvm result");
 		return t;
@@ -426,63 +427,68 @@ void C4AulCompiler::Compile(C4AulScriptFunc *func, const ::aul::ast::Function *d
 	//v.CompileScriptFunc(func, def);
 }
 
-llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompilerValue::getInt() const
+C4AulCompiler::CodegenAstVisitor::C4CompiledValue::C4CompiledValue(const C4V_Type &valType, llvmValue *llvmVal, const ::aul::ast::Node *n, const CodegenAstVisitor *compiler) : valType(valType), llvmVal(llvmVal), n(n), compiler(compiler)
+{
+	compiler->checkCompile(llvmVal);
+}
+
+llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompiledValue::getInt() const
 {
 	if(valType == C4V_Int)
 	{
 		return llvmVal;
 	} else {
-		throw compiler.Error(n, "Error: value is not an Int!");
+		throw compiler->Error(n, "Error: value is not an Int!");
 	} 
 }
 
-llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompilerValue::getArray() const
+llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompiledValue::getArray() const
 {
 	if(valType == C4V_Array)
 	{
 		return llvmVal;
 	} else {
-		throw compiler.Error(n, "Error: value is not an Array!");
+		throw compiler->Error(n, "Error: value is not an Array!");
 	} 
 }
 
-llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompilerValue::getPropList() const
+llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompiledValue::getPropList() const
 {
 	if(valType == C4V_PropList)
 	{
 		return llvmVal;
 	} else {
-		throw compiler.Error(n, "Error: value is not a PropList!");
+		throw compiler->Error(n, "Error: value is not a PropList!");
 	} 
 }
 
-llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompilerValue::getString() const
+llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompiledValue::getString() const
 {
 	if(valType == C4V_String)
 	{
 		return llvmVal;
 	} else {
-		throw compiler.Error(n, "Error: value is not a String!");
+		throw compiler->Error(n, "Error: value is not a String!");
 	} 
 }
 
-llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompilerValue::getBool() const
+llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompiledValue::getBool() const
 {
 	if(valType == C4V_Bool)
 	{
 		return llvmVal;
 	} else {
-		throw compiler.Error(n, "Error: value is not a Bool!");
+		throw compiler->Error(n, "Error: value is not a Bool!");
 	} 
 }
 
-llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompilerValue::getValue(C4V_Type t) const
+llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompiledValue::getValue(C4V_Type t) const
 {
 	if(valType == t)
 	{
 		return llvmVal;
 	} else {
-		throw compiler.Error(n, "Error: value does not match type!");
+		throw compiler->Error(n, "Error: value does not match type!");
 	} 
 }
 
@@ -515,25 +521,30 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::IntLit *n)
 {
 	fprintf(stderr, "compiling %d\n", n->value);
 
-	tmp_expr = llvm::ConstantInt::get(getGlobalContext(), APInt(32, n->value, true));
+	tmp_expr = make_unique<C4CompiledValue>(C4V_Int, llvm::ConstantInt::get(getGlobalContext(), APInt(32, n->value, true)), n, this);
 }
 
 void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::BoolLit *n)
 {
 	fprintf(stderr, "compiling %s\n", n->value ? "True":"False");
 
-	tmp_expr = llvm::ConstantInt::get(getGlobalContext(), APInt(8, (int) n->value, true));
+	tmp_expr = make_unique<C4CompiledValue>(C4V_Bool, llvm::ConstantInt::get(getGlobalContext(), APInt(1, (int) n->value, true)), n, this);
 }
 
 void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::UnOpExpr *n)
 {
 	// TODO: for which type of expression should we call 'visit'?
 	n->operand->accept(this);
-	llvmValue *operand = tmp_expr;
+	unique_ptr<C4CompiledValue> operand = std::move(tmp_expr);
 	// TODO: what is the semantics of n->op? Which value corresponds to which symbol?
 
 	switch(C4ScriptOpMap[n->op].Code) {
-		
+		case AB_Neg:
+			tmp_expr = make_unique<C4CompiledValue>(C4V_Int, m_builder->CreateNeg(tmp_expr->getInt(), "tmp_neg"), n, this);
+		case AB_Not:
+			tmp_expr = make_unique<C4CompiledValue>(C4V_Bool, m_builder->CreateNot(tmp_expr->getBool(), "tmp_not"), n, this);
+		case AB_BitNot:
+			tmp_expr = make_unique<C4CompiledValue>(C4V_Int, m_builder->CreateNot(tmp_expr->getInt(), "tmp_bit_not"), n, this);
 	}
 
 }
@@ -542,23 +553,26 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::BinOpExpr *n)
 {
 	// TODO: for which type of expression should we call 'visit'?
 	n->lhs->accept(this);
-	llvmValue *left  = tmp_expr;
+	unique_ptr<C4CompiledValue> left  = std::move(tmp_expr);
 	n->rhs->accept(this);
-	llvmValue *right = tmp_expr;
+	unique_ptr<C4CompiledValue> right = std::move(tmp_expr);
 	// TODO: what is the semantics of n->op? Which value corresponds to which symbol?
 	
 	switch(C4ScriptOpMap[n->op].Code) {
 		case AB_Sum:
-			tmp_expr = m_builder->CreateAdd(left, right, "tmp_add");
+			tmp_expr = make_unique<C4CompiledValue>(C4V_Int, m_builder->CreateAdd(left->getInt(), right->getInt(), "tmp_add"), n, this);
 			break;
 		case AB_Sub:
-			tmp_expr = m_builder->CreateSub(left, right, "tmp_sub");
+			tmp_expr = make_unique<C4CompiledValue>(C4V_Int, m_builder->CreateSub(left->getInt(), right->getInt(), "tmp_sub"), n, this);
 			break;
 		case AB_Mul:
-			tmp_expr = m_builder->CreateMul(left, right, "tmp_mul");
+			tmp_expr = make_unique<C4CompiledValue>(C4V_Int, m_builder->CreateMul(left->getInt(), right->getInt(), "tmp_mul"), n, this);
 			break;
 		case AB_Div:
-			tmp_expr = m_builder->CreateSDiv(left, right, "tmp_div");
+			tmp_expr = make_unique<C4CompiledValue>(C4V_Int, m_builder->CreateSDiv(left->getInt(), right->getInt(), "tmp_div"), n, this);
+			break;
+		case AB_Mod:
+			tmp_expr = make_unique<C4CompiledValue>(C4V_Int, m_builder->CreateSRem(left->getInt(), right->getInt(), "tmp_mod"), n, this);
 			break;
 		case AB_Pow:
 			// TODO
