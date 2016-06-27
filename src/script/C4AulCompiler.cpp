@@ -622,12 +622,34 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::BinOpExpr *n)
 			break;
 		case AB_JUMPAND:
 			// Beware! Not functional yet!
-			BasicBlock *evaluate_right = BasicBlock::Create(getGlobalContext(), "tmp_jmpand_eval_r");
-			BasicBlock *fail_early     = BasicBlock::Create(getGlobalContext(), "tmp_jmpand_fail");
-			BasicBlock *merge          = BasicBlock::Create(getGlobalContext(), "tmp_jmpand_merge");,
-			tmp_expr = m_builder->CreateCondBr(left->getBool(), evaluate_right, fail_early);
+			llvm::Function *currentFun = m_builder->GetInsertBlock()->getParent();
 
-			m_builder->CreateBr(merge);
+			BasicBlock *evaluate_right_block = BasicBlock::Create(getGlobalContext(), "tmp_jmpand_eval_r", currentFun);
+			BasicBlock *fail_early_block     = BasicBlock::Create(getGlobalContext(), "tmp_jmpand_fail");
+			BasicBlock *merge_block          = BasicBlock::Create(getGlobalContext(), "tmp_jmpand_merge");
+			m_builder->CreateCondBr(left->getBool(), evaluate_right_block, fail_early_block);
+
+			m_builder->SetInsertPoint(evaluate_right_block);
+			llvmValue *evaluate_right_value = right->getBool();
+			m_builder->CreateBr(merge_block);
+			// Code generation of right expression could have changed the block (for example if there was another JUMPAND expression embedded). Update the block to be on the safe side.
+			evaluate_right_block = m_builder->GetInsertBlock();
+
+			currentFun->getBasicBlockList().push_back(fail_early_block);
+			m_builder->SetInsertPoint(fail_early_block);
+
+			llvmValue *fail_early_value = buildBool(false);
+			m_builder->CreateBr(merge_block);
+			fail_early_block = m_builder->GetInsertBlock();
+
+			currentFun->getBasicBlockList().push_back(merge_block);
+			m_builder->SetInsertPoint(merge_block);
+
+			llvm::PHINode *pn = m_builder->CreatePHI(llvm::IntegerType::get(getGlobalContext(), 32), 2, "tmp_jmpand");
+			pn->addIncoming(evaluate_right_value, evaluate_right_block);
+			pn->addIncoming(fail_early_value, fail_early_block);
+
+			tmp_expr = make_unique<C4CompiledValue>(C4V_Bool, pn, n, this);
 			break;
 	}
 }
