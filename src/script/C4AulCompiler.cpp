@@ -31,6 +31,8 @@
 #undef NDEBUG
 #include <assert.h>
 
+#include <unordered_map>
+
 #include <llvm/Analysis/Passes.h>
 #include <llvm/ExecutionEngine/ExecutionEngine.h>
 #include <llvm/ExecutionEngine/JIT.h>
@@ -38,7 +40,6 @@
 #include <llvm/IR/DerivedTypes.h>
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/LLVMContext.h>
-#include <llvm/IR/Module.h>
 #include <llvm/IR/Module.h>
 #include <llvm/IR/Verifier.h>
 #include <llvm/PassManager.h>
@@ -307,6 +308,37 @@ void C4AulCompiler::PreparseAstVisitor::visit(const ::aul::ast::IncludePragma *n
 	host->Includes.emplace_back(n->what.c_str());
 }
 
+namespace C4V_Type_LLVM {
+	static const size_t int_len = 32;
+	static const size_t bool_len = 1;
+
+	/* variant */
+	static size_t getVariantTypeSize() { return sizeof(C4V_Type) * CHAR_BIT; }
+	static size_t getVariantVarSize() { return sizeof(C4V_Data) * CHAR_BIT; }
+	static llvmType* getVariantTypeLLVMType() { return llvmType::getIntNTy(getGlobalContext(), getVariantTypeSize()); }
+	static llvmType* getVariantVarLLVMType() { return llvmType::getIntNTy(getGlobalContext(), getVariantVarSize()); }
+	static llvm::StructType* getVariantType() {
+		return StructType::get(getGlobalContext(), std::vector<llvmType*>{
+				getVariantTypeLLVMType(), getVariantVarLLVMType()
+				}, false);
+	}
+	static llvmType* get(C4V_Type t) {
+		switch(t) {
+			case C4V_Nil: assert(!"TODO"); return nullptr;
+			case C4V_Int: return llvmType::getIntNTy(getGlobalContext(), int_len);
+			case C4V_Bool: return llvmType::getIntNTy(getGlobalContext(), bool_len);
+			case C4V_PropList:
+			case C4V_String:
+			case C4V_Array:
+			case C4V_Function:
+			case C4V_Any:
+				return getVariantType();
+			default:
+				assert(!"TODO");
+		}
+	}
+}
+
 class C4AulCompiler::CodegenAstVisitor : public ::aul::DefaultRecursiveVisitor
 {
 private:
@@ -344,6 +376,22 @@ private:
 	// TODO: If there are more declarations like these, out-source them in a namespace or whatnot.
 	llvmFunction *LLVMEngineFunctionCallByPFunc;
 	unique_ptr<C4CompiledValue> tmp_expr; // result from recursive expression code generation
+
+	class AulVariable
+	{
+	private:
+		llvmValue *addr;
+		CodegenAstVisitor* cgv;
+	public:
+		AulVariable(std::string name, ::aul::ast::VarDecl::Scope scope, CodegenAstVisitor* cgv, unique_ptr<C4CompiledValue> defaultVal = nullptr);
+		unique_ptr<C4CompiledValue> load(const ::aul::ast::Node *n) {
+			return make_unique<C4CompiledValue>(C4V_Any, cgv->m_builder->CreateLoad(addr), n, cgv);
+		}
+		void store(C4CompiledValue& rv) {
+			cgv->m_builder->CreateStore(rv.getValue(C4V_Any), addr);
+		}
+	};
+	std::unordered_map<std::string,AulVariable> fn_var_scope;
 
 public:
 	CodegenAstVisitor(C4ScriptHost *host, C4ScriptHost *source_host) : target_host(host), host(source_host) { init(); }
@@ -411,7 +459,6 @@ private:
 	}
 };
 
-
 void C4AulCompiler::Preparse(C4ScriptHost *host, C4ScriptHost *source_host, const ::aul::ast::Script *script)
 {
 	PreparseAstVisitor v(host, source_host);
@@ -436,6 +483,24 @@ void C4AulCompiler::Compile(C4AulScriptFunc *func, const ::aul::ast::Function *d
 C4AulCompiler::CodegenAstVisitor::C4CompiledValue::C4CompiledValue(const C4V_Type &valType, llvmValue *llvmVal, const ::aul::ast::Node *n, const CodegenAstVisitor *compiler) : valType(valType), llvmVal(llvmVal), n(n), compiler(compiler)
 {
 	compiler->checkCompile(llvmVal);
+}
+
+C4AulCompiler::CodegenAstVisitor::AulVariable::AulVariable(std::string name, ::aul::ast::VarDecl::Scope scope, CodegenAstVisitor* cgv, unique_ptr<C4CompiledValue> defaultVal)
+	: cgv(cgv)
+{
+	switch(scope) {
+		case ::aul::ast::VarDecl::Scope::Func:
+			addr = cgv->checkCompile(cgv->m_builder->CreateAlloca(C4V_Type_LLVM::get(C4V_Any), 0, name));
+			break;
+		default:
+			throw cgv->Error("Sorry, only function-scope variables supported so far.");
+	}
+	assert(cgv);
+	if(defaultVal) {
+		store(*defaultVal);
+	} else {
+		// TODO
+	}
 }
 
 llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompiledValue::getInt() const
@@ -691,6 +756,13 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::FunctionDecl *n)
 			Fn->SetOverloaded(global_parent);
 	}
 
+	for(const auto& decl_location: { Fn->ParNamed, Fn->VarNamed }) { // TODO: Order is important for func f(a) { var a; } Check whether correct.
+		for(int i = 0; i < decl_location.iSize; i++) {
+			const char *vname = decl_location.GetItemUnsafe(i);
+			fn_var_scope.insert({{vname, AulVariable(vname, ::aul::ast::VarDecl::Scope::Func, this)}});
+		}
+	}
+
 	n->body->accept(this);
 
 	// TODO: nil return with correct return type
@@ -700,7 +772,7 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::FunctionDecl *n)
 	llvm::verifyFunction(*lf);
 
 	Fn = nullptr;
-
+	fn_var_scope.clear();
 }
 
 llvmValue* C4AulCompiler::CodegenAstVisitor::constLLVMPointer(void * ptr)
@@ -786,7 +858,7 @@ extern "C" {
 			throw C4AulExecError(FormatString("Calling Engine functions with parameters is not yet supported. (in call of \"%s\")", func->GetName()).getData());
 
 		C4Value rv = func->Exec(nullptr /* TODO: Context. */, pars.data(), false);
-		// return rv
+		// TODO: return rv
 	}
 
 }
