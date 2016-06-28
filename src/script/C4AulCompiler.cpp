@@ -311,17 +311,24 @@ void C4AulCompiler::PreparseAstVisitor::visit(const ::aul::ast::IncludePragma *n
 namespace C4V_Type_LLVM {
 	static const size_t int_len = 32;
 	static const size_t bool_len = 1;
+	static const size_t variant_member_count = 2;
 
 	/* variant */
 	static size_t getVariantTypeSize() { return sizeof(C4V_Type) * CHAR_BIT; } // Type tag bit count
 	static size_t getVariantVarSize() { return sizeof(C4V_Data) * CHAR_BIT; }
 	static llvmType* getVariantTypeLLVMType() { return llvmType::getIntNTy(getGlobalContext(), getVariantTypeSize()); }
 	static llvmType* getVariantVarLLVMType() { return llvmType::getIntNTy(getGlobalContext(), getVariantVarSize()); }
-	static llvm::StructType* getVariantType() {
-		return StructType::get(getGlobalContext(), std::vector<llvmType*>{
-				getVariantTypeLLVMType(), getVariantVarLLVMType()
-				}, false);
+	static llvm::StructType* getVariantType(bool packed = false) {
+		auto tv = std::vector<llvmType*>{
+			getVariantTypeLLVMType(), getVariantVarLLVMType()
+		};
+		assert(tv.size() == variant_member_count);
+		return StructType::get(getGlobalContext(), tv, packed);
 	}
+	typedef struct __attribute__((packed)) {
+		C4V_Type typetag;
+		C4V_Data data;
+	} PackedVariant;
 	static llvmType* get(C4V_Type t) {
 		switch(t) {
 			case C4V_Nil: assert(!"TODO"); return nullptr;
@@ -340,14 +347,14 @@ namespace C4V_Type_LLVM {
 	Constant* LLVMTypeTag(C4V_Type type) {
     	return ConstantInt::get(getGlobalContext(), APInt(getVariantTypeSize(), type, false));
 	}
-	llvmValue* defaultVariant(C4V_Type type) {
+	llvmValue* defaultVariant(C4V_Type type, bool packed = false) {
 		// TODO: Not so sure about this. Revise whether this should work for C4V_Function or just always return a C4V_Nil…
 		auto cv = std::vector<Constant *>{
 			ConstantInt::get(getGlobalContext(), APInt(getVariantTypeSize(), type, false)),
 			ConstantInt::get(getGlobalContext(), APInt(getVariantVarSize(), 0, false))
 		};
 		assert(getVariantType()->getNumElements() == cv.size());
-		return ConstantStruct::get(getVariantType(), cv);
+		return ConstantStruct::get(getVariantType(packed), cv);
 	}
 	llvmValue* defaultValue(C4V_Type type) {
 		switch(type) {
@@ -400,6 +407,7 @@ private:
 
 	// TODO: If there are more declarations like these, out-source them in a namespace or whatnot.
 	llvmFunction *LLVMEngineFunctionCallByPFunc;
+	llvmFunction *LLVMEngineValueConversionFunc;
 	unique_ptr<C4CompiledValue> tmp_expr; // result from recursive expression code generation
 
 	class AulVariable
@@ -482,6 +490,10 @@ private:
 	llvmValue* buildBool(bool b) const {
 		return llvm::ConstantInt::get(getGlobalContext(), APInt(1, (int) b, true));
 	}
+	BasicBlock* CreateBlock() const { assert(Fn); return BasicBlock::Create(getGlobalContext(), "anon", Fn->llvmFunc); }
+	BasicBlock* CurrentBlock() const { return m_builder->GetInsertBlock(); }
+	void SetInsertPoint(BasicBlock* bb) const { return m_builder->SetInsertPoint(bb); }
+	/* TODO: I'm not so sure I'm happy that these are const */
 };
 
 void C4AulCompiler::Preparse(C4ScriptHost *host, C4ScriptHost *source_host, const ::aul::ast::Script *script)
@@ -528,14 +540,48 @@ C4AulCompiler::CodegenAstVisitor::AulVariable::AulVariable(std::string name, ::a
 	}
 }
 
+extern "C" {
+	C4V_Data InternalValueConversionFunc(C4V_Type_LLVM::PackedVariant var, C4V_Type t) {
+		// TODO: do something sensible (including throwing a proper RuntimeError, if necessary)
+		throw "Type conversion not implemented yet";
+	}
+}
+
 llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompiledValue::getInt() const
 {
-	if(valType == C4V_Int)
-	{
-		return llvmVal;
-	} else {
-		throw compiler->Error(n, "Error: value is not an Int!");
-	} 
+	auto& bld = *compiler->m_builder;
+	switch(valType) {
+		case C4V_Int: return llvmVal;
+		case C4V_Bool: return compiler->checkCompile(bld.CreateZExt(llvmVal, C4V_Type_LLVM::get(C4V_Int)));
+		case C4V_Nil: return compiler->buildInt(0);
+		case C4V_Any: {
+			auto inttt = C4V_Type_LLVM::LLVMTypeTag(C4V_Int);
+			llvmValue* typetag = compiler->checkCompile(bld.CreateExtractValue(llvmVal, {0}));
+			// We could probably do some nifty hacks based on C4V_Nil == 0 and C4V_Bool = 2 to also convert those in LLVM, but at this point I consider that premature optimization.
+			llvmValue* direct = bld.CreateExtractValue(llvmVal, {1});
+			llvmValue* match = compiler->checkCompile(bld.CreateICmp(CmpInst::ICMP_EQ, typetag, inttt));
+			BasicBlock* orig = compiler->CurrentBlock();
+			BasicBlock* mismatch = compiler->CreateBlock();
+			BasicBlock* cont = compiler->CreateBlock();
+			bld.CreateCondBr(match, cont, mismatch);
+			compiler->SetInsertPoint(mismatch);
+			// Yay, we need to pack the struct…
+			llvmValue* packed = C4V_Type_LLVM::defaultVariant(C4V_Nil/*hopefully overwritten*/, true);
+			for (unsigned int i = 0; i < C4V_Type_LLVM::variant_member_count; i++) {
+				packed = bld.CreateInsertValue(packed, bld.CreateExtractValue(llvmVal, {i}), {i});
+			}
+			llvmValue* convd = compiler->checkCompile(bld.CreateCall(compiler->LLVMEngineValueConversionFunc, std::vector<llvmValue*>{packed, inttt}));
+			bld.CreateBr(cont);
+			compiler->SetInsertPoint(cont);
+			llvm::PHINode *pn = bld.CreatePHI(C4V_Type_LLVM::getVariantVarLLVMType(), 2);
+			pn->addIncoming(direct, orig);
+			pn->addIncoming(convd, mismatch);
+			return compiler->checkCompile(bld.CreateTruncOrBitCast(pn, C4V_Type_LLVM::get(C4V_Int)));
+			// Please try not to duplicate this and instead write a function that executes this…
+
+		}
+		default: throw compiler->Error(n, "Error: value cannot be converted to Int!");
+	}
 }
 
 llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompiledValue::getArray() const
@@ -924,6 +970,7 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::Return *n)
 }
 
 #define LLVM_PFUNC_CALL "$LLVMAulPFuncCall"
+#define LLVM_VARTYPE_CONV "$LLVMVarTypeConv"
 
 // TODO: Right place for this?
 extern "C" {
@@ -952,9 +999,18 @@ void C4AulCompiler::CodegenAstVisitor::FnDecls() {
 	FunctionType *efct = FunctionType::get(llvmvoid, std::vector<llvmType*>{
 			llvmType::getInt8PtrTy(getGlobalContext()), // "Note that LLVM does not permit pointers to void (void*) [...]. Use i8* instead."
 			llvmType::getInt32Ty(getGlobalContext())
-		}, true);
+		}, true/*varargs*/);
 	LLVMEngineFunctionCallByPFunc = checkCompile(llvmFunction::Create(efct, llvmFunction::ExternalLinkage, LLVM_PFUNC_CALL, mod));
 	executionengine->addGlobalMapping(LLVMEngineFunctionCallByPFunc, reinterpret_cast<void*>(LLVMAulPFuncCall));
+
+	// Converting between runtime types
+	FunctionType *vct = FunctionType::get(
+		C4V_Type_LLVM::getVariantVarLLVMType(),
+		std::vector<llvmType*>{	C4V_Type_LLVM::getVariantType(true/*packed*/), C4V_Type_LLVM::getVariantTypeLLVMType()  },
+		false
+	);
+	LLVMEngineValueConversionFunc = checkCompile(llvmFunction::Create(vct, llvmFunction::ExternalLinkage, LLVM_VARTYPE_CONV, mod));
+	executionengine->addGlobalMapping(LLVMEngineValueConversionFunc, reinterpret_cast<void*>(InternalValueConversionFunc));
 
 	// Declarations for script functions
 	for(const auto& func: ::ScriptEngine.FuncLookUp) {
