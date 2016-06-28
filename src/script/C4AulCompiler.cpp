@@ -776,6 +776,7 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::BinOpExpr *n)
 			tmp_expr = make_unique<C4CompiledValue>(C4V_Int, m_builder->CreateOr(left->getInt(), right->getInt(), "tmp_or"), n, this);
 			break;
 		case AB_JUMPAND:
+		{
 			// Beware! Not functional yet!
 			llvm::Function *currentFun = m_builder->GetInsertBlock()->getParent();
 
@@ -805,7 +806,9 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::BinOpExpr *n)
 			pn->addIncoming(fail_early_value, fail_early_block);
 
 			tmp_expr = make_unique<C4CompiledValue>(C4V_Bool, pn, n, this);
-			break;
+		break;
+		}
+		default: /* silence warning. TODO */ break;
 	}
 }
 
