@@ -441,7 +441,7 @@ public:
 	virtual void visit(const ::aul::ast::CallExpr *n) override;
 	//virtual void visit(const ::aul::ast::ParExpr *n) override;
 	//virtual void visit(const ::aul::ast::Block *n) override;
-	//virtual void visit(const ::aul::ast::Return *n) override;
+	virtual void visit(const ::aul::ast::Return *n) override;
 	//virtual void visit(const ::aul::ast::ForLoop *n) override;
 	//virtual void visit(const ::aul::ast::RangeLoop *n) override;
 	//virtual void visit(const ::aul::ast::DoLoop *n) override;
@@ -583,11 +583,13 @@ llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompiledValue::getBool() const
 llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompiledValue::getVariant() const
 {
 	switch(valType) {
-		case C4V_Bool: // fallthrough
+		case C4V_Bool: // fall through
 		case C4V_Int:
 			return compiler->m_builder->CreateInsertValue(C4V_Type_LLVM::defaultVariant(valType),
 				compiler->m_builder->CreateZExt(llvmVal, C4V_Type_LLVM::getVariantVarLLVMType()),
 				{1});
+		case C4V_Nil:
+			return C4V_Type_LLVM::defaultVariant(C4V_Nil); // Don't care about the value part
 		case C4V_Any:
 			return llvmVal;
 		default:
@@ -908,6 +910,17 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::CallExpr *n)
 	}
 	// assert(tmp_expr); // TODO: Once we have all return values…
 
+}
+
+void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::Return *n)
+{
+	// Note: There doesn't seem to be a good way to find out whether this is return; or return (foobar);
+	tmp_expr.reset();
+	n->value->accept(this);
+	if(!tmp_expr)
+		tmp_expr = C4CompiledValue::defaultVal(C4V_Nil, n, this);
+	m_builder->CreateRet(tmp_expr->getValue(Fn->GetRetType()));
+	// TODO: We might have to finish the current block and create a new one to make sure stuff that gets compiled after the return is fine, e.g. in if(foo) { return; /* branch instruction compiled here */} (unlikely, but I want this tested!)
 }
 
 #define LLVM_PFUNC_CALL "$LLVMAulPFuncCall"
