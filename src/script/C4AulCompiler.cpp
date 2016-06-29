@@ -490,11 +490,24 @@ private:
 	llvmValue* buildBool(bool b) const {
 		return llvm::ConstantInt::get(getGlobalContext(), APInt(1, (int) b, true));
 	}
-	BasicBlock* CreateBlock() const { assert(Fn); return BasicBlock::Create(getGlobalContext(), "anon", Fn->llvmFunc); }
+	BasicBlock* CreateBlock(llvmFunction* parent = nullptr) const { assert((m_builder && CurrentBlock()) || parent); return BasicBlock::Create(getGlobalContext(), "anon", parent ? parent : CurrentBlock()->getParent()); }
 	BasicBlock* CurrentBlock() const { return m_builder->GetInsertBlock(); }
 	void SetInsertPoint(BasicBlock* bb) const { return m_builder->SetInsertPoint(bb); }
 	/* TODO: I'm not so sure I'm happy that these are const */
+
+	llvmValue* CompilePack(llvmValue*, bool unpack = false) const; // Don't use the unpack parameter, use:
+	unique_ptr<C4CompiledValue> UnpackedValue(llvmValue* v, ::aul::ast::Node *n = nullptr) const { 
+		return make_unique<C4CompiledValue>(C4V_Any, CompilePack(v, true), n, this);
+	}
 };
+
+llvmValue* C4AulCompiler::CodegenAstVisitor::CompilePack(llvmValue* unpacked, bool unpack) const {
+	llvmValue* packed = checkCompile(C4V_Type_LLVM::defaultVariant(C4V_Nil/*hopefully overwritten*/, !unpack));
+	for (unsigned int i = 0; i < C4V_Type_LLVM::variant_member_count; i++) {
+		packed = checkCompile(m_builder->CreateInsertValue(packed, m_builder->CreateExtractValue(unpacked, {i}), {i}));
+	}
+	return checkCompile(packed);
+}
 
 void C4AulCompiler::Preparse(C4ScriptHost *host, C4ScriptHost *source_host, const ::aul::ast::Script *script)
 {
@@ -566,10 +579,7 @@ llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompiledValue::getInt() const
 			bld.CreateCondBr(match, cont, mismatch);
 			compiler->SetInsertPoint(mismatch);
 			// Yay, we need to pack the struct…
-			llvmValue* packed = C4V_Type_LLVM::defaultVariant(C4V_Nil/*hopefully overwritten*/, true);
-			for (unsigned int i = 0; i < C4V_Type_LLVM::variant_member_count; i++) {
-				packed = bld.CreateInsertValue(packed, bld.CreateExtractValue(llvmVal, {i}), {i});
-			}
+			llvmValue* packed = compiler->CompilePack(llvmVal);
 			llvmValue* convd = compiler->checkCompile(bld.CreateCall(compiler->LLVMEngineValueConversionFunc, std::vector<llvmValue*>{packed, inttt}));
 			bld.CreateBr(cont);
 			compiler->SetInsertPoint(cont);
@@ -870,10 +880,11 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::FunctionDecl *n)
 	n->body->accept(this);
 
 	// TODO: nil return with correct return type
-	m_builder->CreateRet(nullptr);
+	m_builder->CreateRet(C4V_Type_LLVM::defaultValue(Fn->GetRetType()));
 
 	//f->dump();
 	llvm::verifyFunction(*lf);
+	//funcpassmgr->run(*lf); // Execute optimizations.
 
 	Fn = nullptr;
 	fn_var_scope.clear();
@@ -952,10 +963,16 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::CallExpr *n)
 	}
 	else
 	{
-		checkCompile(m_builder->CreateCall(LLVMEngineFunctionCallByPFunc, std::vector<llvmValue*>{
+		auto llvm_args = std::vector<llvmValue*>{
 			constLLVMPointer(callee), // TODO: Create named constants or annotate in some other way to ease reading the IR a bit…
 			ConstantInt::get(getGlobalContext(), APInt(32, callee->GetParCount(), false))
-		}));
+		};
+		for(auto& arg_val: arg_vals) {
+			llvm_args.push_back(CompilePack(arg_val->getVariant()));
+		}
+		llvmValue* retval = checkCompile(m_builder->CreateCall(LLVMEngineFunctionCallByPFunc, llvm_args));
+		// I'm assuming that Fn->GetRetType() is C4V_Any. If this wasn't the case, we might want to do something more efficient (similarly above)
+		tmp_expr = make_unique<C4CompiledValue>(Fn->GetRetType(), retval, n, this);
 	}
 	// assert(tmp_expr); // TODO: Once we have all return values…
 
@@ -996,10 +1013,9 @@ extern "C" {
 }
 
 void C4AulCompiler::CodegenAstVisitor::FnDecls() {
-	auto llvmvoid = llvmType::getVoidTy(getGlobalContext());
 
 	// Calling engine functions
-	FunctionType *efct = FunctionType::get(llvmvoid, std::vector<llvmType*>{
+	FunctionType *efct = FunctionType::get(C4V_Type_LLVM::getVariantType(true), std::vector<llvmType*>{
 			llvmType::getInt8PtrTy(getGlobalContext()), // "Note that LLVM does not permit pointers to void (void*) [...]. Use i8* instead."
 			llvmType::getInt32Ty(getGlobalContext())
 		}, true/*varargs*/);
