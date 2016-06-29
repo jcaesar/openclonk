@@ -682,6 +682,7 @@ void C4AulCompiler::CodegenAstVisitor::init()
 	funcpassmgr->add(llvm::createGVNPass());
 	funcpassmgr->add(llvm::createCFGSimplificationPass());
 	funcpassmgr->add(llvm::createDeadStoreEliminationPass());
+	funcpassmgr->add(llvm::createDeadInstEliminationPass());
 	funcpassmgr->add(llvm::createInstructionCombiningPass());
 	funcpassmgr->doInitialization();
 	executionengine->addModule(mod);
@@ -824,14 +825,6 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::BinOpExpr *n)
 
 void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::FunctionDecl *n)
 {
-	fprintf(stderr, "compiling %s\n", n->name.c_str());
-	m_builder = make_unique<IRBuilder<>>(getGlobalContext());
-	llvmFunction* lf = mod->getFunction(n->name); // TODO: GetMangledName?
-	if(!lf)
-		throw Error(n, "internal error: unable to find function definition for %s", n->name.c_str());
-	BasicBlock* bb = BasicBlock::Create(getGlobalContext(), "entrybb", lf);
-	m_builder->SetInsertPoint(bb);
-
 	C4PropListStatic *Parent = n->is_global ? target_host->Engine->GetPropList() : target_host->GetPropList();
 	C4AulFunc *f = Parent->GetFunc(n->name.c_str());
 	while (f)
@@ -848,6 +841,15 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::FunctionDecl *n)
 	assert(Fn && "CodegenAstVisitor: unable to find function definition");
 	if (!Fn)
 		throw Error(n, "internal error: unable to find function definition for %s", n->name.c_str());
+	
+	fprintf(stderr, "compiling %s\n", n->name.c_str());
+	m_builder = make_unique<IRBuilder<>>(getGlobalContext());
+	llvmFunction* lf = Fn->llvmFunc;
+	assert(lf);
+	if(!lf)
+		throw Error(n, "internal error: unable to find LLVM function definition for %s", n->name.c_str());
+	BasicBlock* bb = BasicBlock::Create(getGlobalContext(), "entrybb", lf);
+	m_builder->SetInsertPoint(bb);
 
 	// If this isn't a global function, but there is a global one with
 	// the same name, and this function isn't overloading a different
@@ -1040,12 +1042,24 @@ void C4AulCompiler::CodegenAstVisitor::FnDecls() {
 		for(int i = 0; i < sf->GetParCount(); ++i)
 			parTypes.push_back(C4V_Type_LLVM::get(sf->GetParType()[i]));
 		FunctionType *ft = FunctionType::get(C4V_Type_LLVM::get(sf->GetRetType()), parTypes, false); // TODO: parameter types
-		sf->llvmFunc = checkCompile(llvmFunction::Create(ft, llvmFunction::ExternalLinkage, func->GetName(), mod));
+		sf->llvmFunc = checkCompile(llvmFunction::Create(ft, llvmFunction::PrivateLinkage, func->GetName(), mod));
 		int i = 0;
 		for (llvmFunction::arg_iterator argit = sf->llvmFunc->arg_begin(); i < sf->ParNamed.iSize; ++argit, ++i) {
 			argit->setName(sf->ParNamed.GetItemUnsafe(i));
 		}
 
+		//also add a delegate with simple parameter types for easy external calls
+		FunctionType *dft = FunctionType::get(C4V_Type_LLVM::get(sf->GetRetType()), std::vector<llvmType*>(C4AUL_MAX_Par, C4V_Type_LLVM::getVariantType(true)), false); // TODO: parameter types
+		sf->llvmDelegate = checkCompile(llvmFunction::Create(dft, llvmFunction::ExternalLinkage, std::string(func->GetName()) + "$delegate", mod));
+		m_builder = make_unique<IRBuilder<>>(getGlobalContext());
+		SetInsertPoint(CreateBlock(sf->llvmDelegate));
+		std::vector<llvmValue*> delegate_args;
+		llvmFunction::arg_iterator argit = sf->llvmDelegate->arg_begin();
+		for (int i = 0; i < func->GetParCount(); ++i, ++argit) {
+			delegate_args.push_back(UnpackedValue(argit)->getValue(func->GetParType()[i]));
+		}
+		llvmValue* dlgret = checkCompile(m_builder->CreateCall(sf->llvmFunc, delegate_args));
+		m_builder->CreateRet(CompilePack(dlgret));
 	}
 }
 
