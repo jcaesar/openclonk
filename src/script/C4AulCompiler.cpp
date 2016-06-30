@@ -325,10 +325,6 @@ namespace C4V_Type_LLVM {
 		assert(tv.size() == variant_member_count);
 		return StructType::get(getGlobalContext(), tv, packed);
 	}
-	typedef struct __attribute__((packed)) {
-		C4V_Type typetag;
-		C4V_Data data;
-	} PackedVariant;
 	static llvmType* get(C4V_Type t) {
 		switch(t) {
 			case C4V_Nil: assert(!"TODO"); return nullptr;
@@ -462,6 +458,8 @@ public:
 
 	void DumpLLVM() const { mod->dump(); }
 	void CompileScriptFunc(C4AulScriptFunc *func, const ::aul::ast::Function *def);
+
+	void finalize();
 private:
 	template<class... T>
 	C4AulParseError Error(const std::string msg, T &&...args) const
@@ -496,7 +494,7 @@ private:
 	/* TODO: I'm not so sure I'm happy that these are const */
 
 	llvmValue* CompilePack(llvmValue*, bool unpack = false) const; // Don't use the unpack parameter, use:
-	unique_ptr<C4CompiledValue> UnpackedValue(llvmValue* v, ::aul::ast::Node *n = nullptr) const { 
+	unique_ptr<C4CompiledValue> UnpackedValue(llvmValue* v, const ::aul::ast::Node *n = nullptr) const {
 		return make_unique<C4CompiledValue>(C4V_Any, CompilePack(v, true), n, this);
 	}
 };
@@ -521,6 +519,7 @@ void C4AulCompiler::Compile(C4ScriptHost *host, C4ScriptHost *source_host, const
 	CodegenAstVisitor v(host, source_host);
 	v.visit(script);
 	v.DumpLLVM();
+	v.finalize();
 }
 
 void C4AulCompiler::Compile(C4AulScriptFunc *func, const ::aul::ast::Function *def)
@@ -554,7 +553,7 @@ C4AulCompiler::CodegenAstVisitor::AulVariable::AulVariable(std::string name, ::a
 }
 
 extern "C" {
-	C4V_Data InternalValueConversionFunc(C4V_Type_LLVM::PackedVariant var, C4V_Type t) {
+	C4V_Data InternalValueConversionFunc(PackedVariant var, C4V_Type t) {
 		// TODO: do something sensible (including throwing a proper RuntimeError, if necessary)
 		throw "Type conversion not implemented yet";
 	}
@@ -967,14 +966,14 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::CallExpr *n)
 	{
 		auto llvm_args = std::vector<llvmValue*>{
 			constLLVMPointer(callee), // TODO: Create named constants or annotate in some other way to ease reading the IR a bit…
-			ConstantInt::get(getGlobalContext(), APInt(32, callee->GetParCount(), false))
+			ConstantInt::get(getGlobalContext(), APInt(32, arg_vals.size(), false))
 		};
 		for(auto& arg_val: arg_vals) {
 			llvm_args.push_back(CompilePack(arg_val->getVariant()));
 		}
 		llvmValue* retval = checkCompile(m_builder->CreateCall(LLVMEngineFunctionCallByPFunc, llvm_args));
-		// I'm assuming that Fn->GetRetType() is C4V_Any. If this wasn't the case, we might want to do something more efficient (similarly above)
-		tmp_expr = make_unique<C4CompiledValue>(Fn->GetRetType(), retval, n, this);
+		// I'm assuming that Fn->GetRetType() is C4V_Any. If this wasn't the case, we might want to do something more efficient (similarly above) Tricky though, since the delegate function still returns a PackedVariant
+		tmp_expr = UnpackedValue(retval, n);
 	}
 	// assert(tmp_expr); // TODO: Once we have all return values…
 
@@ -988,7 +987,7 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::Return *n)
 	if(!tmp_expr)
 		tmp_expr = C4CompiledValue::defaultVal(C4V_Nil, n, this);
 	m_builder->CreateRet(tmp_expr->getValue(Fn->GetRetType()));
-	// TODO: We might have to finish the current block and create a new one to make sure stuff that gets compiled after the return is fine, e.g. in if(foo) { return; /* branch instruction compiled here */} (unlikely, but I want this tested!)
+	SetInsertPoint(CreateBlock());
 }
 
 #define LLVM_PFUNC_CALL "$LLVMAulPFuncCall"
@@ -1041,7 +1040,7 @@ void C4AulCompiler::CodegenAstVisitor::FnDecls() {
 		std::vector<llvmType*> parTypes;
 		for(int i = 0; i < sf->GetParCount(); ++i)
 			parTypes.push_back(C4V_Type_LLVM::get(sf->GetParType()[i]));
-		FunctionType *ft = FunctionType::get(C4V_Type_LLVM::get(sf->GetRetType()), parTypes, false); // TODO: parameter types
+		FunctionType *ft = FunctionType::get(C4V_Type_LLVM::get(sf->GetRetType()), parTypes, false);
 		sf->llvmFunc = checkCompile(llvmFunction::Create(ft, llvmFunction::PrivateLinkage, func->GetName(), mod));
 		int i = 0;
 		for (llvmFunction::arg_iterator argit = sf->llvmFunc->arg_begin(); i < sf->ParNamed.iSize; ++argit, ++i) {
@@ -1049,17 +1048,28 @@ void C4AulCompiler::CodegenAstVisitor::FnDecls() {
 		}
 
 		//also add a delegate with simple parameter types for easy external calls
-		FunctionType *dft = FunctionType::get(C4V_Type_LLVM::get(sf->GetRetType()), std::vector<llvmType*>(C4AUL_MAX_Par, C4V_Type_LLVM::getVariantType(true)), false); // TODO: parameter types
+		FunctionType *dft = FunctionType::get(C4V_Type_LLVM::getVariantType(true), std::vector<llvmType*>{llvm::PointerType::getUnqual(C4V_Type_LLVM::getVariantType(true))}, false);
 		sf->llvmDelegate = checkCompile(llvmFunction::Create(dft, llvmFunction::ExternalLinkage, std::string(func->GetName()) + "$delegate", mod));
 		m_builder = make_unique<IRBuilder<>>(getGlobalContext());
 		SetInsertPoint(CreateBlock(sf->llvmDelegate));
 		std::vector<llvmValue*> delegate_args;
-		llvmFunction::arg_iterator argit = sf->llvmDelegate->arg_begin();
-		for (int i = 0; i < func->GetParCount(); ++i, ++argit) {
-			delegate_args.push_back(UnpackedValue(argit)->getValue(func->GetParType()[i]));
+		llvmValue* argp = sf->llvmDelegate->arg_begin();
+		for (int i = 0; i < func->GetParCount(); ++i) {
+			llvmValue* argi = m_builder->CreateLoad(m_builder->CreateGEP(argp, std::vector<llvmValue*>{buildInt(i)}));
+			delegate_args.push_back(UnpackedValue(argi)->getValue(func->GetParType()[i]));
 		}
-		llvmValue* dlgret = checkCompile(m_builder->CreateCall(sf->llvmFunc, delegate_args));
-		m_builder->CreateRet(CompilePack(dlgret));
+		auto dlgret = make_unique<C4CompiledValue>(sf->GetRetType(), m_builder->CreateCall(sf->llvmFunc, delegate_args), nullptr, this);
+		m_builder->CreateRet(CompilePack(dlgret->getVariant()));
+	}
+}
+
+void C4AulCompiler::CodegenAstVisitor::finalize()
+{
+	for(const auto& func: ::ScriptEngine.FuncLookUp) {
+		C4AulScriptFunc *sf = func->SFunc();
+		if(!sf)
+			continue;
+		sf->llvmImpl = reinterpret_cast<PackedVariant(*)(PackedVariant[])>(executionengine->getPointerToFunction(sf->llvmDelegate));
 	}
 }
 

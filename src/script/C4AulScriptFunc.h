@@ -171,6 +171,11 @@ private:
 
 namespace llvm { class Function; }
 typedef llvm::Function llvmFunction;
+// TODO: Move, rename
+typedef struct __attribute__((packed)) {
+	C4V_Type typetag;
+	C4V_Data data;
+} PackedVariant;
 
 // script function class
 class C4AulScriptFunc : public C4AulFunc
@@ -182,6 +187,7 @@ public:
 protected:
 	llvmFunction* llvmFunc;
 	llvmFunction* llvmDelegate;
+	std::function<PackedVariant(PackedVariant*)> llvmImpl;
 
 	// TODO: Remove all these
 	void AddBCC(C4AulBCCType eType, intptr_t = 0, const char * SPos = 0); // add byte code chunk and advance

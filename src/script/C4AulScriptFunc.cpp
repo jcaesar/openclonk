@@ -94,5 +94,19 @@ C4AulBCC * C4AulScriptFunc::GetCode()
 
 C4Value C4AulScriptFunc::Exec(C4PropList * p, C4Value pPars[], bool fPassErrors)
 {
-	return AulExec.Exec(this, p, pPars, fPassErrors);
+	PackedVariant pass_pars[C4AUL_MAX_Par];
+	for (int i = 0; i < GetParCount(); i++) {
+		pass_pars[i].data = pPars[i].GetData();
+		pass_pars[i].typetag = pPars[i].GetType();
+	}
+	// TODO: Catch errors of fPassErrors
+	PackedVariant llvmrv = llvmImpl(pass_pars);
+	C4Value rv;
+	switch (llvmrv.typetag) {
+		case C4V_Nil: rv.Set0(); break;
+		case C4V_Int: rv.SetInt(llvmrv.data.Int);
+		case C4V_Bool: rv.SetBool(llvmrv.data.Int);
+		default: assert(!"TODO");
+	}
+	return rv;
 }
