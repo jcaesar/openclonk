@@ -18,6 +18,7 @@
 
 #include "script/C4AulExec.h"
 #include "script/C4ScriptHost.h"
+#include "script/C4Value.h"
 
 C4AulScriptFunc::C4AulScriptFunc(C4PropListStatic * Parent, C4ScriptHost *pOrgScript, const char *pName, const char *Script):
 		C4AulFunc(Parent, pName),
@@ -94,18 +95,19 @@ C4AulBCC * C4AulScriptFunc::GetCode()
 
 C4Value C4AulScriptFunc::Exec(C4PropList * p, C4Value pPars[], bool fPassErrors)
 {
-	PackedVariant pass_pars[C4AUL_MAX_Par];
+	C4V_Type  retpar_types[C4AUL_MAX_Par];
+	C4V_Data retpar_data [C4AUL_MAX_Par];
 	for (int i = 0; i < GetParCount(); i++) {
-		pass_pars[i].data = pPars[i].GetData();
-		pass_pars[i].typetag = pPars[i].GetType();
+		retpar_types[i] = pPars[i].GetType();
+		retpar_data [i] = pPars[i].GetData();
 	}
 	// TODO: Catch errors of fPassErrors
-	PackedVariant llvmrv = llvmImpl(pass_pars);
+	llvmImpl(retpar_types, retpar_data);
 	C4Value rv;
-	switch (llvmrv.typetag) {
+	switch (retpar_types[0]) {
 		case C4V_Nil: rv.Set0(); break;
-		case C4V_Int: rv.SetInt(llvmrv.data.Int);
-		case C4V_Bool: rv.SetBool(llvmrv.data.Int);
+		case C4V_Int: rv.SetInt(retpar_data[0].Int);
+		case C4V_Bool: rv.SetBool(retpar_data[0].Int);
 		default: assert(!"TODO");
 	}
 	return rv;
