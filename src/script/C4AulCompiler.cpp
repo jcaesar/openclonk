@@ -23,6 +23,7 @@
 #include "script/C4AulParse.h"
 #include "script/C4AulScriptFunc.h"
 #include "script/C4ScriptHost.h"
+#include "script/C4LLVMTypeMagic.h"
 
 #define C4AUL_Inherited     "inherited"
 #define C4AUL_SafeInherited "_inherited"
@@ -898,7 +899,7 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::FunctionDecl *n)
 			vname = Fn->ParNamed.GetItemUnsafe(i);
 		} else {
 			char fdst[20];
-			snprintf(fdst, 20, "par$%d", i);
+			snprintf(fdst, 20, "par.%d", i);
 			vname = fdst;
 		}
 		auto par = make_unique<C4CompiledValue>(Fn->GetParType()[i], argit, n, this);
@@ -1036,9 +1037,6 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::Return *n)
 	SetInsertPoint(CreateBlock());
 }
 
-#define LLVM_PFUNC_CALL "$LLVMAulPFuncCall"
-#define LLVM_VARTYPE_CONV "$LLVMVarTypeConv"
-
 // TODO: Right place for this?
 extern "C" {
 	void LLVMAulPFuncCall(uint8_t * func_i8, uint32_t par_count, C4V_Type* types, C4V_Data* data)
@@ -1057,30 +1055,11 @@ extern "C" {
 
 void C4AulCompiler::CodegenAstVisitor::FnDecls() {
 	auto llvmvoid = llvmType::getVoidTy(getGlobalContext());
-	// Calling engine functions
-	FunctionType *efct = FunctionType::get(llvmvoid, std::vector<llvmType*>{
-			llvmType::getInt8PtrTy(getGlobalContext()), // "Note that LLVM does not permit pointers to void (void*) [...]. Use i8* instead."
-			llvmType::getInt32Ty(getGlobalContext()),
-			llvm::PointerType::getUnqual(C4V_Type_LLVM::getVariantTypeLLVMType()),
-			llvm::PointerType::getUnqual(C4V_Type_LLVM::getVariantVarLLVMType())
-		}, false/*no varargs*/);
-	LLVMEngineFunctionCallByPFunc = checkCompile(llvmFunction::Create(efct, llvmFunction::ExternalLinkage, LLVM_PFUNC_CALL, mod));
-	executionengine->addGlobalMapping(LLVMEngineFunctionCallByPFunc, reinterpret_cast<void*>(LLVMAulPFuncCall));
-
-	// Converting between runtime types
-	FunctionType *vct = FunctionType::get(
-		C4V_Type_LLVM::getVariantVarLLVMType(),
-		std::vector<llvmType*>{
-			C4V_Type_LLVM::getVariantTypeLLVMType(),
-			C4V_Type_LLVM::getVariantVarLLVMType(),
-			C4V_Type_LLVM::getVariantTypeLLVMType()
-		},false
-	);
-	LLVMEngineValueConversionFunc = checkCompile(llvmFunction::Create(vct, llvmFunction::ExternalLinkage, LLVM_VARTYPE_CONV, mod));
-	executionengine->addGlobalMapping(LLVMEngineValueConversionFunc, reinterpret_cast<void*>(InternalValueConversionFunc));
+	LLVMEngineFunctionCallByPFunc = RegisterEngineFunction(LLVMAulPFuncCall, ".LLVMAulPFuncCall", mod, executionengine); // Calling engine functions
+	LLVMEngineValueConversionFunc = RegisterEngineFunction(InternalValueConversionFunc, ".LLVMVarTypeConv", mod, executionengine); // Converting between runtime types
 
 	// Declarations for script functions
-	for(const auto& func: ::ScriptEngine.FuncLookUp) {
+	for (const auto& func: ::ScriptEngine.FuncLookUp) {
 		C4AulScriptFunc *sf = func->SFunc();
 		if(!sf)
 			continue;
@@ -1091,7 +1070,7 @@ void C4AulCompiler::CodegenAstVisitor::FnDecls() {
 		sf->llvmFunc = checkCompile(llvmFunction::Create(ft, llvmFunction::PrivateLinkage, func->GetName(), mod));
 		int i = 0;
 		for (llvmFunction::arg_iterator argit = sf->llvmFunc->arg_begin(); i < sf->ParNamed.iSize; ++argit, ++i) {
-			argit->setName(sf->ParNamed.GetItemUnsafe(i));
+			argit->setName(std::string(sf->ParNamed.GetItemUnsafe(i)) + ".par");
 		}
 
 		//also add a delegate with simple parameter types for easy external calls
@@ -1099,7 +1078,7 @@ void C4AulCompiler::CodegenAstVisitor::FnDecls() {
 			llvm::PointerType::getUnqual(C4V_Type_LLVM::getVariantTypeLLVMType()),
 			llvm::PointerType::getUnqual(C4V_Type_LLVM::getVariantVarLLVMType())
 		},false);
-		sf->llvmDelegate = checkCompile(llvmFunction::Create(dft, llvmFunction::ExternalLinkage, std::string(func->GetName()) + "$delegate", mod));
+		sf->llvmDelegate = checkCompile(llvmFunction::Create(dft, llvmFunction::ExternalLinkage, std::string(func->GetName()) + ".delegate", mod));
 		m_builder = make_unique<IRBuilder<>>(getGlobalContext());
 		SetInsertPoint(CreateBlock(sf->llvmDelegate));
 		std::vector<llvmValue*> delegate_args;
