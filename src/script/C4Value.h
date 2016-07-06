@@ -201,6 +201,9 @@ public:
 	static inline constexpr bool IsNullableType(C4V_Type Type)
 	{ return Type == C4V_Int || Type == C4V_Bool; }
 
+
+	// TODO: This was not originally public, and I have no idea why
+	void Set(C4V_Data nData, C4V_Type nType);
 private:
 	// data
 	C4V_Data Data;
@@ -210,8 +213,6 @@ private:
 
 	// data type
 	C4V_Type Type;
-
-	void Set(C4V_Data nData, C4V_Type nType);
 
 	void AddDataRef();
 	void DelDataRef(C4V_Data Data, C4V_Type Type, C4Value *pNextRef);

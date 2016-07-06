@@ -562,8 +562,25 @@ C4AulCompiler::CodegenAstVisitor::AulVariable::AulVariable(std::string name, ::a
 
 extern "C" {
 	C4V_Data InternalValueConversionFunc(C4V_Type current_tt, C4V_Data data, C4V_Type dst_tt) {
-		// TODO: do something sensible (including throwing a proper RuntimeError, if necessary)
-		throw "Type conversion not implemented yet";
+		// TODO: This function wants more parameters: Whether the conversion is happening for a parameter,
+		// and the necessary information to generate a proper script error
+		C4Value orig;
+		orig.Set(data, current_tt);
+		if (!orig.CheckConversion(C4V_PropList))
+			throw C4AulExecError(FormatString("runtime type conversion error: %s -> %s", orig.GetTypeName(), GetC4VName(dst_tt)).getData());
+		switch (dst_tt) {
+			case C4V_Nil: return { 0 }; // Why would this be called? :/ Also, the actual value should not matter…
+			case C4V_Int: return C4Value(orig.getInt()).GetData();
+			case C4V_Bool: return C4Value(orig.getBool()).GetData();
+			// TODO: Properly test the following and make sure everything is fine, including memleaks, etc.
+			case C4V_Object: return C4Value(orig.getObj()).GetData();
+			case C4V_Def: return C4Value(orig.getDef()).GetData();
+			case C4V_PropList: return C4Value(orig.getPropList()).GetData();
+			case C4V_String: return C4Value(orig.getStr()).GetData();
+			case C4V_Array: return C4Value(orig.getArray()).GetData();
+			case C4V_Function: return C4Value(orig.getFunction()).GetData();
+			default: assert(!"TODO: Not gonna happen?");
+		}
 	}
 }
 
@@ -1029,14 +1046,8 @@ extern "C" {
 		C4AulFunc *func = reinterpret_cast<C4AulFunc *>(func_i8);
 
 		C4Value pars[C4AUL_MAX_Par];
-		for(uint32_t i = 0; i < std::max<uint32_t>(par_count, func->GetParCount()); ++i) {
-			switch (types[i]) {
-				case C4V_Nil: pars[i].Set0(); break;
-				case C4V_Int: pars[i].SetInt(data[i].Int); break;
-				case C4V_Bool: pars[i].SetBool(data[i].Int); break;
-				default: assert(!"TODO");
-			}
-		}
+		for(uint32_t i = 0; i < std::max<uint32_t>(par_count, func->GetParCount()); ++i)
+			pars[i].Set(data[i], types[i]);
 		C4Value rv = func->Exec(nullptr /* TODO: Context. */, pars, false);
 		types[0] = rv.GetType();
 		data[0] = rv.GetData();

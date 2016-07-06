@@ -95,20 +95,15 @@ C4AulBCC * C4AulScriptFunc::GetCode()
 
 C4Value C4AulScriptFunc::Exec(C4PropList * p, C4Value pPars[], bool fPassErrors)
 {
-	C4V_Type  retpar_types[C4AUL_MAX_Par];
+	C4V_Type retpar_types[C4AUL_MAX_Par];
 	C4V_Data retpar_data [C4AUL_MAX_Par];
 	for (int i = 0; i < GetParCount(); i++) {
 		retpar_types[i] = pPars[i].GetType();
 		retpar_data [i] = pPars[i].GetData();
 	}
-	// TODO: Catch errors of fPassErrors
+	// TODO: Catch errors on fPassErrors
 	llvmImpl(retpar_types, retpar_data);
 	C4Value rv;
-	switch (retpar_types[0]) {
-		case C4V_Nil: rv.Set0(); break;
-		case C4V_Int: rv.SetInt(retpar_data[0].Int);
-		case C4V_Bool: rv.SetBool(retpar_data[0].Int);
-		default: assert(!"TODO");
-	}
+	rv.Set(retpar_data[0], retpar_types[0]);
 	return rv;
 }
