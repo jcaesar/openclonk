@@ -14,6 +14,16 @@
  * for the above references.
  */
 
+/* Design notes:
+ 1. Passing structs or similar around between C++ and LLVM-generated code was troublesome on tests (even packed).
+    Therefore, parameters are passed as two (pointers to) arrays, one of C4V_Type, the other of C4V_Value.
+	Storing the return value in element 0 of those arrays suggested itself.
+ 2. Dealing with refcounting for ValueArray and friends would be annoying from within LLVM.
+	Deletions can instead be done at the end of a tick.
+    Therefore, C4RefCnt'ed objects shall not be stored in LLVM values that survive ticks. (global constants, etc.)
+	(Alternatively, refcounting would have to be done for those.)
+ */
+
 #include "C4Include.h"
 #include "script/C4AulCompiler.h"
 
@@ -940,6 +950,7 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::CallExpr *n)
 
 	if (n->context)
 		n->context->accept(this);
+		// TODO
 	for (const auto &arg : n->args) {
 		arg->accept(this);
 		assert(tmp_expr);

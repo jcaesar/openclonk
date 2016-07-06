@@ -86,6 +86,7 @@ void C4AulScriptEngine::Clear()
 	GlobalNamed.SetNameList(&GlobalNamedNames);
 	delete pGlobalEffects; pGlobalEffects=NULL;
 	UserFiles.clear();
+	C4RefCnt::DoDeletions(C4RefCnt::DoDeletionsPassKey());
 }
 
 void C4AulScriptEngine::RegisterGlobalConstant(const char *szName, const C4Value &rValue)

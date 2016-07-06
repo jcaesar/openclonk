@@ -18,17 +18,30 @@
 #ifndef C4STRINGTABLE_H
 #define C4STRINGTABLE_H
 
+#include <unordered_set>
+
 class C4RefCnt
 {
 public:
+	class DoDeletionsPassKey {
+	private:
+		DoDeletionsPassKey() {}
+		friend class C4AulScriptEngine;
+	};
+
 	C4RefCnt(): RefCnt(0) {}
 	virtual ~C4RefCnt() {}
 	// Add/Remove Reference
 	void IncRef() { RefCnt++; }
-	void DecRef() { if (!--RefCnt) delete this; }
+	void DecRef() { if (!--RefCnt) MarkForDeletion(); }
+	static void DoDeletions(DoDeletionsPassKey) { DoDeletions(); } // Only call when no non-refcounted pointers are around. TODO: Call from all the right places!
 protected:
 	// Reference counter
 	unsigned int RefCnt;
+private:
+	void MarkForDeletion() { DeletionMarkers.insert(this); }
+	static void DoDeletions();
+	static std::unordered_set<C4RefCnt*> DeletionMarkers;
 };
 
 class C4String: public C4RefCnt

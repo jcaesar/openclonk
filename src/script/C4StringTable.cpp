@@ -18,6 +18,18 @@
 #include "C4Include.h"
 #include "script/C4StringTable.h"
 
+// *** C4RefCnt
+std::unordered_set<C4RefCnt*> C4RefCnt::DeletionMarkers;
+void C4RefCnt::DoDeletions() {
+	if (DeletionMarkers.size() == 0)
+		return;
+	std::unordered_set<C4RefCnt*> deletions(move(DeletionMarkers));
+	DeletionMarkers.clear();
+	for (auto obj: deletions)
+		if (!obj->RefCnt)
+			delete obj;
+	DoDeletions(); // Deleting the marked objects may have marked more objects
+}
 
 // *** C4Set
 template<> template<>
