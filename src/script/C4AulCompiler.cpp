@@ -14,14 +14,22 @@
  * for the above references.
  */
 
-/* Design notes:
+/*
+
+Implementation notes:
+
  1. Passing structs or similar around between C++ and LLVM-generated code was troublesome on tests (even packed).
     Therefore, parameters are passed as two (pointers to) arrays, one of C4V_Type, the other of C4V_Value.
 	Storing the return value in element 0 of those arrays suggested itself.
+
+	Some care has to be taken when filling those arrays. After starting to fill the arrays, no other code generation should be invoked.
+	This is because even calls like getVariant might start to generate code, which might want to use the parameter_array(s).
+
  2. Dealing with refcounting for ValueArray and friends would be annoying from within LLVM.
 	Deletions can instead be done at the end of a tick.
     Therefore, C4RefCnt'ed objects shall not be stored in LLVM values that survive ticks. (global constants, etc.)
 	(Alternatively, refcounting would have to be done for those.)
+
  */
 
 #include "C4Include.h"
@@ -345,6 +353,7 @@ namespace C4V_Type_LLVM {
 			case C4V_String:
 			case C4V_Array:
 			case C4V_Function:
+				return getVariantVarLLVMType();
 			case C4V_Any:
 				return getVariantType();
 			default:
@@ -387,6 +396,7 @@ private:
 
 	public:
 		C4CompiledValue(const C4V_Type &valType, llvmValue *llvmVal, const ::aul::ast::Node *n, const CodegenAstVisitor *compiler);
+		C4V_Type getType() const { return valType; }
 		llvmValue *getInt() const;
 		llvmValue *getBool() const;
 		llvmValue *getString() const;
@@ -413,9 +423,15 @@ private:
 	unique_ptr<FunctionPassManager> funcpassmgr;
 	unique_ptr<IRBuilder<>> m_builder;
 
-	// TODO: If there are more declarations like these, out-source them in a namespace or whatnot.
-	llvmFunction *LLVMEngineFunctionCallByPFunc;
-	llvmFunction *LLVMEngineValueConversionFunc;
+	llvmFunction *efunc_CallByPFunc;
+	llvmFunction *efunc_ValueConversionFunc;
+	llvmFunction *efunc_CreateValueArray;
+	llvmFunction *efunc_GetArrayIndex;
+	llvmFunction *efunc_GetArraySlice;
+	llvmFunction *efunc_GetStructIndex;
+	llvmFunction *efunc_SetArrayIndex;
+	llvmFunction *efunc_SetArraySlice;
+	llvmFunction *efunc_SetStructIndex;
 	unique_ptr<C4CompiledValue> tmp_expr; // result from recursive expression code generation
 	std::array<llvmValue*,C4V_Type_LLVM::variant_member_count> parameter_array;
 
@@ -446,15 +462,15 @@ public:
 	//virtual void visit(const ::aul::ast::StringLit *n) override;
 	virtual void visit(const ::aul::ast::IntLit *n) override;
 	virtual void visit(const ::aul::ast::BoolLit *n) override;
-	//virtual void visit(const ::aul::ast::ArrayLit *n) override;
+	virtual void visit(const ::aul::ast::ArrayLit *n) override;
 	//virtual void visit(const ::aul::ast::ProplistLit *n) override;
 	//virtual void visit(const ::aul::ast::NilLit *n) override;
 	//virtual void visit(const ::aul::ast::ThisLit *n) override;
 	//virtual void visit(const ::aul::ast::VarExpr *n) override;
 	virtual void visit(const ::aul::ast::UnOpExpr *n) override;
 	virtual void visit(const ::aul::ast::BinOpExpr *n) override;
-	//virtual void visit(const ::aul::ast::SubscriptExpr *n) override;
-	//virtual void visit(const ::aul::ast::SliceExpr *n) override;
+	virtual void visit(const ::aul::ast::SubscriptExpr *n) override;
+	virtual void visit(const ::aul::ast::SliceExpr *n) override;
 	virtual void visit(const ::aul::ast::CallExpr *n) override;
 	//virtual void visit(const ::aul::ast::ParExpr *n) override;
 	//virtual void visit(const ::aul::ast::Block *n) override;
@@ -616,7 +632,7 @@ llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompiledValue::getInt() const
 			// Yay, we need to pack the struct…
 			auto unpacked = compiler->UnpackValue(llvmVal);
 			static_assert(unpacked.size() == 2, "Next call needs all args.");
-			llvmValue* convd = compiler->checkCompile(bld.CreateCall(compiler->LLVMEngineValueConversionFunc, std::vector<llvmValue*>{unpacked[0], unpacked[1], inttt}));
+			llvmValue* convd = compiler->checkCompile(bld.CreateCall(compiler->efunc_ValueConversionFunc, std::vector<llvmValue*>{unpacked[0], unpacked[1], inttt}));
 			bld.CreateBr(cont);
 			compiler->SetInsertPoint(cont);
 			llvm::PHINode *pn = bld.CreatePHI(C4V_Type_LLVM::getVariantVarLLVMType(), 2);
@@ -684,8 +700,13 @@ llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompiledValue::getVariant() const
 			return C4V_Type_LLVM::defaultVariant(C4V_Nil); // Don't care about the value part
 		case C4V_Any:
 			return llvmVal;
+		case C4V_Array:
+		case C4V_String:
+		case C4V_PropList:
+			return compiler->m_builder->CreateInsertValue(C4V_Type_LLVM::defaultVariant(valType),
+				llvmVal, {1});
 		default:
-			assert(!"Everything can be converted to variant");
+			assert(!"Everything can be converted to variant"); // TODO
 			throw compiler->Error(n, "Internal error: Could not convert value to generic!");
 	}
 }
@@ -738,6 +759,22 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::BoolLit *n)
 	fprintf(stderr, "compiling %s\n", n->value ? "True":"False");
 
 	tmp_expr = make_unique<C4CompiledValue>(C4V_Bool, buildBool(n->value), n, this);
+}
+
+void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::ArrayLit *n)
+{
+	llvmValue* array = m_builder->CreateCall(efunc_CreateValueArray, { buildInt(n->values.size()) });
+	int32_t idx = 0;
+	for (auto& val: n->values) {
+		val->accept(this);
+		assert(tmp_expr);
+		auto params = std::vector<llvmValue*>{array, buildInt(idx)};
+		auto unpacked = UnpackValue(tmp_expr->getVariant());
+		params.insert(params.end(), unpacked.begin(), unpacked.end());
+		m_builder->CreateCall(efunc_SetArrayIndex, params);
+		idx++;
+	}
+	tmp_expr = make_unique<C4CompiledValue>(C4V_Array, array, n, this);
 }
 
 void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::UnOpExpr *n)
@@ -857,6 +894,59 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::BinOpExpr *n)
 		}
 		default: /* silence warning. TODO */ break;
 	}
+}
+
+void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::SubscriptExpr *n)
+{
+	// For now, it's fine to always execute the code generated here, even if the subscript is used as a setter.
+	// However, at some point, I would like to subclass C4CompiledValue to something that only generates the code if the result is actually used and also already converts the type as necessary.
+	// This might also be the solution to the LValue-Problem: That subclass could have a store-method.
+
+	n->object->accept(this);
+	auto object = move(tmp_expr); assert(object);
+	n->index->accept(this);
+	auto index = move(tmp_expr); assert(index);
+
+	std::vector<llvmValue*> args;
+	assert(!C4Value(42).CheckConversion(C4V_String)); // Int is not automatically converted to string, so if the index is an int, the object must be an array.
+	bool use_array_access_fastpath;
+	if (object->getType() == C4V_Array || index->getType() == C4V_Int)
+	{
+		use_array_access_fastpath = true;
+		args.push_back(object->getArray());
+		args.push_back(index->getInt());
+	}
+	else
+	{
+		use_array_access_fastpath = false;
+		for(auto upv: UnpackValue(object->getVariant()))
+			args.push_back(upv);
+		for(auto upv: UnpackValue(index->getVariant()))
+			args.push_back(upv);
+	}
+	static_assert(C4V_Type_LLVM::variant_member_count == 2, "Next call needs type array to be parameter_array[0].");
+	llvmValue* rettp = m_builder->CreateGEP(parameter_array[0], std::vector<llvmValue*>{buildInt(0), buildInt(0)});
+	args.push_back(rettp);
+	llvmValue* retd = m_builder->CreateCall(use_array_access_fastpath ? efunc_GetArrayIndex : efunc_GetStructIndex, args);
+	llvmValue* rett = m_builder->CreateLoad(rettp);
+	tmp_expr = PackVariant({rett, retd}, n);
+}
+
+void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::SliceExpr *n)
+{
+	// Remark: Similar r/lvalue trouble to Subscript
+
+	n->object->accept(this);
+	auto object = move(tmp_expr); assert(object);
+	n->start->accept(this);
+	auto start = move(tmp_expr); assert(start);
+	n->end->accept(this);
+	auto end = move(tmp_expr); assert(end);
+	auto crv = m_builder->CreateCall(
+		efunc_GetArraySlice,
+		std::vector<llvmValue*>{object->getArray(), start->getInt(), end->getInt()}
+	);
+	tmp_expr = make_unique<C4CompiledValue>(C4V_Array, crv, n, this);
 }
 
 void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::FunctionDecl *n)
@@ -1014,17 +1104,21 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::CallExpr *n)
 			constLLVMPointer(callee), // TODO: Create named constants or annotate in some other way to ease reading the IR a bit…
 			ConstantInt::get(getGlobalContext(), APInt(32, arg_vals.size(), false))
 		};
-		for(auto pa: parameter_array)
+		for (auto pa: parameter_array)
 			llvm_args.push_back(m_builder->CreateGEP(pa, std::vector<llvmValue*>{buildInt(0), buildInt(0)}));
-		//llvm_args.insert(llvm_args.end(), parameter_array.begin(), parameter_array.end());
-		for(size_t i = 0; i < arg_vals.size(); ++i) {
-			auto unpacked = UnpackValue(arg_vals[i]->getVariant());
-			for(size_t j = 0; j < unpacked.size(); ++j) {
+		std::vector<C4V_Type_LLVM::UnpackedVariant> unpackeds;
+		// getVariant may generate code, which in turn might use the parameter_array(s). Thus, unpack first and then write into those. (This might lead to very ugly bugs.)
+		for (auto& arg_val: arg_vals)
+			unpackeds.push_back(UnpackValue(arg_val->getVariant()));
+		for (size_t i = 0; i < unpackeds.size(); ++i)
+		{
+			for(size_t j = 0; j < unpackeds[i].size(); ++j)
+			{
 				llvmValue* ep = m_builder->CreateGEP(parameter_array[j], std::vector<llvmValue*>{buildInt(0), buildInt(i)});
-				m_builder->CreateStore(unpacked[j], ep);
+				m_builder->CreateStore(unpackeds[i][j], ep);
 			}
 		}
-		checkCompile(m_builder->CreateCall(LLVMEngineFunctionCallByPFunc, llvm_args));
+		checkCompile(m_builder->CreateCall(efunc_CallByPFunc, llvm_args));
 		// I'm assuming that Fn->GetRetType() is C4V_Any. If this wasn't the case, we might want to do something more efficient (similarly above).
 		C4V_Type_LLVM::UnpackedVariant upret;
 		for (size_t j = 0; j < upret.size(); j++) {
@@ -1033,7 +1127,7 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::CallExpr *n)
 		}
 		tmp_expr = PackVariant(upret, n);
 	}
-	assert(tmp_expr); // TODO: Once we have all return values…
+	assert(tmp_expr);
 
 }
 
@@ -1048,7 +1142,24 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::Return *n)
 	SetInsertPoint(CreateBlock());
 }
 
-// TODO: Right place for this?
+// TODO: Right place for these?
+C4V_Type CheckArrayAccess(C4Value& Structure, C4Value& Index)
+{
+	if (Structure.CheckConversion(C4V_Array))
+	{
+		if (!Index.CheckConversion(C4V_Int))
+			throw C4AulExecError(FormatString("array access: index of type %s, but expected int", Index.GetTypeName()).getData());
+		return C4V_Array;
+	}
+	else if (Structure.CheckConversion(C4V_PropList))
+	{
+		if (!Index.CheckConversion(C4V_String))
+			throw C4AulExecError(FormatString("proplist access: index of type %s, but expected string", Index.GetTypeName()).getData());
+		return C4V_PropList;
+	}
+	else
+		throw C4AulExecError(FormatString("can't access %s as array or proplist", Structure.GetTypeName()).getData());
+}
 extern "C" {
 	void LLVMAulPFuncCall(uint8_t * func_i8, uint32_t par_count, C4V_Type* types, C4V_Data* data)
 	{
@@ -1062,12 +1173,90 @@ extern "C" {
 		data[0] = rv.GetData();
 	}
 
+	C4V_Data LLVMAulCreateValueArray(int32_t reserved_size)
+	{
+		C4Value rvh;
+		rvh.SetArray(new C4ValueArray(reserved_size));
+		assert(rvh.GetType() == C4V_Array);
+		return rvh.GetData();
+	}
+
+	void LLVMAulSetStructElement(C4V_Type ct, C4V_Data cd, C4V_Type it, C4V_Data id, C4V_Type dt, C4V_Data dd)
+	{
+		C4Value c; c.Set(cd, ct);
+		C4Value i; i.Set(id, it);
+		C4Value v; v.Set(dd, dt);
+		C4V_Type acc_type = CheckArrayAccess(c, i);
+		switch (acc_type) {
+			case C4V_Array: c.getArray()->SetItem(i.getInt(), v); break;
+			case C4V_PropList: {
+				C4PropList *pPropList = c.getPropList();
+				if (pPropList->IsFrozen())
+					throw C4AulExecError("proplist write: proplist is readonly");
+				pPropList->SetPropertyByS(i.getStr(), v);
+				break;
+			}
+			default: assert(!"reachable");
+		}
+	}
+	void LLVMAulSetArrayElement(C4V_Data array, int32_t idx, C4V_Type dt, C4V_Data dd)
+	{
+		C4Value v;
+		v.Set(dd, dt);
+		array.Array->SetItem(idx, v);
+	}
+	void LLVMAulSetArraySlice(C4V_Data array_dst, int32_t idx1, int32_t idx2, C4V_Type srct, C4V_Data srcd) {
+		C4Value dst; dst.Set(array_dst, C4V_Array);
+		C4Value src; src.Set(srcd, srct);
+		dst.getArray()->SetSlice(idx1, idx2, src);
+	}
+
+	C4V_Data LLVMAulGetArrayElement(C4V_Data array, int32_t idx, C4V_Type* tret)
+	{
+		const C4Value& rvh = array.Array->GetItem(idx);
+		*tret = rvh.GetType();
+		return rvh.GetData();
+	}
+	C4V_Data LLVMAulGetStructElement(C4V_Type ct, C4V_Data cd, C4V_Type it, C4V_Data id, C4V_Type* tret)
+	{
+		C4Value c; c.Set(cd, ct);
+		C4Value i; i.Set(id, it);
+		C4Value v;
+		C4V_Type acc_type = CheckArrayAccess(c, i);
+		switch (acc_type) {
+			case C4V_Array: v = c.getArray()->GetItem(i.getInt()); break;
+			case C4V_PropList: {
+				C4PropList *pPropList = c.getPropList();
+				if (!pPropList->GetPropertyByS(i.getStr(), &v))
+					v.Set0();
+				break;
+			}
+			default: assert(!"reachable");
+		}
+		*tret = v.GetType();
+		return v.GetData();
+	}
+	C4V_Data LLVMAulGetArraySlice(C4V_Data array, int32_t idx1, int32_t idx2)
+	{
+		C4Value rethlp;
+		rethlp.SetArray(array.Array->GetSlice(idx1, idx2));
+		return rethlp.GetData();
+	}
 }
 
 void C4AulCompiler::CodegenAstVisitor::FnDecls() {
-	auto llvmvoid = llvmType::getVoidTy(getGlobalContext());
-	LLVMEngineFunctionCallByPFunc = RegisterEngineFunction(LLVMAulPFuncCall, ".LLVMAulPFuncCall", mod, executionengine); // Calling engine functions
-	LLVMEngineValueConversionFunc = RegisterEngineFunction(InternalValueConversionFunc, ".LLVMVarTypeConv", mod, executionengine); // Converting between runtime types
+	efunc_CallByPFunc = RegisterEngineFunction(LLVMAulPFuncCall, ".LLVMAulPFuncCall", mod, executionengine); // Calling engine functions
+	efunc_ValueConversionFunc = RegisterEngineFunction(InternalValueConversionFunc, ".LLVMVarTypeConv", mod, executionengine); // Converting between runtime types
+	efunc_CreateValueArray = RegisterEngineFunction(LLVMAulCreateValueArray, ".CreateArray", mod, executionengine);
+	efunc_GetArrayIndex = RegisterEngineFunction(LLVMAulGetArrayElement, ".GetArrayIndex", mod, executionengine);
+	efunc_GetArrayIndex->addFnAttr(llvm::Attribute::ReadOnly);
+	efunc_GetArraySlice = RegisterEngineFunction(LLVMAulGetArraySlice, ".GetArraySlice", mod, executionengine);
+	efunc_GetArraySlice->addFnAttr(llvm::Attribute::ReadOnly);
+	efunc_GetStructIndex = RegisterEngineFunction(LLVMAulGetStructElement, ".GetStructIndex", mod, executionengine);
+	efunc_GetStructIndex->addFnAttr(llvm::Attribute::ReadOnly);
+	efunc_SetArrayIndex = RegisterEngineFunction(LLVMAulSetArrayElement, ".SetArrayIndex", mod, executionengine);
+	efunc_SetArraySlice = RegisterEngineFunction(LLVMAulSetArraySlice, ".SetArraySlice", mod, executionengine);
+	efunc_SetStructIndex = RegisterEngineFunction(LLVMAulSetStructElement, ".SetStructIndex", mod, executionengine);
 
 	// Declarations for script functions
 	for (const auto& func: ::ScriptEngine.FuncLookUp) {
@@ -1085,7 +1274,7 @@ void C4AulCompiler::CodegenAstVisitor::FnDecls() {
 		}
 
 		//also add a delegate with simple parameter types for easy external calls
-		FunctionType *dft = FunctionType::get(llvmvoid, std::vector<llvmType*>{
+		FunctionType *dft = FunctionType::get(llvmType::getVoidTy(getGlobalContext()), std::vector<llvmType*>{
 			llvm::PointerType::getUnqual(C4V_Type_LLVM::getVariantTypeLLVMType()),
 			llvm::PointerType::getUnqual(C4V_Type_LLVM::getVariantVarLLVMType())
 		},false);
