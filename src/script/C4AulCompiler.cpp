@@ -1119,7 +1119,7 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::CallExpr *n)
 		// getVariant may generate code, which in turn might use the parameter_array(s). Thus, unpack first and then write into those. (This might lead to very ugly bugs.)
 		for (auto& arg_val: arg_vals)
 			unpackeds.push_back(UnpackValue(arg_val->getVariant()));
-		for (size_t i = 0; i < unpackeds.size(); ++i)
+		for (size_t i = 0; i < std::min<size_t>(unpackeds.size(), callee->GetParCount()); ++i)
 		{
 			for(size_t j = 0; j < unpackeds[i].size(); ++j)
 			{
