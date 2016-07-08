@@ -38,15 +38,14 @@ void InitializeC4Script()
 	FixedRandom(time(NULL));
 }
 
-C4Value RunLoadedC4Script()
+void RunLoadedC4Script()
 {
 	// Link script engine (resolve includes/appends, generate code)
 	ScriptEngine.Link(NULL);
 
-	C4Value result = GameScript.Call("Main");
+	GameScript.Call("Main");
 	GameScript.Clear();
 	ScriptEngine.Clear();
-	return result;
 }
 
 int c4s_runfile(const char * filename)

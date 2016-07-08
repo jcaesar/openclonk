@@ -458,8 +458,8 @@ public:
 	virtual ~CodegenAstVisitor() {}
 
 	using DefaultRecursiveVisitor::visit;
-	//virtual void visit(const ::aul::ast::Noop *) override;
-	//virtual void visit(const ::aul::ast::StringLit *n) override;
+	virtual void visit(const ::aul::ast::Noop *) override {}
+	virtual void visit(const ::aul::ast::StringLit *n) override;
 	virtual void visit(const ::aul::ast::IntLit *n) override;
 	virtual void visit(const ::aul::ast::BoolLit *n) override;
 	virtual void visit(const ::aul::ast::ArrayLit *n) override;
@@ -703,6 +703,7 @@ llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompiledValue::getVariant() const
 		case C4V_Array:
 		case C4V_String:
 		case C4V_PropList:
+		case C4V_Function:
 			return compiler->m_builder->CreateInsertValue(C4V_Type_LLVM::defaultVariant(valType),
 				llvmVal, {1});
 		default:
@@ -745,6 +746,15 @@ void C4AulCompiler::CodegenAstVisitor::init()
 	executionengine->addModule(mod);
 
 	FnDecls();
+}
+
+void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::StringLit *n)
+{
+	C4String* str = ::Strings.RegString(n->value.c_str());
+	auto str_ptr = llvm::ConstantInt::get(getGlobalContext(),
+		APInt(C4V_Type_LLVM::getVariantVarSize(), reinterpret_cast<intptr_t>(str), false));
+	tmp_expr = make_unique<C4CompiledValue>(C4V_String, str_ptr, n, this);
+	// TODO: We might need some magic to ensure that this is not deleted early / properly deleted
 }
 
 void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::IntLit *n)
@@ -1081,7 +1091,6 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::CallExpr *n)
 	else
 		throw Error(n, "Call to '%s': context (->) not supported yet.", cname);
 
-	assert(!tmp_expr);
 	C4AulScriptFunc *sf = callee->SFunc();
 	if (sf)
 	{
@@ -1166,7 +1175,7 @@ extern "C" {
 		C4AulFunc *func = reinterpret_cast<C4AulFunc *>(func_i8);
 
 		C4Value pars[C4AUL_MAX_Par];
-		for(uint32_t i = 0; i < std::max<uint32_t>(par_count, func->GetParCount()); ++i)
+		for(uint32_t i = 0; i < std::min<uint32_t>(par_count, func->GetParCount()); ++i)
 			pars[i].Set(data[i], types[i]);
 		C4Value rv = func->Exec(nullptr /* TODO: Context. */, pars, false);
 		types[0] = rv.GetType();
