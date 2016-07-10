@@ -42,6 +42,7 @@ Implementation notes:
 #include "script/C4AulScriptFunc.h"
 #include "script/C4ScriptHost.h"
 #include "script/C4LLVMTypeMagic.h"
+#include "script/C4ValueMagic.h"
 
 #define C4AUL_Inherited     "inherited"
 #define C4AUL_SafeInherited "_inherited"
@@ -426,6 +427,7 @@ private:
 	llvmFunction *efunc_CallByPFunc;
 	llvmFunction *efunc_ValueConversionFunc;
 	llvmFunction *efunc_CreateValueArray;
+	llvmFunction *efunc_CreateProplist;
 	llvmFunction *efunc_GetArrayIndex;
 	llvmFunction *efunc_GetArraySlice;
 	llvmFunction *efunc_GetStructIndex;
@@ -463,7 +465,7 @@ public:
 	virtual void visit(const ::aul::ast::IntLit *n) override;
 	virtual void visit(const ::aul::ast::BoolLit *n) override;
 	virtual void visit(const ::aul::ast::ArrayLit *n) override;
-	//virtual void visit(const ::aul::ast::ProplistLit *n) override;
+	virtual void visit(const ::aul::ast::ProplistLit *n) override;
 	//virtual void visit(const ::aul::ast::NilLit *n) override;
 	//virtual void visit(const ::aul::ast::ThisLit *n) override;
 	//virtual void visit(const ::aul::ast::VarExpr *n) override;
@@ -517,6 +519,12 @@ private:
 	}
 	llvmValue* buildBool(bool b) const {
 		return llvm::ConstantInt::get(getGlobalContext(), APInt(1, (int) b, true));
+	}
+	llvmValue* buildString(const char* c) const {
+		C4String* str = ::Strings.RegString(c);
+		return llvm::ConstantInt::get(getGlobalContext(),
+			APInt(C4V_Type_LLVM::getVariantVarSize(), reinterpret_cast<intptr_t>(str), false));
+		// TODO: We might need some magic to ensure that this is not deleted early / properly deleted
 	}
 	BasicBlock* CreateBlock(llvmFunction* parent = nullptr) const { assert((m_builder && CurrentBlock()) || parent); return BasicBlock::Create(getGlobalContext(), "anon", parent ? parent : CurrentBlock()->getParent()); }
 	BasicBlock* CurrentBlock() const { return m_builder->GetInsertBlock(); }
@@ -592,23 +600,25 @@ extern "C" {
 	C4V_Data InternalValueConversionFunc(C4V_Type current_tt, C4V_Data data, C4V_Type dst_tt) {
 		// TODO: This function wants more parameters: Whether the conversion is happening for a parameter,
 		// and the necessary information to generate a proper script error
-		C4Value orig;
-		orig.Set(data, current_tt);
-		if (!orig.CheckConversion(C4V_PropList))
+		C4Value orig = AulLLVMToC4Value(current_tt, data);
+		C4Value ret;
+		if (!orig.CheckConversion(dst_tt))
 			throw C4AulExecError(FormatString("runtime type conversion error: %s -> %s", orig.GetTypeName(), GetC4VName(dst_tt)).getData());
 		switch (dst_tt) {
-			case C4V_Nil: return { 0 }; // Why would this be called? :/ Also, the actual value should not matter…
-			case C4V_Int: return C4Value(orig.getInt()).GetData();
-			case C4V_Bool: return C4Value(orig.getBool()).GetData();
+			case C4V_Nil: ret.Set0(); // Why would this be called? :/
+			case C4V_Int: ret = C4Value(orig.getInt()); break;
+			case C4V_Bool: ret = C4Value(orig.getBool()); break;
 			// TODO: Properly test the following and make sure everything is fine, including memleaks, etc.
-			case C4V_Object: return C4Value(orig.getObj()).GetData();
-			case C4V_Def: return C4Value(orig.getDef()).GetData();
-			case C4V_PropList: return C4Value(orig.getPropList()).GetData();
-			case C4V_String: return C4Value(orig.getStr()).GetData();
-			case C4V_Array: return C4Value(orig.getArray()).GetData();
-			case C4V_Function: return C4Value(orig.getFunction()).GetData();
+			case C4V_Object: ret = C4Value(orig.getObj()); break;
+			case C4V_Def: ret = C4Value(orig.getDef()); break;
+			case C4V_PropList: ret = C4Value(orig.getPropList()); break;
+			case C4V_String: ret = C4Value(orig.getStr()); break;
+			case C4V_Array: ret = C4Value(orig.getArray()); break;
+			case C4V_Function: ret = C4Value(orig.getFunction()); break;
 			default: assert(!"TODO: Not gonna happen?");
 		}
+		assert(ret.GetType() == dst_tt);
+		return C4ValueToAulLLVM(ret).second;
 	}
 }
 
@@ -737,12 +747,12 @@ void C4AulCompiler::CodegenAstVisitor::init()
 	funcpassmgr->add(new llvm::DataLayoutPass(mod));
 	funcpassmgr->add(llvm::createBasicAliasAnalysisPass());
 	funcpassmgr->add(llvm::createInstructionCombiningPass());
-	funcpassmgr->add(llvm::createReassociatePass());
-	funcpassmgr->add(llvm::createGVNPass());
+	//funcpassmgr->add(llvm::createReassociatePass());
+	//funcpassmgr->add(llvm::createGVNPass());
 	funcpassmgr->add(llvm::createCFGSimplificationPass());
 	funcpassmgr->add(llvm::createDeadStoreEliminationPass());
 	funcpassmgr->add(llvm::createDeadInstEliminationPass());
-	funcpassmgr->add(llvm::createInstructionCombiningPass());
+	//funcpassmgr->add(llvm::createInstructionCombiningPass());
 	funcpassmgr->doInitialization();
 	executionengine->addModule(mod);
 
@@ -751,11 +761,7 @@ void C4AulCompiler::CodegenAstVisitor::init()
 
 void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::StringLit *n)
 {
-	C4String* str = ::Strings.RegString(n->value.c_str());
-	auto str_ptr = llvm::ConstantInt::get(getGlobalContext(),
-		APInt(C4V_Type_LLVM::getVariantVarSize(), reinterpret_cast<intptr_t>(str), false));
-	tmp_expr = make_unique<C4CompiledValue>(C4V_String, str_ptr, n, this);
-	// TODO: We might need some magic to ensure that this is not deleted early / properly deleted
+	tmp_expr = make_unique<C4CompiledValue>(C4V_String, buildString(n->value.c_str()), n, this);
 }
 
 void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::IntLit *n)
@@ -787,6 +793,24 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::ArrayLit *n)
 		idx++;
 	}
 	tmp_expr = make_unique<C4CompiledValue>(C4V_Array, array, n, this);
+}
+void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::ProplistLit *n) {
+	// TODO: Prototypes
+	llvmValue* pl = m_builder->CreateCall(efunc_CreateProplist);
+	for (auto& el: n->values)
+	{
+		llvmValue* key = buildString(el.first.c_str());
+		auto args = std::vector<llvmValue*>{
+			C4V_Type_LLVM::LLVMTypeTag(C4V_PropList), pl,
+			C4V_Type_LLVM::LLVMTypeTag(C4V_String), key };
+		el.second->accept(this);
+		assert(tmp_expr);
+		auto unpacked = UnpackValue(tmp_expr->getVariant());
+		assert(unpacked.size() == 2); // needed above
+		args.insert(args.end(), unpacked.begin(), unpacked.end());
+		m_builder->CreateCall(efunc_SetStructIndex, args);
+	}
+	tmp_expr = make_unique<C4CompiledValue>(C4V_PropList, pl, n, this);
 }
 
 void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::UnOpExpr *n)
@@ -993,11 +1017,11 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::FunctionDecl *n)
 			Fn->SetOverloaded(global_parent);
 	}
 	assert(parameter_array.size() == 2);
-	auto create_pa = [&](size_t idx, llvmType* t) {
-		parameter_array[idx] = m_builder->CreateAlloca(llvm::ArrayType::get(t, C4AUL_MAX_Par));
+	auto create_pa = [&](size_t idx, llvmType* t, const char* tw) {
+		parameter_array[idx] = m_builder->CreateAlloca(llvm::ArrayType::get(t, C4AUL_MAX_Par), nullptr, tw);
 	};
-	create_pa(0, C4V_Type_LLVM::getVariantTypeLLVMType());
-	create_pa(1, C4V_Type_LLVM::getVariantVarLLVMType());
+	create_pa(0, C4V_Type_LLVM::getVariantTypeLLVMType(), "pass_par_types");
+	create_pa(1, C4V_Type_LLVM::getVariantVarLLVMType(), "pass_par_vals");
 	llvmFunction::arg_iterator argit = lf->arg_begin();
 	for (int i = 0; i != Fn->GetParCount(); ++i, ++argit) {
 		std::string vname;
@@ -1171,10 +1195,9 @@ extern "C" {
 
 		C4Value pars[C4AUL_MAX_Par];
 		for(uint32_t i = 0; i < std::min<uint32_t>(par_count, func->GetParCount()); ++i)
-			pars[i].Set(data[i], types[i]);
+			pars[i] = AulLLVMToC4Value(types[i], data[i]);
 		C4Value rv = func->Exec(nullptr /* TODO: Context. */, pars, false);
-		types[0] = rv.GetType();
-		data[0] = rv.GetData();
+		std::tie(types[0], data[0]) = C4ValueToAulLLVM(rv);
 	}
 
 	C4V_Data LLVMAulCreateValueArray(int32_t reserved_size)
@@ -1182,14 +1205,20 @@ extern "C" {
 		C4Value rvh;
 		rvh.SetArray(new C4ValueArray(reserved_size));
 		assert(rvh.GetType() == C4V_Array);
-		return rvh.GetData();
+		return C4ValueToAulLLVM(rvh).second;
+		// Side-effect of pulling the array through C4Value: The refcount is increased and decreased once, putting it into the deletion marker.
+	}
+	C4V_Data LLVMAulCreateProplist()
+	{
+		C4Value rvh;
+		rvh.SetPropList(C4PropList::New());
+		assert(rvh.GetType() == C4V_PropList);
+		return C4ValueToAulLLVM(rvh).second;
 	}
 
 	void LLVMAulSetStructElement(C4V_Type ct, C4V_Data cd, C4V_Type it, C4V_Data id, C4V_Type dt, C4V_Data dd)
 	{
-		C4Value c; c.Set(cd, ct);
-		C4Value i; i.Set(id, it);
-		C4Value v; v.Set(dd, dt);
+		C4Value c = AulLLVMToC4Value(ct, cd), i = AulLLVMToC4Value(it, id), v = AulLLVMToC4Value(dt, dd);
 		C4V_Type acc_type = CheckArrayAccess(c, i);
 		switch (acc_type) {
 			case C4V_Array: c.getArray()->SetItem(i.getInt(), v); break;
@@ -1205,26 +1234,26 @@ extern "C" {
 	}
 	void LLVMAulSetArrayElement(C4V_Data array, int32_t idx, C4V_Type dt, C4V_Data dd)
 	{
-		C4Value v;
-		v.Set(dd, dt);
-		array.Array->SetItem(idx, v);
+		// TODO: 0 checks
+		array.Array->SetItem(idx, AulLLVMToC4Value(dt, dd));
 	}
 	void LLVMAulSetArraySlice(C4V_Data array_dst, int32_t idx1, int32_t idx2, C4V_Type srct, C4V_Data srcd) {
-		C4Value dst; dst.Set(array_dst, C4V_Array);
-		C4Value src; src.Set(srcd, srct);
+		C4Value dst;
+		dst.SetArray(array_dst.Array);
+		C4Value src = AulLLVMToC4Value(srct, srcd);
 		dst.getArray()->SetSlice(idx1, idx2, src);
 	}
 
 	C4V_Data LLVMAulGetArrayElement(C4V_Data array, int32_t idx, C4V_Type* tret)
 	{
-		const C4Value& rvh = array.Array->GetItem(idx);
-		*tret = rvh.GetType();
-		return rvh.GetData();
+		C4V_Data rv;
+		std::tie(*tret, rv) = C4ValueToAulLLVM(array.Array->GetItem(idx));
+		return rv;
 	}
 	C4V_Data LLVMAulGetStructElement(C4V_Type ct, C4V_Data cd, C4V_Type it, C4V_Data id, C4V_Type* tret)
 	{
-		C4Value c; c.Set(cd, ct);
-		C4Value i; i.Set(id, it);
+		C4Value c = AulLLVMToC4Value(ct, cd);
+		C4Value i = AulLLVMToC4Value(it, id);
 		C4Value v;
 		C4V_Type acc_type = CheckArrayAccess(c, i);
 		switch (acc_type) {
@@ -1237,14 +1266,16 @@ extern "C" {
 			}
 			default: assert(!"reachable");
 		}
-		*tret = v.GetType();
-		return v.GetData();
+		C4V_Data rv;
+		std::tie(*tret, rv) = C4ValueToAulLLVM(v);
+		return rv;
 	}
 	C4V_Data LLVMAulGetArraySlice(C4V_Data array, int32_t idx1, int32_t idx2)
 	{
 		C4Value rethlp;
 		rethlp.SetArray(array.Array->GetSlice(idx1, idx2));
-		return rethlp.GetData();
+		assert(rethlp.GetType() == C4V_Array);
+		return C4ValueToAulLLVM(rethlp).second;
 	}
 }
 
@@ -1252,6 +1283,7 @@ void C4AulCompiler::CodegenAstVisitor::FnDecls() {
 	efunc_CallByPFunc = RegisterEngineFunction(LLVMAulPFuncCall, ".LLVMAulPFuncCall", mod, executionengine); // Calling engine functions
 	efunc_ValueConversionFunc = RegisterEngineFunction(InternalValueConversionFunc, ".LLVMVarTypeConv", mod, executionengine); // Converting between runtime types
 	efunc_CreateValueArray = RegisterEngineFunction(LLVMAulCreateValueArray, ".CreateArray", mod, executionengine);
+	efunc_CreateProplist = RegisterEngineFunction(LLVMAulCreateProplist, ".CreatePropList", mod, executionengine);
 	efunc_GetArrayIndex = RegisterEngineFunction(LLVMAulGetArrayElement, ".GetArrayIndex", mod, executionengine);
 	efunc_GetArrayIndex->addFnAttr(llvm::Attribute::ReadOnly);
 	efunc_GetArraySlice = RegisterEngineFunction(LLVMAulGetArraySlice, ".GetArraySlice", mod, executionengine);
@@ -1290,7 +1322,7 @@ void C4AulCompiler::CodegenAstVisitor::FnDecls() {
 			C4V_Type_LLVM::UnpackedVariant upv;
 			auto argit = sf->llvmDelegate->arg_begin();
 			for (size_t j = 0; j < upv.size(); j++, argit++) {
-				llvmValue* ep = m_builder->CreateGEP(argit, std::vector<llvmValue*>{buildInt(i+1)});
+				llvmValue* ep = m_builder->CreateGEP(argit, std::vector<llvmValue*>{buildInt(i)});
 				upv[j] = m_builder->CreateLoad(ep);
 			}
 			delegate_args.push_back(PackVariant(upv)->getValue(sf->GetParType()[i]));

@@ -93,17 +93,15 @@ C4AulBCC * C4AulScriptFunc::GetCode()
 	return &Code[0];
 }
 
+#include "script/C4ValueMagic.h"
+
 C4Value C4AulScriptFunc::Exec(C4PropList * p, C4Value pPars[], bool fPassErrors)
 {
 	C4V_Type retpar_types[C4AUL_MAX_Par];
 	C4V_Data retpar_data [C4AUL_MAX_Par];
-	for (int i = 0; i < GetParCount(); i++) {
-		retpar_types[i] = pPars[i].GetType();
-		retpar_data [i] = pPars[i].GetData();
-	}
+	for (int i = 0; i < GetParCount(); i++)
+		std::tie(retpar_types[i], retpar_data[i]) = C4ValueToAulLLVM(pPars[i]);
 	// TODO: Catch errors on fPassErrors
 	llvmImpl(retpar_types, retpar_data);
-	C4Value rv;
-	rv.Set(retpar_data[0], retpar_types[0]);
-	return rv;
+	return AulLLVMToC4Value(retpar_types[0], retpar_data[0]);
 }
