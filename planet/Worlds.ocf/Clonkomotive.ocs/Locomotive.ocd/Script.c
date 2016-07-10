@@ -139,7 +139,7 @@ private func UpdateFuel()
 private func GetBarrel()
 {
 	for (var barrel in FindObjects(Find_Func("IsBarrel"), Find_Container(this)))
-		if (barrel->GetLiquidFillLevel() > 0)
+		if (barrel->GetLiquidAmount("Water") > 0)
 			return barrel;
 	return;
 }
@@ -208,3 +208,4 @@ local Name = "$Name$";
 local Description = "$Description$";
 local BorderBound = C4D_Border_Sides;
 local ContactCalls = true;
+local Components = {Wood = 1, Metal = 4};

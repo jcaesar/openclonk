@@ -9,6 +9,7 @@
 #include Library_Ownable
 #include Library_Producer
 #include Library_LampPost
+#include Library_Tank
 
 // does not need power
 public func PowerNeed() { return 0; }
@@ -113,6 +114,47 @@ public func OnProductEjection(object product)
 	return;
 }
 
+/*-- Pipeline --*/
+
+func IsLiquidContainerForMaterial(string liquid)
+{
+	return WildcardMatch("Oil", liquid) || WildcardMatch("Water", liquid);
+}
+
+func QueryConnectPipe(object pipe)
+{
+	if (GetNeutralPipe())
+	{
+		pipe->Report("$MsgHasPipes$");
+		return true;
+	}
+
+	if (pipe->IsDrainPipe() || pipe->IsNeutralPipe())
+	{
+		return false;
+	}
+	else
+	{
+		pipe->Report("$MsgPipeProhibited$");
+		return true;
+	}
+}
+
+func OnPipeConnect(object pipe, string specific_pipe_state)
+{
+	SetNeutralPipe(pipe);
+	pipe->Report("$MsgConnectedPipe$");
+}
+
+func GetLiquidContainerMaxFillLevel()
+{
+	return 300;
+}
+
+
+/*-- Properties --*/
+
+
 local ActMap = {
 		Default = {
 			Prototype = Action,
@@ -135,3 +177,4 @@ local Description = "$Description$";
 local ContainBlast = true;
 local BlastIncinerate = 100;
 local HitPoints = 100;
+local Components = {Rock = 4, Wood = 2};

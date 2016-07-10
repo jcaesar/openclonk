@@ -281,7 +281,7 @@ void C4AulCompiler::PreparseAstVisitor::visit(const ::aul::ast::FunctionDecl *n)
 	Fn = new C4AulScriptFunc(Parent, target_host, cname, n->loc);
 	for (const auto &param : n->params)
 	{
-		Fn->AddPar(param.name.c_str());
+		Fn->AddPar(param.name.c_str(), param.type);
 	}
 	if (n->has_unnamed_params)
 		Fn->ParCount = C4AUL_MAX_Par;
@@ -458,7 +458,7 @@ public:
 	virtual ~CodegenAstVisitor() {}
 
 	using DefaultRecursiveVisitor::visit;
-	virtual void visit(const ::aul::ast::Noop *) override {}
+	virtual void visit(const ::aul::ast::Noop *) override {};
 	virtual void visit(const ::aul::ast::StringLit *n) override;
 	virtual void visit(const ::aul::ast::IntLit *n) override;
 	virtual void visit(const ::aul::ast::BoolLit *n) override;
@@ -469,6 +469,7 @@ public:
 	//virtual void visit(const ::aul::ast::VarExpr *n) override;
 	virtual void visit(const ::aul::ast::UnOpExpr *n) override;
 	virtual void visit(const ::aul::ast::BinOpExpr *n) override;
+	//virtual void visit(const ::aul::ast::AssignmentExpr *n) override;
 	virtual void visit(const ::aul::ast::SubscriptExpr *n) override;
 	virtual void visit(const ::aul::ast::SliceExpr *n) override;
 	virtual void visit(const ::aul::ast::CallExpr *n) override;
@@ -775,7 +776,8 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::ArrayLit *n)
 {
 	llvmValue* array = m_builder->CreateCall(efunc_CreateValueArray, { buildInt(n->values.size()) });
 	int32_t idx = 0;
-	for (auto& val: n->values) {
+	for (auto& val: n->values)
+	{
 		val->accept(this);
 		assert(tmp_expr);
 		auto params = std::vector<llvmValue*>{array, buildInt(idx)};
@@ -803,7 +805,6 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::UnOpExpr *n)
 			tmp_expr = make_unique<C4CompiledValue>(C4V_Int, m_builder->CreateNot(tmp_expr->getInt(), "tmp_bit_not"), n, this);
 		default: return; // TODO;
 	}
-
 }
 
 void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::BinOpExpr *n)
@@ -873,25 +874,20 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::BinOpExpr *n)
 		{
 			// Beware! Not functional yet!
 			llvm::Function *currentFun = m_builder->GetInsertBlock()->getParent();
-
 			BasicBlock *evaluate_right_block = BasicBlock::Create(getGlobalContext(), "tmp_jmpand_eval_r", currentFun);
 			BasicBlock *fail_early_block     = BasicBlock::Create(getGlobalContext(), "tmp_jmpand_fail");
 			BasicBlock *merge_block          = BasicBlock::Create(getGlobalContext(), "tmp_jmpand_merge");
 			m_builder->CreateCondBr(left->getBool(), evaluate_right_block, fail_early_block);
-
 			m_builder->SetInsertPoint(evaluate_right_block);
 			llvmValue *evaluate_right_value = right->getBool();
 			m_builder->CreateBr(merge_block);
 			// Code generation of right expression could have changed the block (for example if there was another JUMPAND expression embedded). Update the block to be on the safe side.
 			evaluate_right_block = m_builder->GetInsertBlock();
-
 			currentFun->getBasicBlockList().push_back(fail_early_block);
 			m_builder->SetInsertPoint(fail_early_block);
-
 			llvmValue *fail_early_value = buildBool(false);
 			m_builder->CreateBr(merge_block);
 			fail_early_block = m_builder->GetInsertBlock();
-
 			currentFun->getBasicBlockList().push_back(merge_block);
 			m_builder->SetInsertPoint(merge_block);
 
@@ -929,9 +925,9 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::SubscriptExpr *n)
 	else
 	{
 		use_array_access_fastpath = false;
-		for(auto upv: UnpackValue(object->getVariant()))
+		for (auto upv: UnpackValue(object->getVariant()))
 			args.push_back(upv);
-		for(auto upv: UnpackValue(index->getVariant()))
+		for (auto upv: UnpackValue(index->getVariant()))
 			args.push_back(upv);
 	}
 	static_assert(C4V_Type_LLVM::variant_member_count == 2, "Next call needs type array to be parameter_array[0].");
@@ -977,7 +973,7 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::FunctionDecl *n)
 	assert(Fn && "CodegenAstVisitor: unable to find function definition");
 	if (!Fn)
 		throw Error(n, "internal error: unable to find function definition for %s", n->name.c_str());
-	
+
 	fprintf(stderr, "compiling %s\n", n->name.c_str());
 	m_builder = make_unique<IRBuilder<>>(getGlobalContext());
 	llvmFunction* lf = Fn->llvmFunc;
@@ -1065,7 +1061,6 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::CallExpr *n)
 	{
 		throw Error(n, "Call to inherited not supported yet.");
 	}
-
 
 	unsigned int fn_argc = C4AUL_MAX_Par;
 	// Functions without explicit context can be resolved directly
