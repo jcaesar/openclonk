@@ -425,7 +425,7 @@ private:
 		void store(C4CompiledValue& rv) const {
 			cgv->m_builder->CreateStore(rv.getValue(C4V_Any), addr);
 		}
-		static unique_ptr<C4CompiledLValue> get(const ::aul::ast::VarExpr *n, const CodegenAstVisitor *compiler);
+		static unique_ptr<C4CompiledLValue> get(std::string var_name, const ::aul::ast::Node *n, const CodegenAstVisitor *compiler);
 	};
 	std::unordered_map<std::string,AulVariable> fn_var_scope;
 
@@ -434,11 +434,13 @@ private:
 	private:
 		const AulVariable *const lval;
 	public:
-		C4CompiledLValue(llvmValue *val, const ::aul::ast::VarExpr *n, const CodegenAstVisitor *compiler) :
-			C4CompiledValue(C4V_Any, val, n, compiler),
-			lval(&compiler->fn_var_scope.at(n->identifier)) { assert(lval); }
+		C4CompiledLValue(llvmValue *rval, const AulVariable* lval, const ::aul::ast::Node *n, const CodegenAstVisitor *compiler) :
+			C4CompiledValue(C4V_Any, rval, n, compiler),
+			lval(lval) { }
 
 		void store(unique_ptr<C4CompiledValue>& rval) const { lval->store(*rval); }
+
+		virtual ~C4CompiledLValue() {}
 	};
 
 	C4AulScriptFunc *Fn = nullptr;
@@ -484,7 +486,7 @@ public:
 	virtual void visit(const ::aul::ast::VarExpr *n) override;
 	virtual void visit(const ::aul::ast::UnOpExpr *n) override;
 	virtual void visit(const ::aul::ast::BinOpExpr *n) override;
-	//virtual void visit(const ::aul::ast::AssignmentExpr *n) override;
+	virtual void visit(const ::aul::ast::AssignmentExpr *n) override;
 	virtual void visit(const ::aul::ast::SubscriptExpr *n) override;
 	virtual void visit(const ::aul::ast::SliceExpr *n) override;
 	virtual void visit(const ::aul::ast::CallExpr *n) override;
@@ -498,7 +500,7 @@ public:
 	//virtual void visit(const ::aul::ast::Break *n) override;
 	//virtual void visit(const ::aul::ast::Continue *n) override;
 	//virtual void visit(const ::aul::ast::If *n) override;
-	//virtual void visit(const ::aul::ast::VarDecl *n) override;
+	virtual void visit(const ::aul::ast::VarDecl *n) override;
 	virtual void visit(const ::aul::ast::FunctionDecl *n) override;
 
 	void DumpLLVM() const { mod->dump(); }
@@ -746,11 +748,11 @@ llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompiledValue::getValue(C4V_Type 
 	}
 }
 
-unique_ptr<C4AulCompiler::CodegenAstVisitor::C4CompiledLValue> C4AulCompiler::CodegenAstVisitor::AulVariable::get(const ::aul::ast::VarExpr *n, const C4AulCompiler::CodegenAstVisitor *compiler)
+unique_ptr<C4AulCompiler::CodegenAstVisitor::C4CompiledLValue> C4AulCompiler::CodegenAstVisitor::AulVariable::get(std::string var_name, const ::aul::ast::Node *n, const C4AulCompiler::CodegenAstVisitor *compiler)
 {
-	const AulVariable& var = compiler->fn_var_scope.at(n->identifier);
-	// TODO: 2x catch out of bounds
-	return make_unique<C4CompiledLValue>(compiler->m_builder->CreateLoad(var.addr), n, compiler);
+	const AulVariable& var = compiler->fn_var_scope.at(var_name);
+	// TODO: catch out of bounds
+	return make_unique<C4CompiledLValue>(compiler->m_builder->CreateLoad(var.addr), &var, n, compiler);
 }
 
 
@@ -836,7 +838,7 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::ProplistLit *n) {
 
 void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::VarExpr *n)
 {
-	tmp_expr = AulVariable::get(n, this);
+	tmp_expr = AulVariable::get(n->identifier, n, this);
 }
 
 void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::UnOpExpr *n)
@@ -952,6 +954,22 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::BinOpExpr *n)
 	}
 }
 
+void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::AssignmentExpr *n)
+{
+		n->lhs->accept(this);
+		auto lhs = move(tmp_expr);
+		n->rhs->accept(this);
+		auto rhs = move(tmp_expr);
+
+		assert(lhs);
+		auto assignable = dynamic_cast<const C4CompiledLValue*>(&*lhs);
+		if (!assignable)
+			throw Error("RValue on the left hand side of =", n);
+		assignable->store(rhs);
+		tmp_expr = move(lhs);
+		/* Code dup with VarDecl */
+}
+
 void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::SubscriptExpr *n)
 {
 	// For now, it's fine to always execute the code generated here, even if the subscript is used as a setter.
@@ -1003,6 +1021,25 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::SliceExpr *n)
 		std::vector<llvmValue*>{object->getArray(), start->getInt(), end->getInt()}
 	);
 	tmp_expr = make_unique<C4CompiledValue>(C4V_Array, crv, n, this);
+}
+
+void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::VarDecl *n)
+{
+	for (const auto &decl: n->decls)
+	{
+		auto lhs = AulVariable::get(decl.name, n, this);
+		decl.init->accept(this);
+		auto rhs = move(tmp_expr);
+
+		assert(lhs);
+		auto assignable = dynamic_cast<const C4CompiledLValue*>(&*lhs);
+		if (!assignable)
+			throw Error("RValue on the left hand side of =", n);
+		assignable->store(rhs);
+		tmp_expr = move(lhs);
+		/* Code dup with AssignmentExpr */
+	}
+	tmp_expr.reset();
 }
 
 void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::FunctionDecl *n)
