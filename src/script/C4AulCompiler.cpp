@@ -397,6 +397,8 @@ private:
 
 	public:
 		C4CompiledValue(const C4V_Type &valType, llvmValue *llvmVal, const ::aul::ast::Node *n, const CodegenAstVisitor *compiler);
+		virtual ~C4CompiledValue() {}
+
 		C4V_Type getType() const { return valType; }
 		llvmValue *getInt() const;
 		llvmValue *getBool() const;
@@ -410,6 +412,33 @@ private:
 		{
 			return make_unique<C4CompiledValue>(type, C4V_Type_LLVM::defaultValue(type), n, compiler);
 		}
+	};
+
+	class C4CompiledLValue;
+	class AulVariable
+	{
+	private:
+		llvmValue *addr;
+		CodegenAstVisitor* cgv;
+	public:
+		AulVariable(std::string name, ::aul::ast::VarDecl::Scope scope, CodegenAstVisitor* cgv, unique_ptr<C4CompiledValue> defaultVal = nullptr);
+		void store(C4CompiledValue& rv) const {
+			cgv->m_builder->CreateStore(rv.getValue(C4V_Any), addr);
+		}
+		static unique_ptr<C4CompiledLValue> get(const ::aul::ast::VarExpr *n, const CodegenAstVisitor *compiler);
+	};
+	std::unordered_map<std::string,AulVariable> fn_var_scope;
+
+	class C4CompiledLValue : public C4CompiledValue
+	{
+	private:
+		const AulVariable *const lval;
+	public:
+		C4CompiledLValue(llvmValue *val, const ::aul::ast::VarExpr *n, const CodegenAstVisitor *compiler) :
+			C4CompiledValue(C4V_Any, val, n, compiler),
+			lval(&compiler->fn_var_scope.at(n->identifier)) { assert(lval); }
+
+		void store(unique_ptr<C4CompiledValue>& rval) const { lval->store(*rval); }
 	};
 
 	C4AulScriptFunc *Fn = nullptr;
@@ -437,22 +466,6 @@ private:
 	unique_ptr<C4CompiledValue> tmp_expr; // result from recursive expression code generation
 	std::array<llvmValue*,C4V_Type_LLVM::variant_member_count> parameter_array;
 
-	class AulVariable
-	{
-	private:
-		llvmValue *addr;
-		CodegenAstVisitor* cgv;
-	public:
-		AulVariable(std::string name, ::aul::ast::VarDecl::Scope scope, CodegenAstVisitor* cgv, unique_ptr<C4CompiledValue> defaultVal = nullptr);
-		unique_ptr<C4CompiledValue> load(const ::aul::ast::Node *n) {
-			return make_unique<C4CompiledValue>(C4V_Any, cgv->m_builder->CreateLoad(addr), n, cgv);
-		}
-		void store(C4CompiledValue& rv) {
-			cgv->m_builder->CreateStore(rv.getValue(C4V_Any), addr);
-		}
-	};
-	std::unordered_map<std::string,AulVariable> fn_var_scope;
-
 public:
 	CodegenAstVisitor(C4ScriptHost *host, C4ScriptHost *source_host) : target_host(host), host(source_host) { init(); }
 	explicit CodegenAstVisitor(C4AulScriptFunc *func) : Fn(func), target_host(func->pOrgScript), host(target_host) { init(); }
@@ -468,7 +481,7 @@ public:
 	virtual void visit(const ::aul::ast::ProplistLit *n) override;
 	//virtual void visit(const ::aul::ast::NilLit *n) override;
 	//virtual void visit(const ::aul::ast::ThisLit *n) override;
-	//virtual void visit(const ::aul::ast::VarExpr *n) override;
+	virtual void visit(const ::aul::ast::VarExpr *n) override;
 	virtual void visit(const ::aul::ast::UnOpExpr *n) override;
 	virtual void visit(const ::aul::ast::BinOpExpr *n) override;
 	//virtual void visit(const ::aul::ast::AssignmentExpr *n) override;
@@ -733,6 +746,14 @@ llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompiledValue::getValue(C4V_Type 
 	}
 }
 
+unique_ptr<C4AulCompiler::CodegenAstVisitor::C4CompiledLValue> C4AulCompiler::CodegenAstVisitor::AulVariable::get(const ::aul::ast::VarExpr *n, const C4AulCompiler::CodegenAstVisitor *compiler)
+{
+	const AulVariable& var = compiler->fn_var_scope.at(n->identifier);
+	// TODO: 2x catch out of bounds
+	return make_unique<C4CompiledLValue>(compiler->m_builder->CreateLoad(var.addr), n, compiler);
+}
+
+
 void C4AulCompiler::CodegenAstVisitor::init()
 {
 	llvm::InitializeNativeTarget();
@@ -811,6 +832,11 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::ProplistLit *n) {
 		m_builder->CreateCall(efunc_SetStructIndex, args);
 	}
 	tmp_expr = make_unique<C4CompiledValue>(C4V_PropList, pl, n, this);
+}
+
+void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::VarExpr *n)
+{
+	tmp_expr = AulVariable::get(n, this);
 }
 
 void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::UnOpExpr *n)
