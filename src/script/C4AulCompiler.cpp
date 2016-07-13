@@ -386,6 +386,13 @@ namespace C4V_Type_LLVM {
 class C4AulCompiler::CodegenAstVisitor : public ::aul::DefaultRecursiveVisitor
 {
 private:
+
+	// Block Handles for both 'continue' and 'break' commands
+	BasicBlock*				continue_dest		= nullptr;
+	BasicBlock*				break_dest			= nullptr;
+	unsigned int			range_loop_depth	= 0;
+	std::vector<llvmValue*>	range_loop_cntrs;
+	
 	class C4CompiledValue
 	{
 	private:
@@ -461,6 +468,7 @@ private:
 	llvmFunction *efunc_CreateProplist;
 	llvmFunction *efunc_GetArrayIndex;
 	llvmFunction *efunc_GetArraySlice;
+	llvmFunction *efunc_CheckArrayIndex;
 	llvmFunction *efunc_GetStructIndex;
 	llvmFunction *efunc_SetArrayIndex;
 	llvmFunction *efunc_SetArraySlice;
@@ -493,13 +501,13 @@ public:
 	//virtual void visit(const ::aul::ast::ParExpr *n) override;
 	//virtual void visit(const ::aul::ast::Block *n) override;
 	virtual void visit(const ::aul::ast::Return *n) override;
-	//virtual void visit(const ::aul::ast::ForLoop *n) override;
-	//virtual void visit(const ::aul::ast::RangeLoop *n) override;
-	//virtual void visit(const ::aul::ast::DoLoop *n) override;
-	//virtual void visit(const ::aul::ast::WhileLoop *n) override;
-	//virtual void visit(const ::aul::ast::Break *n) override;
-	//virtual void visit(const ::aul::ast::Continue *n) override;
-	//virtual void visit(const ::aul::ast::If *n) override;
+	virtual void visit(const ::aul::ast::ForLoop *n) override;
+	virtual void visit(const ::aul::ast::RangeLoop *n) override;
+	virtual void visit(const ::aul::ast::DoLoop *n) override;
+	virtual void visit(const ::aul::ast::WhileLoop *n) override;
+	virtual void visit(const ::aul::ast::Break *n) override;
+	virtual void visit(const ::aul::ast::Continue *n) override;
+	virtual void visit(const ::aul::ast::If *n) override;
 	virtual void visit(const ::aul::ast::VarDecl *n) override;
 	virtual void visit(const ::aul::ast::FunctionDecl *n) override;
 
@@ -541,9 +549,11 @@ private:
 			APInt(C4V_Type_LLVM::getVariantVarSize(), reinterpret_cast<intptr_t>(str), false));
 		// TODO: We might need some magic to ensure that this is not deleted early / properly deleted
 	}
-	BasicBlock* CreateBlock(llvmFunction* parent = nullptr) const { assert((m_builder && CurrentBlock()) || parent); return BasicBlock::Create(getGlobalContext(), "anon", parent ? parent : CurrentBlock()->getParent()); }
+	BasicBlock* CreateBlock(llvmFunction* parent = nullptr) const { return CreateBlock( nullptr , parent ); }
+	BasicBlock* CreateBlock( const char* name , llvmFunction* parent = nullptr) const { assert((m_builder && CurrentBlock()) || parent); return BasicBlock::Create(getGlobalContext(), name ? name : "anon" , parent ? parent : CurrentBlock()->getParent()); }
 	BasicBlock* CurrentBlock() const { return m_builder->GetInsertBlock(); }
 	void SetInsertPoint(BasicBlock* bb) const { return m_builder->SetInsertPoint(bb); }
+	void SetInsertPoint(BasicBlock* bb, BasicBlock::iterator it) const { return m_builder->SetInsertPoint(bb, it); }
 	/* TODO: I'm not so sure I'm happy that these are const */
 
 
@@ -651,8 +661,8 @@ llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompiledValue::getInt() const
 			llvmValue* direct = bld.CreateExtractValue(llvmVal, {1});
 			llvmValue* match = compiler->checkCompile(bld.CreateICmp(CmpInst::ICMP_EQ, typetag, inttt));
 			BasicBlock* orig = compiler->CurrentBlock();
-			BasicBlock* mismatch = compiler->CreateBlock();
-			BasicBlock* cont = compiler->CreateBlock();
+			BasicBlock* mismatch = compiler->CreateBlock("typeconv");
+			BasicBlock* cont = compiler->CreateBlock("typeconvcont");
 			bld.CreateCondBr(match, cont, mismatch);
 			compiler->SetInsertPoint(mismatch);
 			// Yay, we need to pack the struct…
@@ -834,6 +844,291 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::ProplistLit *n) {
 		m_builder->CreateCall(efunc_SetStructIndex, args);
 	}
 	tmp_expr = make_unique<C4CompiledValue>(C4V_PropList, pl, n, this);
+}
+
+void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::If *n)
+{
+	n->cond->accept(this);
+	unique_ptr<C4CompiledValue> cond = move(tmp_expr); assert(cond);
+	
+	BasicBlock* iftrueblock = CreateBlock("ifcondtrue");
+	BasicBlock* continuationblock = CreateBlock("ifcont");
+	
+	if( n->iffalse )
+	{
+		BasicBlock* iffalseblock = CreateBlock("ifcondfalse");
+		m_builder->CreateCondBr( cond->getBool() , iftrueblock , iffalseblock );
+		
+		// fill negative branch
+		SetInsertPoint( iffalseblock );
+		n->iffalse->accept(this);
+		m_builder->CreateBr( continuationblock );
+	}
+	else
+		m_builder->CreateCondBr( cond->getBool() , iftrueblock , continuationblock );
+	
+	// Fill the positive branch
+	SetInsertPoint( iftrueblock );
+	n->iftrue->accept(this);
+	m_builder->CreateBr( continuationblock );
+	
+	// Start inserting in the next block (after the 'If')
+	SetInsertPoint( continuationblock );
+}
+
+void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::WhileLoop *n)
+{
+	// Backup old break-continue-context
+	BasicBlock* old_break_dest = break_dest;
+	BasicBlock* old_continue_dest = continue_dest;
+	
+	// Create the blocks we will need
+	BasicBlock* condition = CreateBlock("whilecond");
+	BasicBlock* body = CreateBlock("whilebody");
+	BasicBlock* continuation = CreateBlock("whilecont");
+	
+	// Jump to the condition
+	m_builder->CreateBr( condition );
+	
+	// Open new break/continue-context
+	break_dest = continuation;
+	continue_dest = condition;
+	
+	// Fill Condition block
+	SetInsertPoint( condition );
+	n->cond->accept(this);
+	unique_ptr<C4CompiledValue> cond = move(tmp_expr); assert(cond);
+	m_builder->CreateCondBr( cond->getBool() , body , continuation );
+	
+	// Fill While Body
+	SetInsertPoint( body );
+	n->body->accept(this);
+	m_builder->CreateBr( condition );
+	
+	// Start inserting in the next block (after the 'While')
+	SetInsertPoint( continuation );
+	
+	// Restore old break-continue-context
+	break_dest = old_break_dest;
+	continue_dest = old_continue_dest;
+}
+
+void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::DoLoop *n)
+{
+	//
+	// Basically the same as WhileLoop except for ('m-builder->CreateBr( body )')
+	//
+	
+	// Backup old break-continue-context
+	BasicBlock* old_break_dest = break_dest;
+	BasicBlock* old_continue_dest = continue_dest;
+	
+	// Create the blocks we will need
+	BasicBlock* condition = CreateBlock("dowhilecond");
+	BasicBlock* body = CreateBlock("dowhilebody");
+	BasicBlock* continuation = CreateBlock("dowhilecont");
+	
+	// Jump to the condition
+	m_builder->CreateBr( body );
+	
+	// Open new break/continue-context
+	break_dest = continuation;
+	continue_dest = condition;
+	
+	// Fill Condition block
+	SetInsertPoint( condition );
+	n->cond->accept(this);
+	unique_ptr<C4CompiledValue> cond = move(tmp_expr); assert(cond);
+	m_builder->CreateCondBr( cond->getBool() , body , continuation );
+	
+	// Fill While Body
+	SetInsertPoint( body );
+	n->body->accept(this);
+	m_builder->CreateBr( condition );
+	
+	// Start inserting in the next block (after the 'DoWhile')
+	SetInsertPoint( continuation );
+	
+	// Restore old break-continue-context
+	break_dest = old_break_dest;
+	continue_dest = old_continue_dest;
+}
+
+void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::ForLoop *n)
+{
+	// Backup old break-continue-context
+	BasicBlock* old_break_dest = break_dest;
+	BasicBlock* old_continue_dest = continue_dest;
+	
+	// Create the blocks we will need
+	BasicBlock* body = CreateBlock("forbody");
+	BasicBlock* loop_start = n->cond ? CreateBlock("forcond") : body;
+	BasicBlock* loop_incr = n->incr ? CreateBlock("forstep") : loop_start;
+	BasicBlock* continuation = CreateBlock("forcont");
+	
+	if( n->init )
+		n->init->accept(this);
+	
+	// Jump to the start of the loop
+	m_builder->CreateBr( loop_start );
+	
+	// Open new break/continue-context
+	break_dest = continuation;
+	continue_dest = loop_incr;
+	
+	// Fill Loop
+	SetInsertPoint( loop_start );
+	
+	if( n->cond ){
+		n->cond->accept(this);
+		unique_ptr<C4CompiledValue> cond = move(tmp_expr); assert(cond);
+		
+		// Create branch into loop body
+		m_builder->CreateCondBr( cond->getBool() , body , continuation );
+		SetInsertPoint( body );
+	}
+	
+	// Fill Body
+	n->body->accept(this);
+	
+	// Append incrementing function
+	if( n->incr ){
+		// Jump to the increment part of the for loop
+		m_builder->CreateBr( loop_incr );
+		
+		// Insert incrementation code here
+		SetInsertPoint( loop_incr );
+		n->incr->accept(this);
+	}
+	
+	// Jump to the start of the loop again!
+	m_builder->CreateBr( loop_start );
+	
+	// Start inserting in the next block (after the 'For')
+	SetInsertPoint( continuation );
+	
+	// Restore old break-continue-context
+	break_dest = old_break_dest;
+	continue_dest = old_continue_dest;
+}
+
+void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::RangeLoop *n)
+{
+	range_loop_depth++;
+	
+	if( range_loop_cntrs.size() < range_loop_depth )
+	{
+		BasicBlock* tmp = CurrentBlock();
+		
+		// Get First Block of function in which we will prepend
+		// the for-range counter variable declaration
+		assert( Fn ); assert( Fn->llvmFunc );
+		BasicBlock* start_of_func = &Fn->llvmFunc->getEntryBlock();
+		SetInsertPoint( start_of_func , start_of_func->begin() );
+		range_loop_cntrs.push_back( m_builder->CreateAlloca( C4V_Type_LLVM::get(C4V_Int) , nullptr , "cntr" ) );
+		
+		// Jump back to editing stuff
+		SetInsertPoint( tmp );
+	}
+	
+	// Backup old break-continue-context
+	BasicBlock* old_break_dest = break_dest;
+	BasicBlock* old_continue_dest = continue_dest;
+	
+	// Create the blocks we will need
+	BasicBlock* iteration = CreateBlock("rangeiter");
+	BasicBlock* body = CreateBlock("rangebody");
+	BasicBlock* continuation = CreateBlock("rangecont");
+	
+	// Open new break/continue-context
+	break_dest = continuation;
+	continue_dest = iteration;
+	
+	// Initialize Loop counter
+	m_builder->CreateStore( buildInt(0) , range_loop_cntrs[range_loop_depth - 1] );
+	
+	// Emit code for array
+	n->cond->accept(this); assert(tmp_expr);
+	
+	// Create call to array index checker func
+	auto unpacked = UnpackValue( tmp_expr->getVariant() );
+	
+	// Branch to iteration routine
+	m_builder->CreateBr( iteration );
+	SetInsertPoint( iteration );
+	
+	for(size_t j = 0; j < unpacked.size(); ++j)
+	{
+		llvmValue* ep = m_builder->CreateGEP(parameter_array[j], std::vector<llvmValue*>{buildInt(0), buildInt(0)});
+		m_builder->CreateStore(unpacked[j], ep);
+	}
+	
+	std::vector<llvmValue*> llvm_args;
+	for (auto pa: parameter_array)
+		llvm_args.push_back(m_builder->CreateGEP(pa, std::vector<llvmValue*>{buildInt(0), buildInt(0)}));
+		
+	// Load current index
+	llvmValue* cur_idx = m_builder->CreateLoad( range_loop_cntrs[range_loop_depth - 1] );
+	
+	// Push Current Array index to list of arguments
+	llvm_args.push_back( cur_idx );
+	
+	// Call our helper method that will check
+	// if the index is within the array and,
+	// if yes, read the nth element out of the list
+	llvmValue* index_within_range = m_builder->CreateCall(
+		efunc_CheckArrayIndex,
+		llvm_args
+	);
+	
+	// Increment Array Iterator
+	llvmValue* new_idx = m_builder->CreateAdd( cur_idx , buildInt(1) );
+	m_builder->CreateStore( new_idx , range_loop_cntrs[range_loop_depth - 1] );
+	
+	// Create branch into loop body
+	m_builder->CreateCondBr( index_within_range , body , continuation );
+	SetInsertPoint( body );
+	
+	//
+	// Fill Body
+	//
+	
+	// Get current element
+	C4V_Type_LLVM::UnpackedVariant upret;
+	for (size_t j = 0; j < upret.size(); j++) {
+		llvmValue* ep = m_builder->CreateGEP(parameter_array[j], std::vector<llvmValue*>{buildInt(0), buildInt(0)});
+		upret[j] = m_builder->CreateLoad(ep);
+	}
+	
+	auto tmp = PackVariant(upret, n);
+	AulVariable::get(n->var, n, this)->store(tmp);
+	
+	// Normal Code Here...
+	n->body->accept(this);
+	
+	// Jump to the start of the loop again!
+	m_builder->CreateBr( iteration );
+	
+	// Start inserting in the next block (after the 'For')
+	SetInsertPoint( continuation );
+	
+	// Restore old break-continue-context
+	break_dest = old_break_dest;
+	continue_dest = old_continue_dest;
+}
+
+void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::Break *n)
+{
+	assert( break_dest );
+	m_builder->CreateBr( break_dest );
+	SetInsertPoint(CreateBlock("deadcode")); // To not generate the error "Terminator found in the middle of a basic block!"
+}
+
+void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::Continue *n)
+{
+	assert( continue_dest );
+	m_builder->CreateBr( continue_dest );
+	SetInsertPoint(CreateBlock("deadcode")); // To not generate the error "Terminator found in the middle of a basic block!"
 }
 
 void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::VarExpr *n)
@@ -1111,7 +1406,7 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::FunctionDecl *n)
 
 	//f->dump();
 	llvm::verifyFunction(*lf);
-	//funcpassmgr->run(*lf); // Execute optimizations.
+	funcpassmgr->run(*lf); // Execute optimizations.
 
 	Fn = nullptr;
 	fn_var_scope.clear();
@@ -1230,7 +1525,7 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::Return *n)
 	if(!tmp_expr)
 		tmp_expr = C4CompiledValue::defaultVal(C4V_Nil, n, this);
 	m_builder->CreateRet(tmp_expr->getValue(Fn->GetRetType()));
-	SetInsertPoint(CreateBlock());
+	SetInsertPoint(CreateBlock("deadcode"));
 }
 
 // TODO: Right place for these?
@@ -1340,6 +1635,22 @@ extern "C" {
 		assert(rethlp.GetType() == C4V_Array);
 		return C4ValueToAulLLVM(rethlp).second;
 	}
+	bool LLVMAulCheckArrayIndex(C4V_Type* type, C4V_Data* data, int32_t idx )
+	{
+		C4Value array = AulLLVMToC4Value(*type, *data);
+		
+		// Is Arraxy?
+		if( !array.CheckConversion(C4V_Array) )
+			throw C4AulExecError(FormatString("For range expected array, got %s", array.GetTypeName()).getData());
+		
+		// Check Index
+		if( idx >= array.getArray()->GetSize() )
+			return false;
+		
+		std::tie(*type, *data) = C4ValueToAulLLVM(array.getArray()->GetItem(idx));
+		
+		return true;
+	}
 }
 
 void C4AulCompiler::CodegenAstVisitor::FnDecls() {
@@ -1356,6 +1667,8 @@ void C4AulCompiler::CodegenAstVisitor::FnDecls() {
 	efunc_SetArrayIndex = RegisterEngineFunction(LLVMAulSetArrayElement, ".SetArrayIndex", mod, executionengine);
 	efunc_SetArraySlice = RegisterEngineFunction(LLVMAulSetArraySlice, ".SetArraySlice", mod, executionengine);
 	efunc_SetStructIndex = RegisterEngineFunction(LLVMAulSetStructElement, ".SetStructIndex", mod, executionengine);
+	efunc_CheckArrayIndex = RegisterEngineFunction(LLVMAulCheckArrayIndex, ".CheckArrayIndex", mod, executionengine);
+	efunc_CheckArrayIndex->addFnAttr(llvm::Attribute::ReadOnly);
 
 	// Declarations for script functions
 	for (const auto& func: ::ScriptEngine.FuncLookUp) {

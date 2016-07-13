@@ -8,6 +8,7 @@
 
 template<typename T> llvm::Type* CPPTypeToLLVM();
 // Just the things I need 
+template<> llvm::Type* CPPTypeToLLVM<bool>() { return llvm::Type::getIntNTy(llvm::getGlobalContext(), 1); };
 template<> llvm::Type* CPPTypeToLLVM<int32_t>() { return llvm::Type::getIntNTy(llvm::getGlobalContext(), 32); };
 template<> llvm::Type* CPPTypeToLLVM<uint32_t>() { return CPPTypeToLLVM<int32_t>(); };
 template<> llvm::Type* CPPTypeToLLVM<int64_t>() { return llvm::Type::getIntNTy(llvm::getGlobalContext(), 64); };
