@@ -162,7 +162,7 @@ static C4AulParseError Error(const C4ScriptHost *target_host, const C4ScriptHost
 template<class... T>
 static C4AulParseError Error(const C4ScriptHost *target_host, const C4ScriptHost *host, const ::aul::ast::Node *n, const C4AulScriptFunc *func, const char *msg, T &&...args)
 {
-	return Error(target_host, host, n->loc, func, msg, std::forward<T>(args)...);
+	return Error(target_host, host, n ? n->loc : nullptr, func, msg, std::forward<T>(args)...);
 }
 template<class... T>
 static C4AulParseError Error(const C4ScriptHost *target_host, const C4ScriptHost *host, const std::nullptr_t &, const C4AulScriptFunc *func, const char *msg, T &&...args)
@@ -375,9 +375,17 @@ namespace C4V_Type_LLVM {
 	}
 	llvmValue* defaultValue(C4V_Type type) {
 		switch(type) {
-			case C4V_Int: return ConstantInt::get(getGlobalContext(), APInt(int_len, 0, true));
-			case C4V_Bool: return ConstantInt::get(getGlobalContext(), APInt(bool_len, 0, false));
-			default: return defaultVariant(C4V_Nil);
+			case C4V_Int:
+				return ConstantInt::get(getGlobalContext(), APInt(int_len, 0, true));
+			case C4V_Bool:
+				return ConstantInt::get(getGlobalContext(), APInt(bool_len, 0, false));
+			case C4V_PropList:
+			case C4V_String:
+			case C4V_Array:
+			case C4V_Function:
+				return ConstantInt::get(getGlobalContext(), APInt(getVariantVarSize(), 0, false));
+			default:
+				return defaultVariant(C4V_Nil);
 		}
 	}
 	typedef std::array<llvmValue*,variant_member_count> UnpackedVariant;
@@ -401,6 +409,8 @@ private:
 
 		const ::aul::ast::Node *n;
 		const CodegenAstVisitor *compiler;
+
+		llvmValue* buildConversion(C4V_Type t_to) const;
 
 	public:
 		C4CompiledValue(const C4V_Type &valType, llvmValue *llvmVal, const ::aul::ast::Node *n, const CodegenAstVisitor *compiler);
@@ -426,13 +436,15 @@ private:
 	{
 	private:
 		llvmValue *addr;
+		C4V_Type type;
 		CodegenAstVisitor* cgv;
 	public:
-		AulVariable(std::string name, ::aul::ast::VarDecl::Scope scope, CodegenAstVisitor* cgv, unique_ptr<C4CompiledValue> defaultVal = nullptr);
+		AulVariable(std::string name, C4V_Type t, ::aul::ast::VarDecl::Scope scope, CodegenAstVisitor* cgv, unique_ptr<C4CompiledValue> defaultVal = nullptr);
 		void store(C4CompiledValue& rv) const {
-			cgv->m_builder->CreateStore(rv.getValue(C4V_Any), addr);
+			cgv->m_builder->CreateStore(rv.getValue(type), addr);
 		}
 		static unique_ptr<C4CompiledLValue> get(std::string var_name, const ::aul::ast::Node *n, const CodegenAstVisitor *compiler);
+		C4V_Type getType() const { return type; };
 	};
 	std::unordered_map<std::string,AulVariable> fn_var_scope;
 
@@ -442,7 +454,7 @@ private:
 		const AulVariable *const lval;
 	public:
 		C4CompiledLValue(llvmValue *rval, const AulVariable* lval, const ::aul::ast::Node *n, const CodegenAstVisitor *compiler) :
-			C4CompiledValue(C4V_Any, rval, n, compiler),
+			C4CompiledValue(lval->getType(), rval, n, compiler),
 			lval(lval) { }
 
 		void store(unique_ptr<C4CompiledValue>& rval) const { lval->store(*rval); }
@@ -474,7 +486,7 @@ private:
 	llvmFunction *efunc_SetArraySlice;
 	llvmFunction *efunc_SetStructIndex;
 	unique_ptr<C4CompiledValue> tmp_expr; // result from recursive expression code generation
-	std::array<llvmValue*,C4V_Type_LLVM::variant_member_count> parameter_array;
+	std::array<llvmValue*,C4V_Type_LLVM::variant_member_count> parameter_array; // place to store parameters and their types when calling an engine function
 
 public:
 	CodegenAstVisitor(C4ScriptHost *host, C4ScriptHost *source_host) : target_host(host), host(source_host) { init(); }
@@ -603,12 +615,12 @@ C4AulCompiler::CodegenAstVisitor::C4CompiledValue::C4CompiledValue(const C4V_Typ
 	compiler->checkCompile(llvmVal);
 }
 
-C4AulCompiler::CodegenAstVisitor::AulVariable::AulVariable(std::string name, ::aul::ast::VarDecl::Scope scope, CodegenAstVisitor* cgv, unique_ptr<C4CompiledValue> defaultVal)
-	: cgv(cgv)
+C4AulCompiler::CodegenAstVisitor::AulVariable::AulVariable(std::string name, C4V_Type t, ::aul::ast::VarDecl::Scope scope, CodegenAstVisitor* cgv, unique_ptr<C4CompiledValue> defaultVal)
+	: type(t), cgv(cgv)
 {
 	switch(scope) {
 		case ::aul::ast::VarDecl::Scope::Func:
-			addr = cgv->checkCompile(cgv->m_builder->CreateAlloca(C4V_Type_LLVM::get(C4V_Any), 0, name));
+			addr = cgv->checkCompile(cgv->m_builder->CreateAlloca(C4V_Type_LLVM::get(type), 0, name));
 			break;
 		default:
 			throw cgv->Error("Sorry, only function-scope variables supported so far.");
@@ -617,7 +629,7 @@ C4AulCompiler::CodegenAstVisitor::AulVariable::AulVariable(std::string name, ::a
 	if(defaultVal) {
 		store(*defaultVal);
 	} else {
-		cgv->m_builder->CreateStore(C4V_Type_LLVM::defaultValue(C4V_Nil), addr);
+		cgv->m_builder->CreateStore(C4V_Type_LLVM::defaultValue(type), addr);
 	}
 }
 
@@ -647,82 +659,87 @@ extern "C" {
 	}
 }
 
+llvmValue* C4AulCompiler::CodegenAstVisitor::C4CompiledValue::buildConversion(C4V_Type t_to) const {
+	auto& bld = *compiler->m_builder;
+	assert(t_to != C4V_Nil); // That just doesn't make any sense.
+	auto ttt = C4V_Type_LLVM::LLVMTypeTag(t_to);
+	llvmValue* typetag = compiler->checkCompile(bld.CreateExtractValue(llvmVal, {0}));
+	// We could probably do some nifty hacks when converting to int or bool, based on the fact that the values of C4V_Nil, C4V_Int and C4V_Bool are close together.
+	llvmValue* direct = bld.CreateExtractValue(llvmVal, {1});
+	llvmValue* match = compiler->checkCompile(bld.CreateICmp(CmpInst::ICMP_EQ, typetag, ttt));
+	BasicBlock* orig = compiler->CurrentBlock();
+	BasicBlock* mismatch = compiler->CreateBlock("typeconv");
+	BasicBlock* cont = compiler->CreateBlock("typeconvcont");
+	bld.CreateCondBr(match, cont, mismatch);
+	compiler->SetInsertPoint(mismatch);
+	// Yay, we need to pack the struct…
+	auto unpacked = compiler->UnpackValue(llvmVal);
+	static_assert(unpacked.size() == 2, "Next call needs all args.");
+	llvmValue* convd = compiler->checkCompile(bld.CreateCall(compiler->efunc_ValueConversionFunc, std::vector<llvmValue*>{unpacked[0], unpacked[1], ttt}));
+	bld.CreateBr(cont);
+	compiler->SetInsertPoint(cont);
+	llvm::PHINode *pn = bld.CreatePHI(C4V_Type_LLVM::getVariantVarLLVMType(), 2);
+	pn->addIncoming(direct, orig);
+	pn->addIncoming(convd, mismatch);
+	return compiler->checkCompile(pn);
+}
+
 llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompiledValue::getInt() const
 {
-	auto& bld = *compiler->m_builder;
+	// TODO: I'd like to annotate the default cases with static_assertions that they actually cannot be.
 	switch(valType) {
 		case C4V_Int: return llvmVal;
-		case C4V_Bool: return compiler->checkCompile(bld.CreateZExt(llvmVal, C4V_Type_LLVM::get(C4V_Int)));
+		case C4V_Bool: return compiler->m_builder->CreateZExt(llvmVal, C4V_Type_LLVM::get(C4V_Int));
 		case C4V_Nil: return compiler->buildInt(0);
-		case C4V_Any: {
-			auto inttt = C4V_Type_LLVM::LLVMTypeTag(C4V_Int);
-			llvmValue* typetag = compiler->checkCompile(bld.CreateExtractValue(llvmVal, {0}));
-			// We could probably do some nifty hacks based on C4V_Nil == 0 and C4V_Bool = 2 to also convert those in LLVM, but at this point I consider that premature optimization.
-			llvmValue* direct = bld.CreateExtractValue(llvmVal, {1});
-			llvmValue* match = compiler->checkCompile(bld.CreateICmp(CmpInst::ICMP_EQ, typetag, inttt));
-			BasicBlock* orig = compiler->CurrentBlock();
-			BasicBlock* mismatch = compiler->CreateBlock("typeconv");
-			BasicBlock* cont = compiler->CreateBlock("typeconvcont");
-			bld.CreateCondBr(match, cont, mismatch);
-			compiler->SetInsertPoint(mismatch);
-			// Yay, we need to pack the struct…
-			auto unpacked = compiler->UnpackValue(llvmVal);
-			static_assert(unpacked.size() == 2, "Next call needs all args.");
-			llvmValue* convd = compiler->checkCompile(bld.CreateCall(compiler->efunc_ValueConversionFunc, std::vector<llvmValue*>{unpacked[0], unpacked[1], inttt}));
-			bld.CreateBr(cont);
-			compiler->SetInsertPoint(cont);
-			llvm::PHINode *pn = bld.CreatePHI(C4V_Type_LLVM::getVariantVarLLVMType(), 2);
-			pn->addIncoming(direct, orig);
-			pn->addIncoming(convd, mismatch);
-			return compiler->checkCompile(bld.CreateTruncOrBitCast(pn, C4V_Type_LLVM::get(C4V_Int)));
-			// Please try not to duplicate this and instead write a function that executes this…
+		case C4V_Any: return compiler->m_builder->CreateTruncOrBitCast(buildConversion(C4V_Int), C4V_Type_LLVM::get(C4V_Int));
+		default: throw compiler->Error(n, "Error: value cannot be converted to Int!");
+	}
+}
 
-		}
+llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompiledValue::getBool() const
+{
+	auto zero_comparison = [&](llvmValue *cmp) {
+		return compiler->m_builder->CreateICmp(CmpInst::ICMP_NE,
+				compiler->m_builder->CreateZExt(cmp, C4V_Type_LLVM::getVariantVarLLVMType()),
+				ConstantInt::get(getGlobalContext(), APInt(C4V_Type_LLVM::getVariantVarSize(), 0, false)));
+	};
+	switch(valType) {
+		case C4V_Nil: return compiler->buildBool(false);
+		case C4V_Bool: return llvmVal;
+		case C4V_Int: return zero_comparison(llvmVal);
+		case C4V_Any: return zero_comparison(buildConversion(C4V_Bool));
 		default: throw compiler->Error(n, "Error: value cannot be converted to Int!");
 	}
 }
 
 llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompiledValue::getArray() const
 {
-	if(valType == C4V_Array)
-	{
-		return llvmVal;
-	} else {
-		throw compiler->Error(n, "Error: value is not an Array!");
-	} 
+	if (valType == C4V_Array) return llvmVal;
+	if (valType == C4V_Any) return buildConversion(C4V_Any);
+	throw compiler->Error(n, "Error: value is not an Array!");
 }
 
 llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompiledValue::getPropList() const
 {
-	if(valType == C4V_PropList)
-	{
-		return llvmVal;
-	} else {
-		throw compiler->Error(n, "Error: value is not a PropList!");
-	} 
+	switch (valType) {
+		case C4V_PropList:
+		case C4V_Def:
+		case C4V_Object:
+			return llvmVal;
+		case C4V_Any:
+			return buildConversion(C4V_Any);
+		default:
+			throw compiler->Error(n, "Error: value is not a PropList!");
+	}
 }
 
 llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompiledValue::getString() const
 {
-	if(valType == C4V_String)
-	{
-		return llvmVal;
-	} else {
-		throw compiler->Error(n, "Error: value is not a String!");
-	} 
+	if (valType == C4V_String) return llvmVal;
+	if (valType == C4V_Any) return buildConversion(C4V_Any);
+	throw compiler->Error(n, "Error: value is not a string!");
 }
 
-llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompiledValue::getBool() const
-{
-	if(valType == C4V_Bool)
-	{
-		return llvmVal;
-	} else if(valType == C4V_Int) {
-		return compiler->m_builder->CreateICmpNE(llvmVal, compiler->buildInt(0));
-	} else {
-		throw compiler->Error(n, "Error: value is not a Bool!");
-	} 
-}
 
 llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompiledValue::getVariant() const
 {
@@ -753,6 +770,9 @@ llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompiledValue::getValue(C4V_Type 
 	switch(t) {
 		case C4V_Int: return getInt();
 		case C4V_Bool: return getBool();
+		case C4V_String: return getString();
+		case C4V_PropList: return getPropList();
+		case C4V_Array: return getArray();
 		case C4V_Any: return getVariant();
 		default: assert(!"TODO");
 	}
@@ -813,7 +833,7 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::BoolLit *n)
 
 void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::ArrayLit *n)
 {
-	llvmValue* array = m_builder->CreateCall(efunc_CreateValueArray, { buildInt(n->values.size()) });
+	llvmValue* array = m_builder->CreateCall(efunc_CreateValueArray, std::vector<llvmValue*>{ buildInt(n->values.size()) });
 	int32_t idx = 0;
 	for (auto& val: n->values)
 	{
@@ -1052,6 +1072,8 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::RangeLoop *n)
 	
 	// Create call to array index checker func
 	auto unpacked = UnpackValue( tmp_expr->getVariant() );
+
+	// TODO: The unpacked is generated in one block but used in the next. Find out under which circumstances this is legal!
 	
 	// Branch to iteration routine
 	m_builder->CreateBr( iteration );
@@ -1336,7 +1358,6 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::VarDecl *n)
 	}
 	tmp_expr.reset();
 }
-
 void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::FunctionDecl *n)
 {
 	C4PropListStatic *Parent = n->is_global ? target_host->Engine->GetPropList() : target_host->GetPropList();
@@ -1391,11 +1412,11 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::FunctionDecl *n)
 			vname = fdst;
 		}
 		auto par = make_unique<C4CompiledValue>(Fn->GetParType()[i], argit, n, this);
-		fn_var_scope.insert({{vname, AulVariable(vname, ::aul::ast::VarDecl::Scope::Func, this, move(par))}});
+		fn_var_scope.insert({{vname, AulVariable(vname, C4V_Any, ::aul::ast::VarDecl::Scope::Func, this, move(par))}});
 	}
 	for (int i = 0; i < Fn->VarNamed.iSize; i++) {
 		const char *vname = Fn->VarNamed.GetItemUnsafe(i);
-		fn_var_scope.insert({{vname, AulVariable(vname, ::aul::ast::VarDecl::Scope::Func, this)}}); // Caveat: Might do nothing if a parameter with the same name exists. Shouldn't matter…
+		fn_var_scope.insert({{vname, AulVariable(vname, C4V_Any, ::aul::ast::VarDecl::Scope::Func, this)}}); // Caveat: Might do nothing if a parameter with the same name exists. Shouldn't matter…
 	}
 	assert(argit == lf->arg_end());
 
@@ -1651,6 +1672,12 @@ extern "C" {
 		
 		return true;
 	}
+
+	// Not to be called from LLVM, but to be called instead of LLVM-Generated code.
+	void LLVMAulDummyFunc(C4V_Type* t, C4V_Data* d) {
+		C4Value v; v.Set0();
+		std::tie(t[0], d[0]) = C4ValueToAulLLVM(v);
+	}
 }
 
 void C4AulCompiler::CodegenAstVisitor::FnDecls() {
@@ -1684,6 +1711,7 @@ void C4AulCompiler::CodegenAstVisitor::FnDecls() {
 		for (llvmFunction::arg_iterator argit = sf->llvmFunc->arg_begin(); i < sf->ParNamed.iSize; ++argit, ++i) {
 			argit->setName(std::string(sf->ParNamed.GetItemUnsafe(i)) + ".par");
 		}
+		sf->llvmImpl = LLVMAulDummyFunc; // Hopefully overwritten…
 
 		//also add a delegate with simple parameter types for easy external calls
 		FunctionType *dft = FunctionType::get(llvmType::getVoidTy(getGlobalContext()), std::vector<llvmType*>{
@@ -1721,6 +1749,11 @@ void C4AulCompiler::CodegenAstVisitor::finalize()
 		if(!sf)
 			continue;
 		sf->llvmImpl = reinterpret_cast<decltype(sf->llvmImpl)>(executionengine->getPointerToFunction(sf->llvmDelegate));
+		//assert(sf->llvmImpl); TODO
+		if (!sf->llvmImpl) {
+			sf->llvmImpl = LLVMAulDummyFunc;
+			throw Error("Internal Error: Could not synthesize code for %s.", sf->GetName());
+		}
 	}
 }
 

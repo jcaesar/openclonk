@@ -182,7 +182,7 @@ public:
 protected:
 	llvmFunction* llvmFunc;
 	llvmFunction* llvmDelegate;
-	void(*llvmImpl)(C4V_Type*, C4V_Data*);
+	void(*llvmImpl)(C4V_Type*, C4V_Data*) = nullptr;
 
 	// TODO: Remove all these
 	void AddBCC(C4AulBCCType eType, intptr_t = 0, const char * SPos = 0); // add byte code chunk and advance

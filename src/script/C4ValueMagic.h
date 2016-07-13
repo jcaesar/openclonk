@@ -59,6 +59,25 @@ inline C4Value AulLLVMToC4Value(C4V_Type t, C4V_Data d) {
 			v.Set(d,t);
 			break;
 	}
+	switch(t) {
+		case C4V_Nil:
+		case C4V_Int:
+		case C4V_Bool:
+			break;
+		case C4V_PropList:
+		case C4V_String:
+		case C4V_Array:
+		case C4V_Function:
+		case C4V_Object:
+		case C4V_Def:
+		case C4V_Effect:
+			if (!v.GetData())
+				v.Set0();
+		case C4V_Any:
+		case C4V_Enum:
+		case C4V_C4ObjectEnum:
+			assert(!"TODO");
+	}
 	return v;
 }
 
