@@ -662,6 +662,7 @@ extern "C" {
 llvmValue* C4AulCompiler::CodegenAstVisitor::C4CompiledValue::buildConversion(C4V_Type t_to) const {
 	auto& bld = *compiler->m_builder;
 	assert(t_to != C4V_Nil); // That just doesn't make any sense.
+	assert(t_to <= C4V_Last); // This function doesn't make sense for C4V_Any and friends either. TODO: What about those enumerates?
 	auto ttt = C4V_Type_LLVM::LLVMTypeTag(t_to);
 	llvmValue* typetag = compiler->checkCompile(bld.CreateExtractValue(llvmVal, {0}));
 	// We could probably do some nifty hacks when converting to int or bool, based on the fact that the values of C4V_Nil, C4V_Int and C4V_Bool are close together.
@@ -715,7 +716,7 @@ llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompiledValue::getBool() const
 llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompiledValue::getArray() const
 {
 	if (valType == C4V_Array) return llvmVal;
-	if (valType == C4V_Any) return buildConversion(C4V_Any);
+	if (valType == C4V_Any) return buildConversion(C4V_Array);
 	throw compiler->Error(n, "Error: value is not an Array!");
 }
 
@@ -727,7 +728,7 @@ llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompiledValue::getPropList() cons
 		case C4V_Object:
 			return llvmVal;
 		case C4V_Any:
-			return buildConversion(C4V_Any);
+			return buildConversion(C4V_PropList);
 		default:
 			throw compiler->Error(n, "Error: value is not a PropList!");
 	}
@@ -736,7 +737,7 @@ llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompiledValue::getPropList() cons
 llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompiledValue::getString() const
 {
 	if (valType == C4V_String) return llvmVal;
-	if (valType == C4V_Any) return buildConversion(C4V_Any);
+	if (valType == C4V_Any) return buildConversion(C4V_String);
 	throw compiler->Error(n, "Error: value is not a string!");
 }
 
@@ -1163,15 +1164,16 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::UnOpExpr *n)
 	// TODO: for which type of expression should we call 'visit'?
 	n->operand->accept(this);
 	unique_ptr<C4CompiledValue> operand = std::move(tmp_expr);
+	assert(operand);
 	// TODO: what is the semantics of n->op? Which value corresponds to which symbol?
 
 	switch(C4ScriptOpMap[n->op].Code) {
 		case AB_Neg:
-			tmp_expr = make_unique<C4CompiledValue>(C4V_Int, m_builder->CreateNeg(tmp_expr->getInt(), "tmp_neg"), n, this);
+			tmp_expr = make_unique<C4CompiledValue>(C4V_Int, m_builder->CreateNeg(operand->getInt(), "tmp_neg"), n, this);
 		case AB_Not:
-			tmp_expr = make_unique<C4CompiledValue>(C4V_Bool, m_builder->CreateNot(tmp_expr->getBool(), "tmp_not"), n, this);
+			tmp_expr = make_unique<C4CompiledValue>(C4V_Bool, m_builder->CreateNot(operand->getBool(), "tmp_not"), n, this);
 		case AB_BitNot:
-			tmp_expr = make_unique<C4CompiledValue>(C4V_Int, m_builder->CreateNot(tmp_expr->getInt(), "tmp_bit_not"), n, this);
+			tmp_expr = make_unique<C4CompiledValue>(C4V_Int, m_builder->CreateNot(operand->getInt(), "tmp_bit_not"), n, this);
 		default: return; // TODO;
 	}
 }
@@ -1180,9 +1182,9 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::BinOpExpr *n)
 {
 	// TODO: for which type of expression should we call 'visit'?
 	n->lhs->accept(this);
-	unique_ptr<C4CompiledValue> left  = std::move(tmp_expr);
+	unique_ptr<C4CompiledValue> left  = std::move(tmp_expr); assert(left);
 	n->rhs->accept(this);
-	unique_ptr<C4CompiledValue> right = std::move(tmp_expr);
+	unique_ptr<C4CompiledValue> right = std::move(tmp_expr); assert(right);
 	// TODO: what is the semantics of n->op? Which value corresponds to which symbol?
 	
 	switch(C4ScriptOpMap[n->op].Code) {

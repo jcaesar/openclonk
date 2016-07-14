@@ -73,6 +73,7 @@ inline C4Value AulLLVMToC4Value(C4V_Type t, C4V_Data d) {
 		case C4V_Effect:
 			if (!v.GetData())
 				v.Set0();
+			break;
 		case C4V_Any:
 		case C4V_Enum:
 		case C4V_C4ObjectEnum:

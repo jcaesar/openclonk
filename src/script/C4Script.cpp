@@ -474,12 +474,6 @@ static C4Value FnLog(C4PropList * _this, C4Value * Pars)
 	return C4VBool(true);
 }
 
-static C4Value FnLogInt(C4PropList * _this, long wood)
-{
-	LogF("%ld", wood);
-	return C4VBool(true);
-}
-
 static C4Value FnDebugLog(C4PropList * _this, C4Value * Pars)
 {
 	DebugLog(FnStringFormat(_this, Pars[0].getStr(), &Pars[1], 9).getData());
@@ -1005,7 +999,6 @@ void InitCoreFunctionMap(C4AulScriptEngine *pEngine)
 	F(Trans_Rotate);
 	F(LocateFunc);
 	F(FileWrite);
-	F(LogInt); // TODO: For testing purposes only. Remove.
 
 	F(eval);
 	F(GetConstantNameByValue);
