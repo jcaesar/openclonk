@@ -408,9 +408,11 @@ private:
 		llvmValue *llvmVal;
 
 		const ::aul::ast::Node *n;
-		const CodegenAstVisitor *compiler;
 
 		llvmValue* buildConversion(C4V_Type t_to) const;
+
+	protected:
+		CodegenAstVisitor const * const compiler;
 
 	public:
 		C4CompiledValue(const C4V_Type &valType, llvmValue *llvmVal, const ::aul::ast::Node *n, const CodegenAstVisitor *compiler);
@@ -450,16 +452,45 @@ private:
 
 	class C4CompiledLValue : public C4CompiledValue
 	{
+	protected:
+		C4CompiledLValue(C4V_Type typ, llvmValue *rval, const ::aul::ast::Node *n, const CodegenAstVisitor *compiler) :
+			C4CompiledValue(typ, rval, n, compiler) {}
+	public:
+		virtual void store(unique_ptr<C4CompiledValue>& rval) const = 0;
+	};
+
+	class C4CompiledLVariable : public C4CompiledLValue {
 	private:
 		const AulVariable *const lval;
 	public:
-		C4CompiledLValue(llvmValue *rval, const AulVariable* lval, const ::aul::ast::Node *n, const CodegenAstVisitor *compiler) :
-			C4CompiledValue(lval->getType(), rval, n, compiler),
+		C4CompiledLVariable(llvmValue *rval, const AulVariable* lval, const ::aul::ast::Node *n, const CodegenAstVisitor *compiler) :
+			C4CompiledLValue(lval->getType(), rval, n, compiler),
 			lval(lval) { }
-
 		void store(unique_ptr<C4CompiledValue>& rval) const { lval->store(*rval); }
-
-		virtual ~C4CompiledLValue() {}
+		virtual ~C4CompiledLVariable() {}
+	};
+	
+	class C4CompiledLStruct : public C4CompiledLValue {
+	private:
+		unique_ptr<C4CompiledValue> strk, idx;
+	public:
+		C4CompiledLStruct(llvmValue *rval, unique_ptr<C4CompiledValue> strk, unique_ptr<C4CompiledValue> idx, const ::aul::ast::Node *n, const CodegenAstVisitor *compiler) :
+			C4CompiledLValue(C4V_Any, rval, n, compiler),
+			strk(move(strk)), idx(move(idx)) { }
+		void store(unique_ptr<C4CompiledValue>& rval) const;
+		virtual ~C4CompiledLStruct() {}
+	};
+	
+	class C4CompiledLSlice : public C4CompiledLValue {
+	private:
+		unique_ptr<C4CompiledValue> strk;
+		llvmValue* idx1, *idx2;
+	public:
+		C4CompiledLSlice(llvmValue *rval, unique_ptr<C4CompiledValue> strk, llvmValue* idx1, llvmValue* idx2, const ::aul::ast::Node *n, const CodegenAstVisitor *compiler) :
+			C4CompiledLValue(C4V_Any, rval, n, compiler),
+			strk(move(strk)), idx1(idx1), idx2(idx2) { }
+		void store(unique_ptr<C4CompiledValue>& rval) const;
+		virtual ~C4CompiledLSlice() {}
 	};
 
 	C4AulScriptFunc *Fn = nullptr;
@@ -501,7 +532,7 @@ public:
 	virtual void visit(const ::aul::ast::BoolLit *n) override;
 	virtual void visit(const ::aul::ast::ArrayLit *n) override;
 	virtual void visit(const ::aul::ast::ProplistLit *n) override;
-	//virtual void visit(const ::aul::ast::NilLit *n) override;
+	virtual void visit(const ::aul::ast::NilLit *n) override;
 	//virtual void visit(const ::aul::ast::ThisLit *n) override;
 	virtual void visit(const ::aul::ast::VarExpr *n) override;
 	virtual void visit(const ::aul::ast::UnOpExpr *n) override;
@@ -783,7 +814,7 @@ unique_ptr<C4AulCompiler::CodegenAstVisitor::C4CompiledLValue> C4AulCompiler::Co
 {
 	const AulVariable& var = compiler->fn_var_scope.at(var_name);
 	// TODO: catch out of bounds
-	return make_unique<C4CompiledLValue>(compiler->m_builder->CreateLoad(var.addr), &var, n, compiler);
+	return make_unique<C4CompiledLVariable>(compiler->m_builder->CreateLoad(var.addr), &var, n, compiler);
 }
 
 
@@ -865,6 +896,10 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::ProplistLit *n) {
 		m_builder->CreateCall(efunc_SetStructIndex, args);
 	}
 	tmp_expr = make_unique<C4CompiledValue>(C4V_PropList, pl, n, this);
+}
+
+void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::NilLit *n) {
+	tmp_expr = make_unique<C4CompiledValue>(C4V_Nil, buildBool(false) /* maybe, or maybe not. */, n, this);
 }
 
 void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::If *n)
@@ -1322,7 +1357,31 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::SubscriptExpr *n)
 	args.push_back(rettp);
 	llvmValue* retd = m_builder->CreateCall(use_array_access_fastpath ? efunc_GetArrayIndex : efunc_GetStructIndex, args);
 	llvmValue* rett = m_builder->CreateLoad(rettp);
-	tmp_expr = PackVariant({rett, retd}, n);
+	tmp_expr = make_unique<C4CompiledLStruct>(PackVariant({rett, retd}, n)->getVariant(), move(object), move(index), n, this);
+}
+
+void C4AulCompiler::CodegenAstVisitor::C4CompiledLStruct::store(unique_ptr<C4CompiledValue> &rval) const
+{
+	std::vector<llvmValue*> args;
+	bool use_array_access_fastpath;
+	if (strk->getType() == C4V_Array || idx->getType() == C4V_Int)
+	{
+		use_array_access_fastpath = true;
+		args.push_back(strk->getArray());
+		args.push_back(idx->getInt());
+	}
+	else
+	{
+		// TODO: These unpacks may cause side-effect tainted code generation. Maybe, they should be executed at construction time.
+		use_array_access_fastpath = false;
+		for (auto upv: compiler->UnpackValue(strk->getVariant()))
+			args.push_back(upv);
+		for (auto upv: compiler->UnpackValue(idx->getVariant()))
+			args.push_back(upv);
+	}
+	for (auto upv: compiler->UnpackValue(rval->getVariant()))
+		args.push_back(upv);
+	compiler->m_builder->CreateCall(use_array_access_fastpath ? compiler->efunc_SetArrayIndex : compiler->efunc_SetStructIndex, args);
 }
 
 void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::SliceExpr *n)
@@ -1333,14 +1392,26 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::SliceExpr *n)
 	auto object = move(tmp_expr); assert(object);
 	n->start->accept(this);
 	auto start = move(tmp_expr); assert(start);
+	auto lstart = start->getInt();
 	n->end->accept(this);
 	auto end = move(tmp_expr); assert(end);
+	auto lend = end->getInt();
 	auto crv = m_builder->CreateCall(
 		efunc_GetArraySlice,
-		std::vector<llvmValue*>{object->getArray(), start->getInt(), end->getInt()}
+		std::vector<llvmValue*>{object->getArray(), lstart, lend}
 	);
-	tmp_expr = make_unique<C4CompiledValue>(C4V_Array, crv, n, this);
+	auto rval = make_unique<C4CompiledValue>(C4V_Array, crv, n, this);
+	tmp_expr = make_unique<C4CompiledLSlice>(rval->getVariant(), move(object), lstart, lend, n, this);
 }
+
+void C4AulCompiler::CodegenAstVisitor::C4CompiledLSlice::store(unique_ptr<C4CompiledValue> &rval) const
+{
+	std::vector<llvmValue*> args { strk->getArray(), idx1, idx2 };
+	for (auto upv: compiler->UnpackValue(rval->getVariant()))
+		args.push_back(upv);
+	compiler->m_builder->CreateCall(compiler->efunc_SetArraySlice, args);
+}
+
 
 void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::VarDecl *n)
 {
@@ -1685,6 +1756,7 @@ extern "C" {
 void C4AulCompiler::CodegenAstVisitor::FnDecls() {
 	efunc_CallByPFunc = RegisterEngineFunction(LLVMAulPFuncCall, ".LLVMAulPFuncCall", mod, executionengine); // Calling engine functions
 	efunc_ValueConversionFunc = RegisterEngineFunction(InternalValueConversionFunc, ".LLVMVarTypeConv", mod, executionengine); // Converting between runtime types
+	efunc_ValueConversionFunc->addFnAttr(llvm::Attribute::ReadNone);
 	efunc_CreateValueArray = RegisterEngineFunction(LLVMAulCreateValueArray, ".CreateArray", mod, executionengine);
 	efunc_CreateProplist = RegisterEngineFunction(LLVMAulCreateProplist, ".CreatePropList", mod, executionengine);
 	efunc_GetArrayIndex = RegisterEngineFunction(LLVMAulGetArrayElement, ".GetArrayIndex", mod, executionengine);
