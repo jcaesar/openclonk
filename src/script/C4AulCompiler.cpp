@@ -513,17 +513,17 @@ private:
 	unique_ptr<IRBuilder<>> m_builder;
 
 	llvmFunction *efunc_CallByPFunc;
+	llvmFunction *efunc_CheckArrayIndex;
 	llvmFunction *efunc_CompareEquals;
-	llvmFunction *efunc_ValueConversionFunc;
-	llvmFunction *efunc_CreateValueArray;
 	llvmFunction *efunc_CreateProplist;
+	llvmFunction *efunc_CreateValueArray;
 	llvmFunction *efunc_GetArrayIndex;
 	llvmFunction *efunc_GetArraySlice;
-	llvmFunction *efunc_CheckArrayIndex;
 	llvmFunction *efunc_GetStructIndex;
 	llvmFunction *efunc_SetArrayIndex;
 	llvmFunction *efunc_SetArraySlice;
 	llvmFunction *efunc_SetStructIndex;
+	llvmFunction *efunc_ValueConversionFunc;
 	unique_ptr<C4CompiledValue> tmp_expr; // result from recursive expression code generation
 	std::array<llvmValue*,C4V_Type_LLVM::variant_member_count> parameter_array; // place to store parameters and their types when calling an engine function
 
@@ -1450,6 +1450,10 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::VarDecl *n)
 {
 	for (const auto &decl: n->decls)
 	{
+		// Essentially, this is treated like an assignment since the space has been allocated long before.
+		if (!decl.init)
+			continue;
+
 		auto lhs = AulVariable::get(decl.name, n, this);
 		decl.init->accept(this);
 		auto rhs = move(tmp_expr);
