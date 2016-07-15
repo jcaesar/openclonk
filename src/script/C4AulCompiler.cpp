@@ -59,6 +59,7 @@ Implementation notes:
 #include <llvm/IR/DataLayout.h>
 #include <llvm/IR/DerivedTypes.h>
 #include <llvm/IR/IRBuilder.h>
+#include <llvm/IR/MDBuilder.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
 #include <llvm/IR/Verifier.h>
@@ -70,6 +71,12 @@ typedef llvm::Function llvmFunction;
 typedef llvm::Type llvmType;
 typedef llvm::Value llvmValue;
 using std::unique_ptr; using std::make_unique;
+
+template<typename T, typename U>
+std::vector<T>& operator <<(std::vector<T>& to, const U& from) {
+	to.insert(to.end(), from.begin(), from.end());
+	return to;
+}
 
 static std::string vstrprintf(const char *format, va_list args)
 {
@@ -506,6 +513,7 @@ private:
 	unique_ptr<IRBuilder<>> m_builder;
 
 	llvmFunction *efunc_CallByPFunc;
+	llvmFunction *efunc_CompareEquals;
 	llvmFunction *efunc_ValueConversionFunc;
 	llvmFunction *efunc_CreateValueArray;
 	llvmFunction *efunc_CreateProplist;
@@ -702,7 +710,15 @@ llvmValue* C4AulCompiler::CodegenAstVisitor::C4CompiledValue::buildConversion(C4
 	BasicBlock* orig = compiler->CurrentBlock();
 	BasicBlock* mismatch = compiler->CreateBlock("typeconv");
 	BasicBlock* cont = compiler->CreateBlock("typeconvcont");
-	bld.CreateCondBr(match, cont, mismatch);
+	llvm::BranchInst* br = bld.CreateCondBr(match, cont, mismatch);
+	if (t_to != C4V_Bool) // Bool is probably more converted to than other types, so I'll leave that for now.
+	{
+		// We expect that the variable already has the right type in most cases.
+		llvm::ICmpInst* cmp = llvm::dyn_cast<llvm::ICmpInst>(br->getCondition());
+		assert(cmp);
+		llvm::MDBuilder mdb(cmp->getContext());
+		br->setMetadata(llvm::LLVMContext::MD_prof, mdb.createBranchWeights(64, 1));
+	}
 	compiler->SetInsertPoint(mismatch);
 	// Yay, we need to pack the struct…
 	auto unpacked = compiler->UnpackValue(llvmVal);
@@ -1222,6 +1238,25 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::BinOpExpr *n)
 	unique_ptr<C4CompiledValue> right = std::move(tmp_expr); assert(right);
 	// TODO: what is the semantics of n->op? Which value corresponds to which symbol?
 	
+	auto compile_eq_cmp = [&](bool positive)
+	{
+		C4V_Type lt = left->getType();
+		if (lt < C4V_FirstPointer && right->getType() == lt)
+		{
+			tmp_expr = make_unique<C4CompiledValue>(C4V_Bool, 
+				m_builder->CreateICmp(positive? CmpInst::ICMP_EQ : CmpInst::ICMP_NE, left->getValue(lt), right->getValue(lt)), n, this);
+		}
+		else
+		{
+			std::vector<llvmValue*> args;
+			args << UnpackValue(left->getVariant()) << UnpackValue(right->getVariant());
+			llvmValue* val = m_builder->CreateCall(efunc_CompareEquals, args);
+			if (!positive)
+				val = m_builder->CreateXor(val, buildBool(true));
+			tmp_expr = make_unique<C4CompiledValue>(C4V_Bool, val, n, this);
+		}
+	};
+	
 	switch(C4ScriptOpMap[n->op].Code) {
 		case AB_Sum:
 			tmp_expr = make_unique<C4CompiledValue>(C4V_Int, m_builder->CreateAdd(left->getInt(), right->getInt(), "tmp_add"), n, this);
@@ -1260,12 +1295,10 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::BinOpExpr *n)
 			tmp_expr = make_unique<C4CompiledValue>(C4V_Bool, m_builder->CreateICmpSGE(left->getInt(), right->getInt(), "tmp_ge"), n, this);
 			break;
 		case AB_Equal:
-			// TODO: implement for C4V_Any
-			tmp_expr = make_unique<C4CompiledValue>(C4V_Bool, m_builder->CreateICmpEQ(left->getInt(), right->getInt(), "tmp_eq"), n, this);
+			compile_eq_cmp(true);
 			break;
 		case AB_NotEqual:
-			// TODO: implement for C4V_Any
-			tmp_expr = make_unique<C4CompiledValue>(C4V_Bool, m_builder->CreateICmpNE(left->getInt(), right->getInt(), "tmp_neq"), n, this);
+			compile_eq_cmp(false);
 			break;
 		case AB_BitAnd:
 			tmp_expr = make_unique<C4CompiledValue>(C4V_Int, m_builder->CreateAnd(left->getInt(), right->getInt(), "tmp_and"), n, this);
@@ -1745,6 +1778,13 @@ extern "C" {
 		
 		return true;
 	}
+	
+	bool LLVMAulCompareEquals(C4V_Type t1, C4V_Data d1, C4V_Type t2, C4V_Data d2)
+	{
+		C4Value v1 = AulLLVMToC4Value(t1, d1);
+		C4Value v2 = AulLLVMToC4Value(t2, d2);
+		return v1 == v2;
+	}
 
 	// Not to be called from LLVM, but to be called instead of LLVM-Generated code.
 	void LLVMAulDummyFunc(C4V_Type* t, C4V_Data* d) {
@@ -1770,6 +1810,8 @@ void C4AulCompiler::CodegenAstVisitor::FnDecls() {
 	efunc_SetStructIndex = RegisterEngineFunction(LLVMAulSetStructElement, ".SetStructIndex", mod, executionengine);
 	efunc_CheckArrayIndex = RegisterEngineFunction(LLVMAulCheckArrayIndex, ".CheckArrayIndex", mod, executionengine);
 	efunc_CheckArrayIndex->addFnAttr(llvm::Attribute::ReadOnly);
+	efunc_CompareEquals = RegisterEngineFunction(LLVMAulCompareEquals, ".CompareEquals", mod, executionengine);
+	efunc_CompareEquals->addFnAttr(llvm::Attribute::ReadOnly);
 
 	// Declarations for script functions
 	for (const auto& func: ::ScriptEngine.FuncLookUp) {
