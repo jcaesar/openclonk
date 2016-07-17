@@ -1221,12 +1221,18 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::UnOpExpr *n)
 	switch(C4ScriptOpMap[n->op].Code) {
 		case AB_Neg:
 			tmp_expr = make_unique<C4CompiledValue>(C4V_Int, m_builder->CreateNeg(operand->getInt(), "tmp_neg"), n, this);
+			break;
 		case AB_Not:
 			tmp_expr = make_unique<C4CompiledValue>(C4V_Bool, m_builder->CreateNot(operand->getBool(), "tmp_not"), n, this);
+			break;
 		case AB_BitNot:
 			tmp_expr = make_unique<C4CompiledValue>(C4V_Int, m_builder->CreateNot(operand->getInt(), "tmp_bit_not"), n, this);
-		default: return; // TODO;
+			break;
+		default:
+			break; // TODO;
 	}
+
+	return;
 }
 
 void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::BinOpExpr *n)
