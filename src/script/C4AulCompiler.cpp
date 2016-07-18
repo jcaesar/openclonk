@@ -1237,7 +1237,6 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::UnOpExpr *n)
 
 void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::BinOpExpr *n)
 {
-	// TODO: for which type of expression should we call 'visit'?
 	n->lhs->accept(this);
 	unique_ptr<C4CompiledValue> left  = std::move(tmp_expr); assert(left);
 	n->rhs->accept(this);
@@ -1319,29 +1318,75 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::BinOpExpr *n)
 		{
 			// Beware! Not functional yet!
 			llvm::Function *currentFun = m_builder->GetInsertBlock()->getParent();
-			BasicBlock *evaluate_right_block = BasicBlock::Create(getGlobalContext(), "tmp_jmpand_eval_r", currentFun);
-			BasicBlock *fail_early_block     = BasicBlock::Create(getGlobalContext(), "tmp_jmpand_fail");
-			BasicBlock *merge_block          = BasicBlock::Create(getGlobalContext(), "tmp_jmpand_merge");
-			m_builder->CreateCondBr(left->getBool(), evaluate_right_block, fail_early_block);
-			m_builder->SetInsertPoint(evaluate_right_block);
-			llvmValue *evaluate_right_value = right->getBool();
-			m_builder->CreateBr(merge_block);
-			// Code generation of right expression could have changed the block (for example if there was another JUMPAND expression embedded). Update the block to be on the safe side.
-			evaluate_right_block = m_builder->GetInsertBlock();
-			currentFun->getBasicBlockList().push_back(fail_early_block);
-			m_builder->SetInsertPoint(fail_early_block);
-			llvmValue *fail_early_value = buildBool(false);
-			m_builder->CreateBr(merge_block);
-			fail_early_block = m_builder->GetInsertBlock();
-			currentFun->getBasicBlockList().push_back(merge_block);
-			m_builder->SetInsertPoint(merge_block);
+			BasicBlock *test_right_block  = BasicBlock::Create(
+					getGlobalContext(),
+					"tmp_jmpand_test_right",
+					currentFun
+			);
+			BasicBlock *fail_early_block        = BasicBlock::Create(
+					getGlobalContext(),
+					"tmp_jmpand_fail_early"
+			);
+			BasicBlock *return_left_block = BasicBlock::Create(
+					getGlobalContext(),
+					"tmp_jmpand_left"
+			);
+			BasicBlock *merge_block       = BasicBlock::Create(
+					getGlobalContext(),
+					"tmp_jmpand_merge"
+			);
+			
 
-			llvm::PHINode *pn = m_builder->CreatePHI(llvm::IntegerType::get(getGlobalContext(), 32), 2, "tmp_jmpand");
-			pn->addIncoming(evaluate_right_value, evaluate_right_block);
-			pn->addIncoming(fail_early_value, fail_early_block);
+			llvm::PHINode *pn = m_builder->CreatePHI(
+					llvm::IntegerType::get(getGlobalContext(), 32),
+					2, "tmp_jmpand"
+			);
+			// pn->addIncoming(test_right_value, test_right_block);
+			// pn->addIncoming(fail_early_value, fail_early_block);
 
 			tmp_expr = make_unique<C4CompiledValue>(C4V_Bool, pn, n, this);
-		break;
+			break;
+		}
+		case AB_JUMPOR:
+		{
+			llvm::Function *currentFun = m_builder->GetInsertBlock()->getParent();
+			
+			BasicBlock *return_left_block = BasicBlock::Create(
+					getGlobalContext(),
+					"tmp_jmpor_left_value",
+					currentFun
+			);
+			BasicBlock *fail_block = BasicBlock::Create(
+					getGlobalContext(),
+					"tmp_jmpor_fail"
+			);
+			BasicBlock *merge_block = BasicBlock::Create(
+					getGlobalContext(),
+					"tmp_jmpor_merge"
+			);
+
+			m_builder->CreateCondBr(left->getBool(), return_left_block, fail_block);
+
+			m_builder->SetInsertPoint(return_left_block);
+			llvmValue *left_value = left->getVariant();
+			// llvmValue *left_value = PackVariant((C4V_Type_LLVM::UnpackedVariant) {C4V_Type_LLVM::LLVMTypeTag(left->getType()), left->getValue(left->getType())}, n)->getVariant();
+			m_builder->CreateBr(merge_block);
+			return_left_block = m_builder->GetInsertBlock();
+
+			currentFun->getBasicBlockList().push_back(fail_block);
+			m_builder->SetInsertPoint(fail_block);
+			;
+			llvmValue *fail_value = C4CompiledValue(C4V_Bool, buildBool(false), n, this).getVariant();
+			m_builder->CreateBr(merge_block);
+			fail_block = m_builder->GetInsertBlock();
+
+			currentFun->getBasicBlockList().push_back(merge_block);
+			llvm::PHINode *pn = m_builder->CreatePHI(C4V_Type_LLVM::getVariantVarLLVMType(), 2, "tmp_jmpor_phi");
+			pn->addIncoming(left_value, return_left_block);
+			pn->addIncoming(fail_value, fail_block);
+
+			tmp_expr = make_unique<C4CompiledValue>(C4V_Any, pn, n, this);
+			break;
 		}
 		default: /* silence warning. TODO */ break;
 	}
