@@ -1322,17 +1322,7 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::BinOpExpr *n)
 			break;
 		case AB_JUMPAND:
 		{
-			// Beware! Not functional yet!
 			llvm::Function *currentFun = m_builder->GetInsertBlock()->getParent();
-			BasicBlock *test_right_block  = BasicBlock::Create(
-					getGlobalContext(),
-					"tmp_jmpand_test_right",
-					currentFun
-			);
-			BasicBlock *fail_early_block        = BasicBlock::Create(
-					getGlobalContext(),
-					"tmp_jmpand_fail_early"
-			);
 			BasicBlock *return_right_block = BasicBlock::Create(
 					getGlobalContext(),
 					"tmp_jmpand_right",
@@ -1374,7 +1364,7 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::BinOpExpr *n)
 			pn->addIncoming(left_value, return_left_block);
 			pn->addIncoming(return_right_value, return_right_block);
 
-			tmp_expr = make_unique<C4CompiledValue>(C4V_Any, pn, n, this);
+			tmp_expr = make_unique<C4CompiledValue>(etype, pn, n, this);
 			break;
 		}
 		case AB_JUMPOR:
@@ -1422,7 +1412,7 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::BinOpExpr *n)
 			pn->addIncoming(left_value, return_left_block);
 			pn->addIncoming(return_right_value, return_right_block);
 
-			tmp_expr = make_unique<C4CompiledValue>(C4V_Any, pn, n, this);
+			tmp_expr = make_unique<C4CompiledValue>(etype, pn, n, this);
 			break;
 		}
 		default: /* silence warning. TODO */ break;
