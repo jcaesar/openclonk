@@ -1333,6 +1333,11 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::BinOpExpr *n)
 					getGlobalContext(),
 					"tmp_jmpand_fail_early"
 			);
+			BasicBlock *return_right_block = BasicBlock::Create(
+					getGlobalContext(),
+					"tmp_jmpand_right",
+					currentFun
+			);
 			BasicBlock *return_left_block = BasicBlock::Create(
 					getGlobalContext(),
 					"tmp_jmpand_left"
@@ -1341,16 +1346,35 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::BinOpExpr *n)
 					getGlobalContext(),
 					"tmp_jmpand_merge"
 			);
-			
 
-			llvm::PHINode *pn = m_builder->CreatePHI(
-					llvm::IntegerType::get(getGlobalContext(), 32),
-					2, "tmp_jmpand"
-			);
-			// pn->addIncoming(test_right_value, test_right_block);
-			// pn->addIncoming(fail_early_value, fail_early_block);
+			// lhs will be evaluated unconditionally
+			n->lhs->accept(this);
+			auto left = move(tmp_expr); assert(left);
+			m_builder->CreateCondBr(left->getBool(), return_right_block, return_left_block);
 
-			tmp_expr = make_unique<C4CompiledValue>(C4V_Bool, pn, n, this);
+			m_builder->SetInsertPoint(return_right_block);
+			n->rhs->accept(this);
+			auto right = move(tmp_expr); assert(right);
+
+			C4V_Type etype = (left->getType() == right->getType()) ? left->getType() : C4V_Any;
+
+			// just return_right if lhs does succeed
+			llvmValue *return_right_value = right->getValue(etype);
+			m_builder->CreateBr(merge_block);
+			return_right_block = m_builder->GetInsertBlock();
+
+			currentFun->getBasicBlockList().push_back(return_left_block);
+			m_builder->SetInsertPoint(return_left_block);
+			llvmValue *left_value = left->getValue(etype);
+			m_builder->CreateBr(merge_block);
+			return_left_block = m_builder->GetInsertBlock();
+
+			currentFun->getBasicBlockList().push_back(merge_block);
+			llvm::PHINode *pn = m_builder->CreatePHI(C4V_Type_LLVM::get(etype), 2, "tmp_jmpor_phi");
+			pn->addIncoming(left_value, return_left_block);
+			pn->addIncoming(return_right_value, return_right_block);
+
+			tmp_expr = make_unique<C4CompiledValue>(C4V_Any, pn, n, this);
 			break;
 		}
 		case AB_JUMPOR:
