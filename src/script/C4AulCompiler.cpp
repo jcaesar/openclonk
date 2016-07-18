@@ -1361,9 +1361,9 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::BinOpExpr *n)
 					getGlobalContext(),
 					"tmp_jmpor_left_value"
 			);
-			BasicBlock *fail_block = BasicBlock::Create(
+			BasicBlock *return_right_block = BasicBlock::Create(
 					getGlobalContext(),
-					"tmp_jmpor_fail",
+					"tmp_jmpor_right_value",
 					currentFun
 			);
 			BasicBlock *merge_block = BasicBlock::Create(
@@ -1374,18 +1374,18 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::BinOpExpr *n)
 			// lhs will be evaluated unconditionally
 			n->lhs->accept(this);
 			auto left = move(tmp_expr); assert(left);
-			m_builder->CreateCondBr(left->getBool(), return_left_block, fail_block);
+			m_builder->CreateCondBr(left->getBool(), return_left_block, return_right_block);
 
-			m_builder->SetInsertPoint(fail_block);
+			m_builder->SetInsertPoint(return_right_block);
 			n->rhs->accept(this);
 			auto right = move(tmp_expr); assert(right);
 
 			C4V_Type etype = (left->getType() == right->getType()) ? left->getType() : C4V_Any;
 
-			// for now just fail if lhs does not succeed
-			llvmValue *fail_value = C4CompiledValue(C4V_Bool, buildBool(false), n, this).getValue(etype);
+			// just return_right if lhs does not succeed
+			llvmValue *return_right_value = right->getValue(etype);
 			m_builder->CreateBr(merge_block);
-			fail_block = m_builder->GetInsertBlock();
+			return_right_block = m_builder->GetInsertBlock();
 
 			currentFun->getBasicBlockList().push_back(return_left_block);
 			m_builder->SetInsertPoint(return_left_block);
@@ -1396,7 +1396,7 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::BinOpExpr *n)
 			currentFun->getBasicBlockList().push_back(merge_block);
 			llvm::PHINode *pn = m_builder->CreatePHI(C4V_Type_LLVM::get(etype), 2, "tmp_jmpor_phi");
 			pn->addIncoming(left_value, return_left_block);
-			pn->addIncoming(fail_value, fail_block);
+			pn->addIncoming(return_right_value, return_right_block);
 
 			tmp_expr = make_unique<C4CompiledValue>(C4V_Any, pn, n, this);
 			break;
