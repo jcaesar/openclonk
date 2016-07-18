@@ -1237,12 +1237,18 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::UnOpExpr *n)
 
 void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::BinOpExpr *n)
 {
-	n->lhs->accept(this);
-	unique_ptr<C4CompiledValue> left  = std::move(tmp_expr); assert(left);
-	n->rhs->accept(this);
-	unique_ptr<C4CompiledValue> right = std::move(tmp_expr); assert(right);
+	auto oprcode = C4ScriptOpMap[n->op].Code;
+	unique_ptr<C4CompiledValue> left;
+	unique_ptr<C4CompiledValue> right;
+
+	if(oprcode != AB_JUMPOR && oprcode != AB_JUMPAND) {
+		n->lhs->accept(this);
+		left  = std::move(tmp_expr); assert(left);
+		n->rhs->accept(this);
+		right = std::move(tmp_expr); assert(right);
+	}
 	// TODO: what is the semantics of n->op? Which value corresponds to which symbol?
-	
+
 	auto compile_eq_cmp = [&](bool positive)
 	{
 		C4V_Type lt = left->getType();
@@ -1261,7 +1267,7 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::BinOpExpr *n)
 			tmp_expr = make_unique<C4CompiledValue>(C4V_Bool, val, n, this);
 		}
 	};
-	
+
 	switch(C4ScriptOpMap[n->op].Code) {
 		case AB_Sum:
 			tmp_expr = make_unique<C4CompiledValue>(C4V_Int, m_builder->CreateAdd(left->getInt(), right->getInt(), "tmp_add"), n, this);
@@ -1353,35 +1359,42 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::BinOpExpr *n)
 			
 			BasicBlock *return_left_block = BasicBlock::Create(
 					getGlobalContext(),
-					"tmp_jmpor_left_value",
-					currentFun
+					"tmp_jmpor_left_value"
 			);
 			BasicBlock *fail_block = BasicBlock::Create(
 					getGlobalContext(),
-					"tmp_jmpor_fail"
+					"tmp_jmpor_fail",
+					currentFun
 			);
 			BasicBlock *merge_block = BasicBlock::Create(
 					getGlobalContext(),
 					"tmp_jmpor_merge"
 			);
 
+			// lhs will be evaluated unconditionally
+			n->lhs->accept(this);
+			auto left = move(tmp_expr); assert(left);
 			m_builder->CreateCondBr(left->getBool(), return_left_block, fail_block);
 
-			m_builder->SetInsertPoint(return_left_block);
-			llvmValue *left_value = left->getVariant();
-			// llvmValue *left_value = PackVariant((C4V_Type_LLVM::UnpackedVariant) {C4V_Type_LLVM::LLVMTypeTag(left->getType()), left->getValue(left->getType())}, n)->getVariant();
-			m_builder->CreateBr(merge_block);
-			return_left_block = m_builder->GetInsertBlock();
-
-			currentFun->getBasicBlockList().push_back(fail_block);
 			m_builder->SetInsertPoint(fail_block);
-			;
-			llvmValue *fail_value = C4CompiledValue(C4V_Bool, buildBool(false), n, this).getVariant();
+			n->rhs->accept(this);
+			auto right = move(tmp_expr); assert(right);
+
+			C4V_Type etype = (left->getType() == right->getType()) ? left->getType() : C4V_Any;
+
+			// for now just fail if lhs does not succeed
+			llvmValue *fail_value = C4CompiledValue(C4V_Bool, buildBool(false), n, this).getValue(etype);
 			m_builder->CreateBr(merge_block);
 			fail_block = m_builder->GetInsertBlock();
 
+			currentFun->getBasicBlockList().push_back(return_left_block);
+			m_builder->SetInsertPoint(return_left_block);
+			llvmValue *left_value = left->getValue(etype);
+			m_builder->CreateBr(merge_block);
+			return_left_block = m_builder->GetInsertBlock();
+
 			currentFun->getBasicBlockList().push_back(merge_block);
-			llvm::PHINode *pn = m_builder->CreatePHI(C4V_Type_LLVM::getVariantVarLLVMType(), 2, "tmp_jmpor_phi");
+			llvm::PHINode *pn = m_builder->CreatePHI(C4V_Type_LLVM::get(etype), 2, "tmp_jmpor_phi");
 			pn->addIncoming(left_value, return_left_block);
 			pn->addIncoming(fail_value, fail_block);
 
