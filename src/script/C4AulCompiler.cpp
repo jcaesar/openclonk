@@ -756,7 +756,7 @@ llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompiledValue::getBool() const
 		case C4V_Bool: return llvmVal;
 		case C4V_Int: return zero_comparison(llvmVal);
 		case C4V_Any: return zero_comparison(buildConversion(C4V_Bool));
-		default: throw compiler->Error(n, "Error: value cannot be converted to Int!");
+		default: throw compiler->Error(n, "Error: value cannot be converted to Bool!");
 	}
 }
 
@@ -867,15 +867,11 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::StringLit *n)
 
 void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::IntLit *n)
 {
-	fprintf(stderr, "compiling %d\n", n->value);
-
 	tmp_expr = make_unique<C4CompiledValue>(C4V_Int, buildInt(n->value), n, this);
 }
 
 void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::BoolLit *n)
 {
-	fprintf(stderr, "compiling %s\n", n->value ? "True":"False");
-
 	tmp_expr = make_unique<C4CompiledValue>(C4V_Bool, buildBool(n->value), n, this);
 }
 
@@ -1535,7 +1531,6 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::FunctionDecl *n)
 	if (!Fn)
 		throw Error(n, "internal error: unable to find function definition for %s", n->name.c_str());
 
-	fprintf(stderr, "compiling %s\n", n->name.c_str());
 	m_builder = make_unique<IRBuilder<>>(getGlobalContext());
 	llvmFunction* lf = Fn->llvmFunc;
 	assert(lf);
