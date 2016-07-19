@@ -1322,47 +1322,32 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::BinOpExpr *n)
 			break;
 		case AB_JUMPAND:
 		{
-			llvm::Function *currentFun = m_builder->GetInsertBlock()->getParent();
-			BasicBlock *return_right_block = BasicBlock::Create(
-					getGlobalContext(),
-					"tmp_jmpand_right",
-					currentFun
-			);
-			BasicBlock *return_left_block = BasicBlock::Create(
-					getGlobalContext(),
-					"tmp_jmpand_left"
-			);
-			BasicBlock *merge_block       = BasicBlock::Create(
-					getGlobalContext(),
-					"tmp_jmpand_merge"
-			);
-
 			// lhs will be evaluated unconditionally
 			n->lhs->accept(this);
 			auto left = move(tmp_expr); assert(left);
-			m_builder->CreateCondBr(left->getBool(), return_right_block, return_left_block);
+			auto ob = CurrentBlock();
 
-			m_builder->SetInsertPoint(return_right_block);
+			SetInsertPoint(CreateBlock("tmp_jmpand_rhs"));
 			n->rhs->accept(this);
 			auto right = move(tmp_expr); assert(right);
+			auto rhb = CurrentBlock();
 
 			C4V_Type etype = (left->getType() == right->getType()) ? left->getType() : C4V_Any;
 
-			// just return_right if lhs does succeed
-			llvmValue *return_right_value = right->getValue(etype);
-			m_builder->CreateBr(merge_block);
-			return_right_block = m_builder->GetInsertBlock();
+			llvmValue *rhv = right->getValue(etype);
+			auto ctb = CreateBlock("tmp_jmpand_continue");
+			m_builder->CreateBr(ctb);
 
-			currentFun->getBasicBlockList().push_back(return_left_block);
-			m_builder->SetInsertPoint(return_left_block);
-			llvmValue *left_value = left->getValue(etype);
-			m_builder->CreateBr(merge_block);
-			return_left_block = m_builder->GetInsertBlock();
+			SetInsertPoint(ob);
+			auto lhv = left->getValue(etype);
+			auto lhc = left->getBool();
+			ob = CurrentBlock();
+			m_builder->CreateCondBr(lhc, rhb, ctb);
 
-			currentFun->getBasicBlockList().push_back(merge_block);
+			SetInsertPoint(ctb);
 			llvm::PHINode *pn = m_builder->CreatePHI(C4V_Type_LLVM::get(etype), 2, "tmp_jmpor_phi");
-			pn->addIncoming(left_value, return_left_block);
-			pn->addIncoming(return_right_value, return_right_block);
+			pn->addIncoming(lhv, ob);
+			pn->addIncoming(rhv, rhb);
 
 			tmp_expr = make_unique<C4CompiledValue>(etype, pn, n, this);
 			break;
