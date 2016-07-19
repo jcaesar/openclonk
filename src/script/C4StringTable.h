@@ -42,6 +42,7 @@ private:
 	void MarkForDeletion() { DeletionMarkers.insert(this); }
 	static void DoDeletions();
 	static std::unordered_set<C4RefCnt*> DeletionMarkers;
+	// TODO: This wants a redesign/upgrade. An array of DeletionMarkers, 0 being the ones currently deleted, 1 the standard one to insert, and 2,3.. ones for 'stale' objects that were flagged for deletion often
 };
 
 class C4String: public C4RefCnt

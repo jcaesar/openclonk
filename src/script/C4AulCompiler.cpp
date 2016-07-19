@@ -408,7 +408,7 @@ void C4AulCompiler::PreparseAstVisitor::visit(const ::aul::ast::BinOpExpr *n)
 	auto opr = C4ScriptOpMap[n->op];
 	switch (opr.Code) {
 		case AB_JUMPAND: case AB_JUMPOR:
-			assert(opr.RetType != C4V_Any && !"C4ScriptOpMap seems wrong. Remove this ugly hack when correct."); // TODO
+			assert(opr.RetType != C4V_Any && "C4ScriptOpMap seems wrong. Remove this ugly hack when correct."); // TODO
 			expr_type = C4V_Any;
 			break;
 		default:
