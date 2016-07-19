@@ -1254,6 +1254,32 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::UnOpExpr *n)
 		case AB_BitNot:
 			tmp_expr = make_unique<C4CompiledValue>(C4V_Int, m_builder->CreateNot(operand->getInt(), "tmp_bit_not"), n, this);
 			break;
+		case AB_Inc:
+		{
+			auto assignable = dynamic_cast<const C4CompiledLValue*>(&*operand);
+			if (!assignable)
+				throw Error("RValue as operand of ++", n);
+			unique_ptr<C4CompiledValue> afterInc = make_unique<C4CompiledValue>(C4V_Int, m_builder->CreateAdd(operand->getInt(), buildInt(1), "tmp_inc_add"), n, this);
+			assignable->store(afterInc);
+			if(C4ScriptOpMap[n->op].Postfix)
+				tmp_expr = move(operand);
+			else
+				tmp_expr = move(afterInc);
+			break;
+		}
+		case AB_Dec:
+		{
+			auto assignable = dynamic_cast<const C4CompiledLValue*>(&*operand);
+			if (!assignable)
+				throw Error("RValue as operand of --", n);
+			unique_ptr<C4CompiledValue> afterDec = make_unique<C4CompiledValue>(C4V_Int, m_builder->CreateSub(operand->getInt(), buildInt(1), "tmp_dec_sub"), n, this);
+			assignable->store(afterDec);
+			if(C4ScriptOpMap[n->op].Postfix)
+				tmp_expr = move(operand);
+			else
+				tmp_expr = move(afterDec);
+			break;
+		}
 		default:
 			break; // TODO;
 	}
