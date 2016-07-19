@@ -1378,7 +1378,8 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::UnOpExpr *n)
 
 void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::BinOpExpr *n)
 {
-	auto oprcode = C4ScriptOpMap[n->op].Code;
+	auto opr = C4ScriptOpMap[n->op];
+	auto oprcode = opr.Code;
 	unique_ptr<C4CompiledValue> left;
 	unique_ptr<C4CompiledValue> right;
 
@@ -1541,6 +1542,14 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::BinOpExpr *n)
 		}
 		default: /* silence warning. TODO */ break;
 	}
+
+	if(opr.Changer) {
+		auto assignable = dynamic_cast<const C4CompiledLValue*>(&*left);
+		if (!assignable)
+			throw Error("RValue on the left hand side of =", n);
+		assignable->store(tmp_expr);
+	}
+
 }
 
 void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::AssignmentExpr *n)
