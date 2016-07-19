@@ -431,6 +431,8 @@ private:
 		llvmValue *getString() const;
 		llvmValue *getArray() const;
 		llvmValue *getPropList() const;
+		llvmValue *getNil() const;
+		llvmValue *getIsNil() const;
 		llvmValue *getVariant() const;
 		llvmValue *getValue(C4V_Type t) const;
 
@@ -757,6 +759,33 @@ llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompiledValue::getBool() const
 		case C4V_Int: return zero_comparison(llvmVal);
 		case C4V_Any: return zero_comparison(buildConversion(C4V_Bool));
 		default: throw compiler->Error(n, "Error: value cannot be converted to Bool!");
+	}
+}
+
+llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompiledValue::getNil() const
+{
+	switch(valType) {
+		case C4V_Nil:
+			return llvmVal;
+		default:
+			throw compiler->Error(n, "Error: value is not a Nil!");
+	}
+}
+
+llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompiledValue::getIsNil() const
+{
+	switch(valType) {
+		case C4V_Nil:
+			return compiler->buildBool(true);
+		case C4V_Any:
+		{
+			auto ttn = C4V_Type_LLVM::LLVMTypeTag(C4V_Nil);
+			llvmValue* typetag = compiler->m_builder->CreateExtractValue(llvmVal, {0});
+
+			return compiler->m_builder->CreateICmp(CmpInst::ICMP_EQ, typetag, ttn);
+		}
+		default: 
+			return compiler->buildBool(false);
 	}
 }
 
@@ -1237,13 +1266,13 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::BinOpExpr *n)
 	unique_ptr<C4CompiledValue> left;
 	unique_ptr<C4CompiledValue> right;
 
-	if(oprcode != AB_JUMPOR && oprcode != AB_JUMPAND) {
+	// some operations may decide themselves when to compile lhs and rhs
+	if(oprcode != AB_JUMPOR && oprcode != AB_JUMPAND && oprcode != AB_JUMPNNIL) {
 		n->lhs->accept(this);
 		left  = std::move(tmp_expr); assert(left);
 		n->rhs->accept(this);
 		right = std::move(tmp_expr); assert(right);
 	}
-	// TODO: what is the semantics of n->op? Which value corresponds to which symbol?
 
 	auto compile_eq_cmp = [&](bool positive)
 	{
@@ -1264,7 +1293,43 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::BinOpExpr *n)
 		}
 	};
 
-	switch(C4ScriptOpMap[n->op].Code) {
+
+	auto compile_left_true = [&](bool eval_right_on_true)
+	{
+		// lhs will be evaluated unconditionally
+		n->lhs->accept(this);
+		auto left = move(tmp_expr); assert(left);
+		auto ob = CurrentBlock();
+
+		SetInsertPoint(CreateBlock("tmp_jmpand_rhs"));
+		n->rhs->accept(this);
+		auto right = move(tmp_expr); assert(right);
+		auto rhb = CurrentBlock();
+
+		C4V_Type etype = (left->getType() == right->getType()) ? left->getType() : C4V_Any;
+
+		llvmValue *rhv = right->getValue(etype);
+		auto ctb = CreateBlock("tmp_jmpand_continue");
+		m_builder->CreateBr(ctb);
+
+		SetInsertPoint(ob);
+		auto lhv = left->getValue(etype);
+		auto lhc = left->getBool();
+		ob = CurrentBlock();
+		if(eval_right_on_true)
+			m_builder->CreateCondBr(lhc, rhb, ctb);
+		else
+			m_builder->CreateCondBr(lhc, ctb, rhb);
+
+		SetInsertPoint(ctb);
+		llvm::PHINode *pn = m_builder->CreatePHI(C4V_Type_LLVM::get(etype), 2, "tmp_jmpor_phi");
+		pn->addIncoming(lhv, ob);
+		pn->addIncoming(rhv, rhb);
+
+		tmp_expr = make_unique<C4CompiledValue>(etype, pn, n, this);
+	};
+
+	switch(oprcode) {
 		case AB_Sum:
 			tmp_expr = make_unique<C4CompiledValue>(C4V_Int, m_builder->CreateAdd(left->getInt(), right->getInt(), "tmp_add"), n, this);
 			break;
@@ -1318,6 +1383,16 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::BinOpExpr *n)
 			break;
 		case AB_JUMPAND:
 		{
+			compile_left_true(true);
+			break;
+		}
+		case AB_JUMPOR:
+		{
+			compile_left_true(false);
+			break;
+		}
+		case AB_JUMPNNIL:
+		{
 			// lhs will be evaluated unconditionally
 			n->lhs->accept(this);
 			auto left = move(tmp_expr); assert(left);
@@ -1336,42 +1411,9 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::BinOpExpr *n)
 
 			SetInsertPoint(ob);
 			auto lhv = left->getValue(etype);
-			auto lhc = left->getBool();
+			auto lhc = left->getIsNil();
 			ob = CurrentBlock();
 			m_builder->CreateCondBr(lhc, rhb, ctb);
-
-			SetInsertPoint(ctb);
-			llvm::PHINode *pn = m_builder->CreatePHI(C4V_Type_LLVM::get(etype), 2, "tmp_jmpor_phi");
-			pn->addIncoming(lhv, ob);
-			pn->addIncoming(rhv, rhb);
-
-			tmp_expr = make_unique<C4CompiledValue>(etype, pn, n, this);
-			break;
-		}
-		case AB_JUMPOR:
-		{
-			// lhs will be evaluated unconditionally
-			n->lhs->accept(this);
-			auto left = move(tmp_expr); assert(left);
-			auto ob = CurrentBlock();
-
-			SetInsertPoint(CreateBlock("tmp_jmpor_rhs"));
-			n->rhs->accept(this);
-			auto right = move(tmp_expr); assert(right);
-			auto rhb = CurrentBlock();
-
-			C4V_Type etype = (left->getType() == right->getType()) ? left->getType() : C4V_Any;
-
-			// just return_right if lhs does not succeed
-			llvmValue *rhv = right->getValue(etype);
-			auto ctb = CreateBlock("tmp_jmpor_continue");
-			m_builder->CreateBr(ctb);
-
-			SetInsertPoint(ob);
-			auto lhv = left->getValue(etype);
-			auto lhc = left->getBool();
-			ob = CurrentBlock();
-			m_builder->CreateCondBr(lhc, ctb, rhb);
 
 			SetInsertPoint(ctb);
 			llvm::PHINode *pn = m_builder->CreatePHI(C4V_Type_LLVM::get(etype), 2, "tmp_jmpor_phi");
