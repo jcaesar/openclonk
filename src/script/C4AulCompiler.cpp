@@ -30,6 +30,9 @@ Implementation notes:
     Therefore, C4RefCnt'ed objects shall not be stored in LLVM values that survive ticks. (global constants, etc.)
 	(Alternatively, refcounting would have to be done for those.)
 
+ 3. The Preparse AST visitor runs a local type inference, disregarding any separation of the variable by different areas or learned types of other variables.
+    Running something like the w-Algorithm or Abstract Interpretation would be nice.
+
  */
 
 #include "C4Include.h"
@@ -186,6 +189,25 @@ class C4AulCompiler::PreparseAstVisitor : public ::aul::DefaultRecursiveVisitor
 	// Fn: The C4AulScriptFunc that is currently getting parsed
 	C4AulScriptFunc *Fn = nullptr;
 
+	template<typename T> void DRVv(T n) { DefaultRecursiveVisitor::visit(n); };
+	// Type getting
+	C4V_Type expr_type = C4V_Nil;
+	std::unordered_map<std::string,C4V_Type> known_types;
+	void CheckVariableAccess(const ::aul::ast::Node* n, C4V_Type t)
+	{
+		auto ven = dynamic_cast<const ::aul::ast::VarExpr*>(n);
+		if(ven)
+			HasVariableAccess(ven->identifier, t);
+	}
+	void HasVariableAccess(std::string name, C4V_Type t) {
+		auto it = known_types.find(name);
+		if (it == known_types.end())
+			known_types.emplace(name, t);
+		else if (it->second != t)
+			it->second = C4V_Any;
+	}
+
+
 public:
 	PreparseAstVisitor(C4ScriptHost *host, C4ScriptHost *source_host, C4AulScriptFunc *func = nullptr) : target_host(host), host(source_host), Fn(func) {}
 
@@ -199,6 +221,21 @@ public:
 	virtual void visit(const ::aul::ast::ParExpr *n) override;
 	virtual void visit(const ::aul::ast::AppendtoPragma *n) override;
 	virtual void visit(const ::aul::ast::IncludePragma *n) override;
+
+	virtual void visit(const ::aul::ast::StringLit *n) override { DRVv(n); expr_type = C4V_String; }
+	virtual void visit(const ::aul::ast::IntLit *n) override { DRVv(n); expr_type = C4V_Int; }
+	virtual void visit(const ::aul::ast::BoolLit *n) override { DRVv(n); expr_type = C4V_Bool; }
+	virtual void visit(const ::aul::ast::ArrayLit *n) override { DRVv(n); expr_type = C4V_Array; }
+	virtual void visit(const ::aul::ast::ProplistLit *n) override { DRVv(n); expr_type = C4V_PropList; }
+	virtual void visit(const ::aul::ast::NilLit *n) override { DRVv(n); expr_type = C4V_Nil; }
+	virtual void visit(const ::aul::ast::ThisLit *n) override { DRVv(n); expr_type = C4V_Any; }
+	virtual void visit(const ::aul::ast::VarExpr *n) override { DRVv(n); expr_type = C4V_Any; }
+	virtual void visit(const ::aul::ast::UnOpExpr *n) override;
+	virtual void visit(const ::aul::ast::BinOpExpr *n) override;
+	virtual void visit(const ::aul::ast::AssignmentExpr *n) override;
+	virtual void visit(const ::aul::ast::SubscriptExpr *n) override { DRVv(n); expr_type = C4V_Any; }
+	virtual void visit(const ::aul::ast::SliceExpr *n) override { DRVv(n); expr_type = C4V_Array; }
+	virtual void visit(const ::aul::ast::FunctionExpr *n) override { DRVv(n); expr_type = C4V_Function; /* TODO: test */ }
 };
 
 void C4AulCompiler::PreparseAstVisitor::visit(const ::aul::ast::RangeLoop *n)
@@ -219,6 +256,7 @@ void C4AulCompiler::PreparseAstVisitor::visit(const ::aul::ast::RangeLoop *n)
 		}
 	}
 	DefaultRecursiveVisitor::visit(n);
+	HasVariableAccess(n->var, C4V_Any);
 }
 
 void C4AulCompiler::PreparseAstVisitor::visit(const ::aul::ast::VarDecl *n)
@@ -270,13 +308,17 @@ void C4AulCompiler::PreparseAstVisitor::visit(const ::aul::ast::VarDecl *n)
 		//		host->Engine->GlobalNamedNames.AddName(cname);
 			break;
 		}
+		if (var.init)
+			var.init->accept(this);
+		else
+			expr_type = C4V_Any;
+		HasVariableAccess(cname, expr_type);
 	}
-
-	DefaultRecursiveVisitor::visit(n);
 }
 
 void C4AulCompiler::PreparseAstVisitor::visit(const ::aul::ast::FunctionDecl *n)
 {
+	known_types.clear();
 	// create script fn
 	C4PropListStatic *Parent = n->is_global ? target_host->Engine->GetPropList() : target_host->GetPropList();
 	const char *cname = n->name.c_str();
@@ -289,7 +331,9 @@ void C4AulCompiler::PreparseAstVisitor::visit(const ::aul::ast::FunctionDecl *n)
 	Fn = new C4AulScriptFunc(Parent, target_host, cname, n->loc);
 	for (const auto &param : n->params)
 	{
-		Fn->AddPar(param.name.c_str(), param.type);
+		auto pname = param.name.c_str();
+		Fn->AddPar(pname, param.type);
+		HasVariableAccess(pname, param.type);
 	}
 	if (n->has_unnamed_params)
 		Fn->ParCount = C4AUL_MAX_Par;
@@ -300,26 +344,36 @@ void C4AulCompiler::PreparseAstVisitor::visit(const ::aul::ast::FunctionDecl *n)
 
 	DefaultRecursiveVisitor::visit(n);
 
+	Fn->var_type_hints = move(known_types);
+
 	Fn = nullptr;
+
+	for(const auto& kt: known_types) {
+		fprintf(stderr, "%s: knowing: %s is %s\n", cname, kt.first.c_str(), GetC4VName(kt.second));
+	}
 }
 
 void C4AulCompiler::PreparseAstVisitor::visit(const ::aul::ast::CallExpr *n)
 {
+	expr_type = C4V_Any;
 	if (n->append_unnamed_pars && Fn->ParCount != C4AUL_MAX_Par)
 	{
 		Fn->ParCount = C4AUL_MAX_Par;
 	}
 	DefaultRecursiveVisitor::visit(n);
+	expr_type = C4V_Any;
 }
 
 void C4AulCompiler::PreparseAstVisitor::visit(const ::aul::ast::ParExpr *n)
 {
+	expr_type = C4V_Any;
 	if (Fn->ParCount != C4AUL_MAX_Par)
 	{
 		Warn(target_host, host, n, Fn, "using Par() inside a function forces it to take variable arguments");
 		Fn->ParCount = C4AUL_MAX_Par;
 	}
 	DefaultRecursiveVisitor::visit(n);
+	expr_type = C4V_Any;
 }
 
 void C4AulCompiler::PreparseAstVisitor::visit(const ::aul::ast::AppendtoPragma *n)
@@ -333,6 +387,41 @@ void C4AulCompiler::PreparseAstVisitor::visit(const ::aul::ast::AppendtoPragma *
 void C4AulCompiler::PreparseAstVisitor::visit(const ::aul::ast::IncludePragma *n)
 {
 	host->Includes.emplace_back(n->what.c_str());
+}
+
+void C4AulCompiler::PreparseAstVisitor::visit(const ::aul::ast::UnOpExpr *n)
+{
+	DRVv(n);
+	auto opr = C4ScriptOpMap[n->op];
+	expr_type = opr.RetType;
+	switch (opr.Code) {
+		case AB_Inc: case AB_Dec:
+			assert(opr.Type1 == opr.RetType);
+			CheckVariableAccess(&*n->operand, opr.RetType);
+		break;
+		default: break;
+	}
+}
+void C4AulCompiler::PreparseAstVisitor::visit(const ::aul::ast::BinOpExpr *n)
+{
+	DRVv(n);
+	auto opr = C4ScriptOpMap[n->op];
+	switch (opr.Code) {
+		case AB_JUMPAND: case AB_JUMPOR:
+			assert(opr.RetType != C4V_Any && !"C4ScriptOpMap seems wrong. Remove this ugly hack when correct."); // TODO
+			expr_type = C4V_Any;
+			break;
+		default:
+			expr_type = opr.RetType;
+			break;
+	}
+}
+void C4AulCompiler::PreparseAstVisitor::visit(const ::aul::ast::AssignmentExpr *n)
+{
+	n->lhs->accept(this);
+	n->rhs->accept(this);
+	CheckVariableAccess(&*n->lhs, expr_type);
+
 }
 
 namespace C4V_Type_LLVM {
@@ -1634,13 +1723,14 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::FunctionDecl *n)
 			vname = fdst;
 		}
 		auto par = make_unique<C4CompiledValue>(Fn->GetParType()[i], argit, n, this);
-		fn_var_scope.insert({{vname, AulVariable(vname, C4V_Any, ::aul::ast::VarDecl::Scope::Func, this, move(par))}});
+		fn_var_scope.insert({{vname, AulVariable(vname, Fn->var_type_hints.at(vname), ::aul::ast::VarDecl::Scope::Func, this, move(par))}});
 	}
 	for (int i = 0; i < Fn->VarNamed.iSize; i++) {
 		const char *vname = Fn->VarNamed.GetItemUnsafe(i);
-		fn_var_scope.insert({{vname, AulVariable(vname, C4V_Any, ::aul::ast::VarDecl::Scope::Func, this)}}); // Caveat: Might do nothing if a parameter with the same name exists. Shouldn't matter…
+		fn_var_scope.insert({{vname, AulVariable(vname, Fn->var_type_hints.at(vname), ::aul::ast::VarDecl::Scope::Func, this)}}); // Caveat: Might do nothing if a parameter with the same name exists. Shouldn't matter…
 	}
 	assert(argit == lf->arg_end());
+	Fn->var_type_hints.clear();
 
 	n->body->accept(this);
 

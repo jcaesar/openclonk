@@ -18,6 +18,7 @@
 
 #include "script/C4Value.h"
 #include "script/C4ValueMap.h"
+#include <unordered_map>
 
 // byte code chunk type
 // some special script functions defined hard-coded to reduce the exec context
@@ -196,6 +197,7 @@ protected:
 	std::vector<const char *> PosForCode;
 	int ParCount;
 	C4V_Type ParType[C4AUL_MAX_Par]; // parameter types
+	std::unordered_map<std::string, C4V_Type> var_type_hints;
 
 public:
 	const char *Script; // script pos
