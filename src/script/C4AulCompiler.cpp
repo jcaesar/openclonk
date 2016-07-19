@@ -526,6 +526,7 @@ private:
 	llvmFunction *efunc_SetArraySlice;
 	llvmFunction *efunc_SetStructIndex;
 	llvmFunction *efunc_ValueConversionFunc;
+	llvmFunction *efunc_Pow;
 	unique_ptr<C4CompiledValue> tmp_expr; // result from recursive expression code generation
 	std::array<llvmValue*,C4V_Type_LLVM::variant_member_count> parameter_array; // place to store parameters and their types when calling an engine function
 
@@ -1346,7 +1347,7 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::BinOpExpr *n)
 			tmp_expr = make_unique<C4CompiledValue>(C4V_Int, m_builder->CreateSRem(left->getInt(), right->getInt(), "tmp_mod"), n, this);
 			break;
 		case AB_Pow:
-			// TODO
+			tmp_expr = make_unique<C4CompiledValue>(C4V_Int, m_builder->CreateCall(efunc_Pow, std::vector<llvmValue*>{left->getInt(), right->getInt()}), n, this);
 			break;
 		case AB_LeftShift:
 			tmp_expr = make_unique<C4CompiledValue>(C4V_Int, m_builder->CreateShl(left->getInt(), right->getInt(), "tmp_shl"), n, this);
@@ -1901,6 +1902,8 @@ void C4AulCompiler::CodegenAstVisitor::FnDecls() {
 	efunc_CheckArrayIndex->addFnAttr(llvm::Attribute::ReadOnly);
 	efunc_CompareEquals = RegisterEngineFunction(LLVMAulCompareEquals, ".CompareEquals", mod, executionengine);
 	efunc_CompareEquals->addFnAttr(llvm::Attribute::ReadOnly);
+	efunc_Pow = RegisterEngineFunction(Pow, ".Pow", mod, executionengine);
+	efunc_Pow->addFnAttr(llvm::Attribute::ReadNone);
 
 	// Declarations for script functions
 	for (const auto& func: ::ScriptEngine.FuncLookUp) {
