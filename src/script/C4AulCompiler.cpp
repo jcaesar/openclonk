@@ -57,23 +57,19 @@ Implementation notes:
 #include <unordered_map>
 
 #include <llvm/Analysis/Passes.h>
-#include <llvm/ExecutionEngine/ExecutionEngine.h>
-#include <llvm/ExecutionEngine/JIT.h>
-#include <llvm/IR/DataLayout.h>
-#include <llvm/IR/DerivedTypes.h>
 #include <llvm/IR/IRBuilder.h>
-#include <llvm/IR/MDBuilder.h>
 #include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/LegacyPassManager.h>
+#include <llvm/IR/MDBuilder.h>
 #include <llvm/IR/Module.h>
 #include <llvm/IR/Verifier.h>
-#include <llvm/PassManager.h>
 #include <llvm/Support/TargetSelect.h>
 #include <llvm/Transforms/Scalar.h>
-using llvm::Module; using llvm::BasicBlock; using llvm::IRBuilder; using llvm::getGlobalContext; using llvm::FunctionType; using llvm::ExecutionEngine; using llvm::EngineBuilder; using llvm::FunctionPassManager; using llvm::APInt; using llvm::ConstantInt; using llvm::ConstantStruct; using llvm::AllocaInst; using llvm::StructType; using llvm::Constant; using llvm::CmpInst;
+using llvm::BasicBlock; using llvm::IRBuilder; using llvm::getGlobalContext; using llvm::FunctionType; using llvm::ExecutionEngine; using llvm::EngineBuilder; using llvm::legacy::FunctionPassManager; using llvm::APInt; using llvm::ConstantInt; using llvm::ConstantStruct; using llvm::AllocaInst; using llvm::StructType; using llvm::Constant; using llvm::CmpInst;
 typedef llvm::Function llvmFunction;
 typedef llvm::Type llvmType;
 typedef llvm::Value llvmValue;
-using std::unique_ptr; using std::make_unique;
+using std::unique_ptr; using llvm::make_unique;
 
 template<typename T, typename U>
 std::vector<T>& operator <<(std::vector<T>& to, const U& from) {
@@ -598,8 +594,8 @@ private:
 	C4ScriptHost *host = nullptr;
 
 	// LLVM stuff necessary for compilations
-	Module* mod; // owned by execution engine
-	ExecutionEngine* executionengine;
+	llvm::Module* mod; // owned by execution engine
+	unique_ptr<ExecutionEngine> executionengine;
 	unique_ptr<FunctionPassManager> funcpassmgr;
 	unique_ptr<IRBuilder<>> m_builder;
 
@@ -955,26 +951,28 @@ unique_ptr<C4AulCompiler::CodegenAstVisitor::C4CompiledLValue> C4AulCompiler::Co
 
 void C4AulCompiler::CodegenAstVisitor::init()
 {
+	auto mod_holder = make_unique<llvm::Module>("c4aulllvm", getGlobalContext());
+	mod = mod_holder.get();
 	llvm::InitializeNativeTarget();
-	mod = new Module("mm", getGlobalContext()); // TODO: name
+	llvm::InitializeNativeTargetAsmPrinter();
 	std::string err;
-	executionengine = EngineBuilder(mod).setErrorStr(&err).create();
+	executionengine.reset(EngineBuilder(move(mod_holder)).setErrorStr(&err).setEngineKind(llvm::EngineKind::Either).create());
 	if(!executionengine)
 		throw Error("Could not create Execution Engine: " + err);
 	executionengine->DisableSymbolSearching();
-	funcpassmgr = make_unique<FunctionPassManager>(mod);
-	mod->setDataLayout(executionengine->getDataLayout());
-	funcpassmgr->add(new llvm::DataLayoutPass(mod));
-	funcpassmgr->add(llvm::createBasicAliasAnalysisPass());
-	funcpassmgr->add(llvm::createInstructionCombiningPass());
-	//funcpassmgr->add(llvm::createReassociatePass());
-	//funcpassmgr->add(llvm::createGVNPass());
-	funcpassmgr->add(llvm::createCFGSimplificationPass());
-	funcpassmgr->add(llvm::createDeadStoreEliminationPass());
-	funcpassmgr->add(llvm::createDeadInstEliminationPass());
+	//funcpassmgr = make_unique<FunctionPassManager>(mod);
+	//mod->setDataLayout(executionengine->getDataLayout());
+	//funcpassmgr->add(new llvm::DataLayoutPass(mod));
+	//funcpassmgr->add(llvm::createBasicAliasAnalysisPass());
 	//funcpassmgr->add(llvm::createInstructionCombiningPass());
-	funcpassmgr->doInitialization();
-	executionengine->addModule(mod);
+	////funcpassmgr->add(llvm::createReassociatePass());
+	////funcpassmgr->add(llvm::createGVNPass());
+	//funcpassmgr->add(llvm::createCFGSimplificationPass());
+	//funcpassmgr->add(llvm::createDeadStoreEliminationPass());
+	//funcpassmgr->add(llvm::createDeadInstEliminationPass());
+	////funcpassmgr->add(llvm::createInstructionCombiningPass());
+	//funcpassmgr->doInitialization();
+	//executionengine->addModule(mod);
 
 	FnDecls();
 }
@@ -1601,7 +1599,7 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::SubscriptExpr *n)
 	args.push_back(rettp);
 	llvmValue* retd = m_builder->CreateCall(use_array_access_fastpath ? efunc_GetArrayIndex : efunc_GetStructIndex, args);
 	llvmValue* rett = m_builder->CreateLoad(rettp);
-	tmp_expr = make_unique<C4CompiledLStruct>(PackVariant({rett, retd}, n)->getVariant(), move(object), move(index), n, this);
+	tmp_expr = std::make_unique<C4CompiledLStruct>(PackVariant({{rett, retd}}, n)->getVariant(), move(object), move(index), n, this);
 }
 
 void C4AulCompiler::CodegenAstVisitor::C4CompiledLStruct::store(unique_ptr<C4CompiledValue> &rval) const
@@ -1644,8 +1642,8 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::SliceExpr *n)
 		efunc_GetArraySlice,
 		std::vector<llvmValue*>{object->getArray(), lstart, lend}
 	);
-	auto rval = make_unique<C4CompiledValue>(C4V_Array, crv, n, this);
-	tmp_expr = make_unique<C4CompiledLSlice>(rval->getVariant(), move(object), lstart, lend, n, this);
+	auto rval = std::make_unique<C4CompiledValue>(C4V_Array, crv, n, this);
+	tmp_expr = std::make_unique<C4CompiledLSlice>(rval->getVariant(), move(object), lstart, lend, n, this);
 }
 
 void C4AulCompiler::CodegenAstVisitor::C4CompiledLSlice::store(unique_ptr<C4CompiledValue> &rval) const
@@ -1731,7 +1729,7 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::FunctionDecl *n)
 			snprintf(fdst, 20, "par.%d", i);
 			vname = fdst;
 		}
-		auto par = make_unique<C4CompiledValue>(Fn->GetParType()[i], argit, n, this);
+		auto par = std::make_unique<C4CompiledValue>(Fn->GetParType()[i], &*argit, n, this);
 		fn_var_scope.insert({{vname, AulVariable(vname, Fn->var_type_hints.at(vname), ::aul::ast::VarDecl::Scope::Func, this, move(par))}});
 	}
 	for (int i = 0; i < Fn->VarNamed.iSize; i++) {
@@ -2009,25 +2007,25 @@ extern "C" {
 }
 
 void C4AulCompiler::CodegenAstVisitor::FnDecls() {
-	efunc_CallByPFunc = RegisterEngineFunction(LLVMAulPFuncCall, ".LLVMAulPFuncCall", mod, executionengine); // Calling engine functions
-	efunc_ValueConversionFunc = RegisterEngineFunction(InternalValueConversionFunc, ".LLVMVarTypeConv", mod, executionengine); // Converting between runtime types
+	efunc_CallByPFunc = RegisterEngineFunction(LLVMAulPFuncCall, ".LLVMAulPFuncCall", mod, executionengine.get()); // Calling engine functions
+	efunc_ValueConversionFunc = RegisterEngineFunction(InternalValueConversionFunc, ".LLVMVarTypeConv", mod, executionengine.get()); // Converting between runtime types
 	efunc_ValueConversionFunc->addFnAttr(llvm::Attribute::ReadNone);
-	efunc_CreateValueArray = RegisterEngineFunction(LLVMAulCreateValueArray, ".CreateArray", mod, executionengine);
-	efunc_CreateProplist = RegisterEngineFunction(LLVMAulCreateProplist, ".CreatePropList", mod, executionengine);
-	efunc_GetArrayIndex = RegisterEngineFunction(LLVMAulGetArrayElement, ".GetArrayIndex", mod, executionengine);
+	efunc_CreateValueArray = RegisterEngineFunction(LLVMAulCreateValueArray, ".CreateArray", mod, executionengine.get());
+	efunc_CreateProplist = RegisterEngineFunction(LLVMAulCreateProplist, ".CreatePropList", mod, executionengine.get());
+	efunc_GetArrayIndex = RegisterEngineFunction(LLVMAulGetArrayElement, ".GetArrayIndex", mod, executionengine.get());
 	efunc_GetArrayIndex->addFnAttr(llvm::Attribute::ReadOnly);
-	efunc_GetArraySlice = RegisterEngineFunction(LLVMAulGetArraySlice, ".GetArraySlice", mod, executionengine);
+	efunc_GetArraySlice = RegisterEngineFunction(LLVMAulGetArraySlice, ".GetArraySlice", mod, executionengine.get());
 	efunc_GetArraySlice->addFnAttr(llvm::Attribute::ReadOnly);
-	efunc_GetStructIndex = RegisterEngineFunction(LLVMAulGetStructElement, ".GetStructIndex", mod, executionengine);
+	efunc_GetStructIndex = RegisterEngineFunction(LLVMAulGetStructElement, ".GetStructIndex", mod, executionengine.get());
 	efunc_GetStructIndex->addFnAttr(llvm::Attribute::ReadOnly);
-	efunc_SetArrayIndex = RegisterEngineFunction(LLVMAulSetArrayElement, ".SetArrayIndex", mod, executionengine);
-	efunc_SetArraySlice = RegisterEngineFunction(LLVMAulSetArraySlice, ".SetArraySlice", mod, executionengine);
-	efunc_SetStructIndex = RegisterEngineFunction(LLVMAulSetStructElement, ".SetStructIndex", mod, executionengine);
-	efunc_CheckArrayIndex = RegisterEngineFunction(LLVMAulCheckArrayIndex, ".CheckArrayIndex", mod, executionengine);
+	efunc_SetArrayIndex = RegisterEngineFunction(LLVMAulSetArrayElement, ".SetArrayIndex", mod, executionengine.get());
+	efunc_SetArraySlice = RegisterEngineFunction(LLVMAulSetArraySlice, ".SetArraySlice", mod, executionengine.get());
+	efunc_SetStructIndex = RegisterEngineFunction(LLVMAulSetStructElement, ".SetStructIndex", mod, executionengine.get());
+	efunc_CheckArrayIndex = RegisterEngineFunction(LLVMAulCheckArrayIndex, ".CheckArrayIndex", mod, executionengine.get());
 	efunc_CheckArrayIndex->addFnAttr(llvm::Attribute::ReadOnly);
-	efunc_CompareEquals = RegisterEngineFunction(LLVMAulCompareEquals, ".CompareEquals", mod, executionengine);
+	efunc_CompareEquals = RegisterEngineFunction(LLVMAulCompareEquals, ".CompareEquals", mod, executionengine.get());
 	efunc_CompareEquals->addFnAttr(llvm::Attribute::ReadOnly);
-	efunc_Pow = RegisterEngineFunction(Pow, ".Pow", mod, executionengine);
+	efunc_Pow = RegisterEngineFunction(Pow, ".Pow", mod, executionengine.get());
 	efunc_Pow->addFnAttr(llvm::Attribute::ReadNone);
 
 	// Declarations for script functions
@@ -2059,7 +2057,7 @@ void C4AulCompiler::CodegenAstVisitor::FnDecls() {
 			C4V_Type_LLVM::UnpackedVariant upv;
 			auto argit = sf->llvmDelegate->arg_begin();
 			for (size_t j = 0; j < upv.size(); j++, argit++) {
-				llvmValue* ep = m_builder->CreateGEP(argit, std::vector<llvmValue*>{buildInt(i)});
+				llvmValue* ep = m_builder->CreateGEP(&*argit, std::vector<llvmValue*>{buildInt(i)});
 				upv[j] = m_builder->CreateLoad(ep);
 			}
 			delegate_args.push_back(PackVariant(upv)->getValue(sf->GetParType()[i]));
@@ -2068,7 +2066,7 @@ void C4AulCompiler::CodegenAstVisitor::FnDecls() {
 		auto upret = UnpackValue(dlgret->getVariant());
 		auto argit = sf->llvmDelegate->arg_begin();
 		for (size_t j = 0; j < upret.size(); j++, argit++) {
-			llvmValue* ep = m_builder->CreateGEP(argit, std::vector<llvmValue*>{buildInt(0)});
+			llvmValue* ep = m_builder->CreateGEP(&*argit, std::vector<llvmValue*>{buildInt(0)});
 			m_builder->CreateStore(upret[j], ep);
 		}
 		m_builder->CreateRet(nullptr);
@@ -2077,11 +2075,14 @@ void C4AulCompiler::CodegenAstVisitor::FnDecls() {
 
 void C4AulCompiler::CodegenAstVisitor::finalize()
 {
+	assert(executionengine);
+	executionengine->finalizeObject();
 	for(const auto& func: ::ScriptEngine.FuncLookUp) {
 		C4AulScriptFunc *sf = func->SFunc();
 		if(!sf)
 			continue;
 		sf->llvmImpl = reinterpret_cast<decltype(sf->llvmImpl)>(executionengine->getPointerToFunction(sf->llvmDelegate));
+		sf->ee = executionengine.get();
 		//assert(sf->llvmImpl); TODO
 		if (!sf->llvmImpl) {
 			sf->llvmImpl = LLVMAulDummyFunc;

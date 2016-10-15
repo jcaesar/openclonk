@@ -19,6 +19,7 @@
 #include "script/C4AulExec.h"
 #include "script/C4ScriptHost.h"
 #include "script/C4Value.h"
+#include <llvm/ExecutionEngine/GenericValue.h>
 
 C4AulScriptFunc::C4AulScriptFunc(C4PropListStatic * Parent, C4ScriptHost *pOrgScript, const char *pName, const char *Script):
 		C4AulFunc(Parent, pName),
@@ -102,6 +103,10 @@ C4Value C4AulScriptFunc::Exec(C4PropList * p, C4Value pPars[], bool fPassErrors)
 	for (int i = 0; i < GetParCount(); i++)
 		std::tie(retpar_types[i], retpar_data[i]) = C4ValueToAulLLVM(pPars[i]);
 	// TODO: Catch errors on fPassErrors
-	llvmImpl(retpar_types, retpar_data);
+	//llvmImpl(retpar_types, retpar_data);
+	std::vector<llvm::GenericValue> va;
+	va.emplace_back(retpar_types);
+	va.emplace_back(retpar_data);
+	ee->runFunction(llvmDelegate, va);
 	return AulLLVMToC4Value(retpar_types[0], retpar_data[0]);
 }

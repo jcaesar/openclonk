@@ -338,11 +338,11 @@ include_directories(SYSTEM ${SDL2_INCLUDE_DIRS})
 
 # LLVM (for C4Script)
 # Done as per http://llvm.org/docs/CMake.html#embedding-llvm-in-your-project
-find_package(LLVM 3.5 REQUIRED)
+find_package(LLVM 3.8 REQUIRED)
 message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
 message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
 # LLVM comes with API incompatibilities even in the minor releases. So if your
-# distro does not ship 3.5, congratulations, you may acquire it yourself.
+# distro does not ship 3.8, congratulations, you may compile it yourself.
 # To make this succeed, copy the LLVMConfig.cmake from the compiled LLVM
 # library (likely under ./share/llvm/cmake/LLVMConfig.cmake) to
 # cmake/FindLLVM.cmake
@@ -350,9 +350,8 @@ message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
 # TODO: Update README
 include_directories(${LLVM_INCLUDE_DIRS})
 add_definitions(${LLVM_DEFINITIONS})
-llvm_map_components_to_libnames(LLVM_LIBRARIES_OC support core jit native)
-# I was under the impression that ${LLVM_LIBRARIES} would contain something
-# useful. Hm. TODO: Find out which we need.
+llvm_map_components_to_libnames(LLVM_LIBRARIES_OC support core native
+	executionengine mc mcjit orcjit)
 include_directories(SYSTEM ${LLVM_INCLUDE_DIRS})
 link_directories(${LLVM_LIBRARY_DIRS})
 
