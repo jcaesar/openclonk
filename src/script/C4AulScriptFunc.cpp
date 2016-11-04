@@ -43,7 +43,8 @@ C4AulScriptFunc::C4AulScriptFunc(C4PropListStatic * Parent, const C4AulScriptFun
 		VarNamed(FromFunc.VarNamed),
 		ParNamed(FromFunc.ParNamed),
 		pOrgScript(FromFunc.pOrgScript),
-		tProfileTime(0)
+		tProfileTime(0),
+		var_type_hints(FromFunc.var_type_hints)
 {
 	for (int i = 0; i < C4AUL_MAX_Par; i++)
 		ParType[i] = FromFunc.ParType[i];
@@ -103,10 +104,6 @@ C4Value C4AulScriptFunc::Exec(C4PropList * p, C4Value pPars[], bool fPassErrors)
 	for (int i = 0; i < GetParCount(); i++)
 		std::tie(retpar_types[i], retpar_data[i]) = C4ValueToAulLLVM(pPars[i]);
 	// TODO: Catch errors on fPassErrors
-	//llvmImpl(retpar_types, retpar_data);
-	std::vector<llvm::GenericValue> va;
-	va.emplace_back(retpar_types);
-	va.emplace_back(retpar_data);
-	ee->runFunction(llvmDelegate, va);
+	llvmImpl(retpar_types, retpar_data);
 	return AulLLVMToC4Value(retpar_types[0], retpar_data[0]);
 }

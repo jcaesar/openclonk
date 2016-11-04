@@ -44,6 +44,7 @@ Implementation notes:
 #include "script/C4AulParse.h"
 #include "script/C4AulScriptFunc.h"
 #include "script/C4ScriptHost.h"
+#include "script/C4LLVMJIT.h"
 #include "script/C4LLVMTypeMagic.h"
 #include "script/C4ValueMagic.h"
 
@@ -65,7 +66,7 @@ Implementation notes:
 #include <llvm/IR/Verifier.h>
 #include <llvm/Support/TargetSelect.h>
 #include <llvm/Transforms/Scalar.h>
-using llvm::BasicBlock; using llvm::IRBuilder; using llvm::getGlobalContext; using llvm::FunctionType; using llvm::ExecutionEngine; using llvm::EngineBuilder; using llvm::legacy::FunctionPassManager; using llvm::APInt; using llvm::ConstantInt; using llvm::ConstantStruct; using llvm::AllocaInst; using llvm::StructType; using llvm::Constant; using llvm::CmpInst;
+using llvm::BasicBlock; using llvm::IRBuilder; using llvm::FunctionType; using llvm::ExecutionEngine; using llvm::EngineBuilder; using llvm::legacy::FunctionPassManager; using llvm::APInt; using llvm::ConstantInt; using llvm::ConstantStruct; using llvm::AllocaInst; using llvm::StructType; using llvm::Constant; using llvm::CmpInst;
 typedef llvm::Function llvmFunction;
 typedef llvm::Type llvmType;
 typedef llvm::Value llvmValue;
@@ -428,21 +429,24 @@ namespace C4V_Type_LLVM {
 	/* variant */
 	static size_t getVariantTypeSize() { return sizeof(C4V_Type) * CHAR_BIT; } // Type tag bit count
 	static size_t getVariantVarSize() { return sizeof(C4V_Data) * CHAR_BIT; }
-	static llvmType* getVariantTypeLLVMType() { return llvmType::getIntNTy(getGlobalContext(), getVariantTypeSize()); }
-	static llvmType* getVariantVarLLVMType() { return llvmType::getIntNTy(getGlobalContext(), getVariantVarSize()); }
+	static llvmType* getVariantTypeLLVMType() { return llvmType::getIntNTy(llvmcontext, getVariantTypeSize()); }
+	static llvmType* getVariantVarLLVMType() { return llvmType::getIntNTy(llvmcontext, getVariantVarSize()); }
 	static llvm::StructType* getVariantType() {
 		auto tv = std::vector<llvmType*>{
 			getVariantTypeLLVMType(), getVariantVarLLVMType()
 		};
 		assert(tv.size() == variant_member_count);
-		return StructType::get(getGlobalContext(), tv, false);
+		return StructType::get(llvmcontext, tv, false);
 	}
 	static llvmType* get(C4V_Type t) {
 		switch(t) {
 			case C4V_Nil: assert(!"TODO"); return nullptr;
-			case C4V_Int: return llvmType::getIntNTy(getGlobalContext(), int_len);
-			case C4V_Bool: return llvmType::getIntNTy(getGlobalContext(), bool_len);
+			case C4V_Int: return llvmType::getIntNTy(llvmcontext, int_len);
+			case C4V_Bool: return llvmType::getIntNTy(llvmcontext, bool_len);
 			case C4V_PropList:
+			case C4V_Object:
+			case C4V_Effect:
+			case C4V_Def:
 			case C4V_String:
 			case C4V_Array:
 			case C4V_Function:
@@ -454,13 +458,13 @@ namespace C4V_Type_LLVM {
 		}
 	}
 	Constant* LLVMTypeTag(C4V_Type type) {
-    	return ConstantInt::get(getGlobalContext(), APInt(getVariantTypeSize(), type, false));
+    	return ConstantInt::get(llvmcontext, APInt(getVariantTypeSize(), type, false));
 	}
 	llvmValue* defaultVariant(C4V_Type type) {
 		// TODO: Not so sure about this. Revise whether this should work for C4V_Function or just always return a C4V_Nil…
 		auto cv = std::vector<Constant *>{
-			ConstantInt::get(getGlobalContext(), APInt(getVariantTypeSize(), type, false)),
-			ConstantInt::get(getGlobalContext(), APInt(getVariantVarSize(), 0, false))
+			ConstantInt::get(llvmcontext, APInt(getVariantTypeSize(), type, false)),
+			ConstantInt::get(llvmcontext, APInt(getVariantVarSize(), 0, false))
 		};
 		assert(getVariantType()->getNumElements() == cv.size());
 		return ConstantStruct::get(getVariantType(), cv);
@@ -468,14 +472,14 @@ namespace C4V_Type_LLVM {
 	llvmValue* defaultValue(C4V_Type type) {
 		switch(type) {
 			case C4V_Int:
-				return ConstantInt::get(getGlobalContext(), APInt(int_len, 0, true));
+				return ConstantInt::get(llvmcontext, APInt(int_len, 0, true));
 			case C4V_Bool:
-				return ConstantInt::get(getGlobalContext(), APInt(bool_len, 0, false));
+				return ConstantInt::get(llvmcontext, APInt(bool_len, 0, false));
 			case C4V_PropList:
 			case C4V_String:
 			case C4V_Array:
 			case C4V_Function:
-				return ConstantInt::get(getGlobalContext(), APInt(getVariantVarSize(), 0, false));
+				return ConstantInt::get(llvmcontext, APInt(getVariantVarSize(), 0, false));
 			default:
 				return defaultVariant(C4V_Nil);
 		}
@@ -513,14 +517,17 @@ private:
 		C4V_Type getType() const { return valType; }
 		llvmValue *getInt() const;
 		llvmValue *getBool() const;
-		llvmValue *getString() const;
-		llvmValue *getArray() const;
-		llvmValue *getPropList() const;
+		llvmValue *getArray() const { return getHigher(C4V_Array); };
+		llvmValue *getPropList() const { return getHigher(C4V_PropList); };
+		llvmValue *getString() const { return getHigher(C4V_String); };
 		llvmValue *getNil() const;
 		llvmValue *getIsNil() const;
 		llvmValue *getVariant() const;
 		llvmValue *getValue(C4V_Type t) const;
+	private:
+		llvmValue *getHigher(C4V_Type) const;
 
+	public:
 		static unique_ptr<C4CompiledValue> defaultVal(const C4V_Type type, const ::aul::ast::Node *n, const CodegenAstVisitor *compiler)
 		{
 			return make_unique<C4CompiledValue>(type, C4V_Type_LLVM::defaultValue(type), n, compiler);
@@ -594,10 +601,9 @@ private:
 	C4ScriptHost *host = nullptr;
 
 	// LLVM stuff necessary for compilations
-	llvm::Module* mod; // owned by execution engine
-	unique_ptr<ExecutionEngine> executionengine;
-	unique_ptr<FunctionPassManager> funcpassmgr;
+	unique_ptr<llvm::Module> mod;
 	unique_ptr<IRBuilder<>> m_builder;
+	std::shared_ptr<C4JIT> jit;
 
 	llvmFunction *efunc_CallByPFunc;
 	llvmFunction *efunc_CheckArrayIndex;
@@ -677,24 +683,23 @@ private:
 
 	llvmValue* constLLVMPointer(void * ptr);
 	llvmValue* buildInt(int i) const {
-		return llvm::ConstantInt::get(getGlobalContext(), APInt(32, i, true));
+		return llvm::ConstantInt::get(llvmcontext, APInt(32, i, true));
 	}
 	llvmValue* buildBool(bool b) const {
-		return llvm::ConstantInt::get(getGlobalContext(), APInt(1, (int) b, true));
+		return llvm::ConstantInt::get(llvmcontext, APInt(1, (int) b, true));
 	}
 	llvmValue* buildString(const char* c) const {
 		C4String* str = ::Strings.RegString(c);
-		return llvm::ConstantInt::get(getGlobalContext(),
+		return llvm::ConstantInt::get(llvmcontext,
 			APInt(C4V_Type_LLVM::getVariantVarSize(), reinterpret_cast<intptr_t>(str), false));
 		// TODO: We might need some magic to ensure that this is not deleted early / properly deleted
 	}
 	BasicBlock* CreateBlock(llvmFunction* parent = nullptr) const { return CreateBlock( nullptr , parent ); }
-	BasicBlock* CreateBlock( const char* name , llvmFunction* parent = nullptr) const { assert((m_builder && CurrentBlock()) || parent); return BasicBlock::Create(getGlobalContext(), name ? name : "anon" , parent ? parent : CurrentBlock()->getParent()); }
+	BasicBlock* CreateBlock( const char* name , llvmFunction* parent = nullptr) const { assert((m_builder && CurrentBlock()) || parent); return BasicBlock::Create(llvmcontext, name ? name : "anon" , parent ? parent : CurrentBlock()->getParent()); }
 	BasicBlock* CurrentBlock() const { return m_builder->GetInsertBlock(); }
 	void SetInsertPoint(BasicBlock* bb) const { return m_builder->SetInsertPoint(bb); }
 	void SetInsertPoint(BasicBlock* bb, BasicBlock::iterator it) const { return m_builder->SetInsertPoint(bb, it); }
 	/* TODO: I'm not so sure I'm happy that these are const */
-
 
 	C4V_Type_LLVM::UnpackedVariant UnpackValue(llvmValue* packed) const;
 	unique_ptr<C4CompiledValue> PackVariant(C4V_Type_LLVM::UnpackedVariant v, const ::aul::ast::Node *n = nullptr);
@@ -837,7 +842,7 @@ llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompiledValue::getBool() const
 	auto zero_comparison = [&](llvmValue *cmp) {
 		return compiler->m_builder->CreateICmp(CmpInst::ICMP_NE,
 				compiler->m_builder->CreateZExt(cmp, C4V_Type_LLVM::getVariantVarLLVMType()),
-				ConstantInt::get(getGlobalContext(), APInt(C4V_Type_LLVM::getVariantVarSize(), 0, false)));
+				ConstantInt::get(llvmcontext, APInt(C4V_Type_LLVM::getVariantVarSize(), 0, false)));
 	};
 	switch(valType) {
 		case C4V_Nil: return compiler->buildBool(false);
@@ -875,35 +880,6 @@ llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompiledValue::getIsNil() const
 	}
 }
 
-llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompiledValue::getArray() const
-{
-	if (valType == C4V_Array) return llvmVal;
-	if (valType == C4V_Any) return buildConversion(C4V_Array);
-	throw compiler->Error(n, "Error: value is not an Array!");
-}
-
-llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompiledValue::getPropList() const
-{
-	switch (valType) {
-		case C4V_PropList:
-		case C4V_Def:
-		case C4V_Object:
-			return llvmVal;
-		case C4V_Any:
-			return buildConversion(C4V_PropList);
-		default:
-			throw compiler->Error(n, "Error: value is not a PropList!");
-	}
-}
-
-llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompiledValue::getString() const
-{
-	if (valType == C4V_String) return llvmVal;
-	if (valType == C4V_Any) return buildConversion(C4V_String);
-	throw compiler->Error(n, "Error: value is not a string!");
-}
-
-
 llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompiledValue::getVariant() const
 {
 	switch(valType) {
@@ -930,15 +906,36 @@ llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompiledValue::getVariant() const
 
 llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompiledValue::getValue(C4V_Type t) const
 {
-	switch(t) {
+	switch (t) {
 		case C4V_Int: return getInt();
 		case C4V_Bool: return getBool();
-		case C4V_String: return getString();
-		case C4V_PropList: return getPropList();
-		case C4V_Array: return getArray();
+		case C4V_Object:
+		case C4V_Def:
+		case C4V_Effect:
+			t = C4V_PropList;
+			// no break
+		case C4V_String:
+		case C4V_PropList:
+		case C4V_Array:
+			return getHigher(t);
 		case C4V_Any: return getVariant();
 		default: assert(!"TODO");
 	}
+}
+
+llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompiledValue::getHigher(C4V_Type t) const
+{
+	auto actType = valType;
+	switch (actType) {
+		case C4V_Object:
+		case C4V_Def:
+		case C4V_Effect:
+			actType = C4V_PropList;
+		default: break;
+	}
+	if (valType == t) return llvmVal;
+	if (valType == C4V_Any) return buildConversion(C4V_String);
+	throw compiler->Error(n, "Error: cannot convert %s to %s!", GetC4VName(valType), GetC4VName(t));
 }
 
 unique_ptr<C4AulCompiler::CodegenAstVisitor::C4CompiledLValue> C4AulCompiler::CodegenAstVisitor::AulVariable::get(std::string var_name, const ::aul::ast::Node *n, const C4AulCompiler::CodegenAstVisitor *compiler)
@@ -951,29 +948,8 @@ unique_ptr<C4AulCompiler::CodegenAstVisitor::C4CompiledLValue> C4AulCompiler::Co
 
 void C4AulCompiler::CodegenAstVisitor::init()
 {
-	auto mod_holder = make_unique<llvm::Module>("c4aulllvm", getGlobalContext());
-	mod = mod_holder.get();
-	llvm::InitializeNativeTarget();
-	llvm::InitializeNativeTargetAsmPrinter();
-	std::string err;
-	executionengine.reset(EngineBuilder(move(mod_holder)).setErrorStr(&err).setEngineKind(llvm::EngineKind::Either).create());
-	if(!executionengine)
-		throw Error("Could not create Execution Engine: " + err);
-	executionengine->DisableSymbolSearching();
-	//funcpassmgr = make_unique<FunctionPassManager>(mod);
-	//mod->setDataLayout(executionengine->getDataLayout());
-	//funcpassmgr->add(new llvm::DataLayoutPass(mod));
-	//funcpassmgr->add(llvm::createBasicAliasAnalysisPass());
-	//funcpassmgr->add(llvm::createInstructionCombiningPass());
-	////funcpassmgr->add(llvm::createReassociatePass());
-	////funcpassmgr->add(llvm::createGVNPass());
-	//funcpassmgr->add(llvm::createCFGSimplificationPass());
-	//funcpassmgr->add(llvm::createDeadStoreEliminationPass());
-	//funcpassmgr->add(llvm::createDeadInstEliminationPass());
-	////funcpassmgr->add(llvm::createInstructionCombiningPass());
-	//funcpassmgr->doInitialization();
-	//executionengine->addModule(mod);
-
+	jit = std::make_shared<C4JIT>();
+	mod = jit->makeModule("c4aulllvm", llvmcontext);
 	FnDecls();
 }
 
@@ -1696,12 +1672,12 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::FunctionDecl *n)
 	if (!Fn)
 		throw Error(n, "internal error: unable to find function definition for %s", n->name.c_str());
 
-	m_builder = make_unique<IRBuilder<>>(getGlobalContext());
+	m_builder = make_unique<IRBuilder<>>(llvmcontext);
 	llvmFunction* lf = Fn->llvmFunc;
 	assert(lf);
 	if(!lf)
 		throw Error(n, "internal error: unable to find LLVM function definition for %s", n->name.c_str());
-	BasicBlock* bb = BasicBlock::Create(getGlobalContext(), "entrybb", lf);
+	BasicBlock* bb = BasicBlock::Create(llvmcontext, "entrybb", lf);
 	m_builder->SetInsertPoint(bb);
 
 	// If this isn't a global function, but there is a global one with
@@ -1720,6 +1696,9 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::FunctionDecl *n)
 	create_pa(0, C4V_Type_LLVM::getVariantTypeLLVMType(), "pass_par_types");
 	create_pa(1, C4V_Type_LLVM::getVariantVarLLVMType(), "pass_par_vals");
 	llvmFunction::arg_iterator argit = lf->arg_begin();
+	if (Fn->var_type_hints.size() < Fn->GetParCount())
+		Warn(target_host, host, n, Fn, "Internal: function %s has no type inference info.", Fn->GetName());
+	auto getTypeSafe = [&](std::string vname) { try { return Fn->var_type_hints.at(vname); } catch(const std::out_of_range&) { return C4V_Any; } };
 	for (int i = 0; i != Fn->GetParCount(); ++i, ++argit) {
 		std::string vname;
 		if (i < Fn->ParNamed.iSize) {
@@ -1730,11 +1709,12 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::FunctionDecl *n)
 			vname = fdst;
 		}
 		auto par = std::make_unique<C4CompiledValue>(Fn->GetParType()[i], &*argit, n, this);
-		fn_var_scope.insert({{vname, AulVariable(vname, Fn->var_type_hints.at(vname), ::aul::ast::VarDecl::Scope::Func, this, move(par))}});
+		C4V_Type type;
+		fn_var_scope.insert({{vname, AulVariable(vname, getTypeSafe(vname), ::aul::ast::VarDecl::Scope::Func, this, move(par))}});
 	}
 	for (int i = 0; i < Fn->VarNamed.iSize; i++) {
 		const char *vname = Fn->VarNamed.GetItemUnsafe(i);
-		fn_var_scope.insert({{vname, AulVariable(vname, Fn->var_type_hints.at(vname), ::aul::ast::VarDecl::Scope::Func, this)}}); // Caveat: Might do nothing if a parameter with the same name exists. Shouldn't matter…
+		fn_var_scope.insert({{vname, AulVariable(vname, getTypeSafe(vname), ::aul::ast::VarDecl::Scope::Func, this)}}); // Caveat: Might do nothing if a parameter with the same name exists. Shouldn't matter…
 	}
 	assert(argit == lf->arg_end());
 	Fn->var_type_hints.clear();
@@ -1757,8 +1737,8 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::FunctionDecl *n)
 
 llvmValue* C4AulCompiler::CodegenAstVisitor::constLLVMPointer(void * ptr)
 {
-	llvmValue* ic = ConstantInt::get(getGlobalContext(), APInt(sizeof(ptr) * CHAR_BIT, reinterpret_cast<size_t>(ptr), false));
-	return m_builder->CreateIntToPtr(ic, llvmType::getInt8PtrTy(getGlobalContext()));
+	llvmValue* ic = ConstantInt::get(llvmcontext, APInt(sizeof(ptr) * CHAR_BIT, reinterpret_cast<size_t>(ptr), false));
+	return m_builder->CreateIntToPtr(ic, llvmType::getInt8PtrTy(llvmcontext));
 }
 
 void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::CallExpr *n)
@@ -1826,9 +1806,10 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::CallExpr *n)
 	}
 	else
 	{
+		LogF("Calling %s at %p", callee->GetName(), callee);
 		auto llvm_args = std::vector<llvmValue*>{
 			constLLVMPointer(callee), // TODO: Create named constants or annotate in some other way to ease reading the IR a bit…
-			ConstantInt::get(getGlobalContext(), APInt(32, arg_vals.size(), false))
+			ConstantInt::get(llvmcontext, APInt(32, arg_vals.size(), false))
 		};
 		for (auto pa: parameter_array)
 			llvm_args.push_back(m_builder->CreateGEP(pa, std::vector<llvmValue*>{buildInt(0), buildInt(0)}));
@@ -2007,25 +1988,25 @@ extern "C" {
 }
 
 void C4AulCompiler::CodegenAstVisitor::FnDecls() {
-	efunc_CallByPFunc = RegisterEngineFunction(LLVMAulPFuncCall, ".LLVMAulPFuncCall", mod, executionengine.get()); // Calling engine functions
-	efunc_ValueConversionFunc = RegisterEngineFunction(InternalValueConversionFunc, ".LLVMVarTypeConv", mod, executionengine.get()); // Converting between runtime types
+	efunc_CallByPFunc = RegisterEngineFunction(LLVMAulPFuncCall, "Engine.LLVMAulPFuncCall", mod, jit); // Calling engine functions
+	efunc_ValueConversionFunc = RegisterEngineFunction(InternalValueConversionFunc, "Engine.LLVMVarTypeConv", mod, jit); // Converting between runtime types
 	efunc_ValueConversionFunc->addFnAttr(llvm::Attribute::ReadNone);
-	efunc_CreateValueArray = RegisterEngineFunction(LLVMAulCreateValueArray, ".CreateArray", mod, executionengine.get());
-	efunc_CreateProplist = RegisterEngineFunction(LLVMAulCreateProplist, ".CreatePropList", mod, executionengine.get());
-	efunc_GetArrayIndex = RegisterEngineFunction(LLVMAulGetArrayElement, ".GetArrayIndex", mod, executionengine.get());
+	efunc_CreateValueArray = RegisterEngineFunction(LLVMAulCreateValueArray, "Engine.CreateArray", mod, jit);
+	efunc_CreateProplist = RegisterEngineFunction(LLVMAulCreateProplist, "Engine.CreatePropList", mod, jit);
+	efunc_GetArrayIndex = RegisterEngineFunction(LLVMAulGetArrayElement, "Engine.GetArrayIndex", mod, jit);
 	efunc_GetArrayIndex->addFnAttr(llvm::Attribute::ReadOnly);
-	efunc_GetArraySlice = RegisterEngineFunction(LLVMAulGetArraySlice, ".GetArraySlice", mod, executionengine.get());
+	efunc_GetArraySlice = RegisterEngineFunction(LLVMAulGetArraySlice, "Engine.GetArraySlice", mod, jit);
 	efunc_GetArraySlice->addFnAttr(llvm::Attribute::ReadOnly);
-	efunc_GetStructIndex = RegisterEngineFunction(LLVMAulGetStructElement, ".GetStructIndex", mod, executionengine.get());
+	efunc_GetStructIndex = RegisterEngineFunction(LLVMAulGetStructElement, "Engine.GetStructIndex", mod, jit);
 	efunc_GetStructIndex->addFnAttr(llvm::Attribute::ReadOnly);
-	efunc_SetArrayIndex = RegisterEngineFunction(LLVMAulSetArrayElement, ".SetArrayIndex", mod, executionengine.get());
-	efunc_SetArraySlice = RegisterEngineFunction(LLVMAulSetArraySlice, ".SetArraySlice", mod, executionengine.get());
-	efunc_SetStructIndex = RegisterEngineFunction(LLVMAulSetStructElement, ".SetStructIndex", mod, executionengine.get());
-	efunc_CheckArrayIndex = RegisterEngineFunction(LLVMAulCheckArrayIndex, ".CheckArrayIndex", mod, executionengine.get());
+	efunc_SetArrayIndex = RegisterEngineFunction(LLVMAulSetArrayElement, "Engine.SetArrayIndex", mod, jit);
+	efunc_SetArraySlice = RegisterEngineFunction(LLVMAulSetArraySlice, "Engine.SetArraySlice", mod, jit);
+	efunc_SetStructIndex = RegisterEngineFunction(LLVMAulSetStructElement, "Engine.SetStructIndex", mod, jit);
+	efunc_CheckArrayIndex = RegisterEngineFunction(LLVMAulCheckArrayIndex, "Engine.CheckArrayIndex", mod, jit);
 	efunc_CheckArrayIndex->addFnAttr(llvm::Attribute::ReadOnly);
-	efunc_CompareEquals = RegisterEngineFunction(LLVMAulCompareEquals, ".CompareEquals", mod, executionengine.get());
+	efunc_CompareEquals = RegisterEngineFunction(LLVMAulCompareEquals, "Engine.CompareEquals", mod, jit);
 	efunc_CompareEquals->addFnAttr(llvm::Attribute::ReadOnly);
-	efunc_Pow = RegisterEngineFunction(Pow, ".Pow", mod, executionengine.get());
+	efunc_Pow = RegisterEngineFunction(Pow, "EngineCPP.Pow", mod, jit); // TODO: Check linkage/calling convention accross platforms
 	efunc_Pow->addFnAttr(llvm::Attribute::ReadNone);
 
 	// Declarations for script functions
@@ -2037,7 +2018,7 @@ void C4AulCompiler::CodegenAstVisitor::FnDecls() {
 		for(int i = 0; i < sf->GetParCount(); ++i)
 			parTypes.push_back(C4V_Type_LLVM::get(sf->GetParType()[i]));
 		FunctionType *ft = FunctionType::get(C4V_Type_LLVM::get(sf->GetRetType()), parTypes, false);
-		sf->llvmFunc = checkCompile(llvmFunction::Create(ft, llvmFunction::PrivateLinkage, func->GetName(), mod));
+		sf->llvmFunc = checkCompile(llvmFunction::Create(ft, llvmFunction::PrivateLinkage, func->GetName(), mod.get()));
 		int i = 0;
 		for (llvmFunction::arg_iterator argit = sf->llvmFunc->arg_begin(); i < sf->ParNamed.iSize; ++argit, ++i) {
 			argit->setName(std::string(sf->ParNamed.GetItemUnsafe(i)) + ".par");
@@ -2045,17 +2026,17 @@ void C4AulCompiler::CodegenAstVisitor::FnDecls() {
 		sf->llvmImpl = LLVMAulDummyFunc; // Hopefully overwritten…
 
 		//also add a delegate with simple parameter types for easy external calls
-		FunctionType *dft = FunctionType::get(llvmType::getVoidTy(getGlobalContext()), std::vector<llvmType*>{
+		FunctionType *dft = FunctionType::get(llvmType::getVoidTy(llvmcontext), std::vector<llvmType*>{
 			llvm::PointerType::getUnqual(C4V_Type_LLVM::getVariantTypeLLVMType()),
 			llvm::PointerType::getUnqual(C4V_Type_LLVM::getVariantVarLLVMType())
 		},false);
-		sf->llvmDelegate = checkCompile(llvmFunction::Create(dft, llvmFunction::ExternalLinkage, std::string(func->GetName()) + ".delegate", mod));
-		m_builder = make_unique<IRBuilder<>>(getGlobalContext());
-		SetInsertPoint(CreateBlock(sf->llvmDelegate));
+		auto llvmDelegate = checkCompile(llvmFunction::Create(dft, llvmFunction::ExternalLinkage, std::string(func->GetName()) + ".delegate", mod.get()));
+		m_builder = make_unique<IRBuilder<>>(llvmcontext);
+		SetInsertPoint(CreateBlock(llvmDelegate));
 		std::vector<llvmValue*> delegate_args;
 		for (int i = 0; i < func->GetParCount(); ++i) {
 			C4V_Type_LLVM::UnpackedVariant upv;
-			auto argit = sf->llvmDelegate->arg_begin();
+			auto argit = llvmDelegate->arg_begin();
 			for (size_t j = 0; j < upv.size(); j++, argit++) {
 				llvmValue* ep = m_builder->CreateGEP(&*argit, std::vector<llvmValue*>{buildInt(i)});
 				upv[j] = m_builder->CreateLoad(ep);
@@ -2064,26 +2045,31 @@ void C4AulCompiler::CodegenAstVisitor::FnDecls() {
 		}
 		auto dlgret = make_unique<C4CompiledValue>(sf->GetRetType(), m_builder->CreateCall(sf->llvmFunc, delegate_args), nullptr, this);
 		auto upret = UnpackValue(dlgret->getVariant());
-		auto argit = sf->llvmDelegate->arg_begin();
+		auto argit = llvmDelegate->arg_begin();
 		for (size_t j = 0; j < upret.size(); j++, argit++) {
 			llvmValue* ep = m_builder->CreateGEP(&*argit, std::vector<llvmValue*>{buildInt(0)});
 			m_builder->CreateStore(upret[j], ep);
 		}
 		m_builder->CreateRet(nullptr);
+		sf->llvmDlgName = llvmDelegate->getName();
+		assert(sf->llvmDlgName != "");
 	}
 }
 
 void C4AulCompiler::CodegenAstVisitor::finalize()
 {
-	assert(executionengine);
-	executionengine->finalizeObject();
+	assert(jit);
+	jit->addModule(move(mod));
 	for(const auto& func: ::ScriptEngine.FuncLookUp) {
 		C4AulScriptFunc *sf = func->SFunc();
 		if(!sf)
 			continue;
-		sf->llvmImpl = reinterpret_cast<decltype(sf->llvmImpl)>(executionengine->getPointerToFunction(sf->llvmDelegate));
-		sf->ee = executionengine.get();
-		//assert(sf->llvmImpl); TODO
+		sf->llvmFunc = nullptr; // now that we moved the module, who knows what will happen to the pointer
+		sf->jit = jit;
+		auto symbol = jit->findSymbol(sf->llvmDlgName);
+		assert(symbol);
+		sf->llvmImpl = reinterpret_cast<decltype(sf->llvmImpl)>(symbol.getAddress());
+		assert(sf->llvmImpl);
 		if (!sf->llvmImpl) {
 			sf->llvmImpl = LLVMAulDummyFunc;
 			throw Error("Internal Error: Could not synthesize code for %s.", sf->GetName());
@@ -2092,3 +2078,4 @@ void C4AulCompiler::CodegenAstVisitor::finalize()
 }
 
 static_assert(C4AUL_MAX_Par <= std::numeric_limits<int>::max(), "Use of int in loops iterating over parameters."); // I mean… yeah. This is pretty much given.
+llvm::LLVMContext llvmcontext;

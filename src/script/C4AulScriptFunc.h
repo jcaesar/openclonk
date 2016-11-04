@@ -19,7 +19,6 @@
 #include "script/C4Value.h"
 #include "script/C4ValueMap.h"
 #include <unordered_map>
-#include <llvm/ExecutionEngine/ExecutionEngine.h>
 
 // byte code chunk type
 // some special script functions defined hard-coded to reduce the exec context
@@ -171,9 +170,10 @@ private:
 	}
 };
 
+#include "llvm/ExecutionEngine/Orc/JITSymbol.h"
+class C4JIT;
 namespace llvm { class Function; }
 typedef llvm::Function llvmFunction;
-
 // script function class
 class C4AulScriptFunc : public C4AulFunc
 {
@@ -183,9 +183,9 @@ public:
 	C4AulScriptFunc *SFunc() { return this; } // type check func...
 protected:
 	llvmFunction* llvmFunc;
-	llvmFunction* llvmDelegate;
+	std::string llvmDlgName;
 	void(*llvmImpl)(C4V_Type*, C4V_Data*) = nullptr;
-	llvm::ExecutionEngine* ee = nullptr; // TODO: Make it go away, use llvmImpl
+	std::shared_ptr<C4JIT> jit;
 
 	// TODO: Remove all these
 	void AddBCC(C4AulBCCType eType, intptr_t = 0, const char * SPos = 0); // add byte code chunk and advance

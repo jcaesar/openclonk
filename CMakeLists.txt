@@ -338,20 +338,39 @@ include_directories(SYSTEM ${SDL2_INCLUDE_DIRS})
 
 # LLVM (for C4Script)
 # Done as per http://llvm.org/docs/CMake.html#embedding-llvm-in-your-project
-find_package(LLVM 3.8 REQUIRED)
+find_package(LLVM 3.9 REQUIRED)
 message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
 message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
 # LLVM comes with API incompatibilities even in the minor releases. So if your
-# distro does not ship 3.8, congratulations, you may compile it yourself.
+# distro does not ship 3.9, congratulations, you may compile it yourself.
 # To make this succeed, copy the LLVMConfig.cmake from the compiled LLVM
-# library (likely under ./share/llvm/cmake/LLVMConfig.cmake) to
+# library (likely under ${llvm}/lib/cmake/llvm/LLVMConfig.cmake) to
 # cmake/FindLLVM.cmake
+#
+# If you are changing something about the script engine, it is advisable to
+# compile llvm with assertions enabled -DLLVM_ENABLE_ASSERTIONS=On. Note that you
+# will also have to set -DLLVM_ENABLE_RTTI=On
 #
 # TODO: Update README
 include_directories(${LLVM_INCLUDE_DIRS})
 add_definitions(${LLVM_DEFINITIONS})
-llvm_map_components_to_libnames(LLVM_LIBRARIES_OC support core native
-	executionengine mc mcjit orcjit)
+llvm_map_components_to_libnames(LLVM_LIBRARIES_OC
+	Analysis
+	Core
+	ExecutionEngine
+	InstCombine
+	Object
+	RuntimeDyld
+	ScalarOpts
+	Support
+	ipo
+	native
+	orcjit
+	transformutils
+	x86asmparser
+	x86codegen
+)
+
 include_directories(SYSTEM ${LLVM_INCLUDE_DIRS})
 link_directories(${LLVM_LIBRARY_DIRS})
 
