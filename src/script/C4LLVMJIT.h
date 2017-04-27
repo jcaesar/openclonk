@@ -147,10 +147,10 @@ private:
 		PMBuilder.SLPVectorize = true;
 		PMBuilder.VerifyInput = true;
 		PMBuilder.VerifyOutput = true;
+		PMBuilder.OptLevel = 2;
 
 		llvm::legacy::FunctionPassManager perFunctionPasses(module.get());
 		PMBuilder.populateFunctionPassManager(perFunctionPasses);
-
 		perFunctionPasses.doInitialization();
 
 		for (llvm::Function &function : *module)
@@ -162,6 +162,7 @@ private:
 		PMBuilder.populateModulePassManager(perModulePasses);
 		perModulePasses.run(*module);
 
+		module->dump();
 		return module;
 	}
 };

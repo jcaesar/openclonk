@@ -1708,8 +1708,7 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::FunctionDecl *n)
 	m_builder->CreateRet(C4V_Type_LLVM::defaultValue(Fn->GetRetType()));
 
 	//f->dump();
-	llvm::verifyFunction(*lf);
-	//funcpassmgr->run(*lf); // Execute optimizations.
+	llvm::verifyFunction(*lf); // the optimizer should also verify it, but…
 
 	Fn = nullptr;
 	fn_var_scope.clear();
@@ -1986,7 +1985,6 @@ void C4AulCompiler::CodegenAstVisitor::ExternDecls() {
 	efunc_SetArraySlice = RegisterEngineFunction(LLVMAulSetArraySlice, "Engine.SetArraySlice", mod, jit);
 	efunc_SetStructIndex = RegisterEngineFunction(LLVMAulSetStructElement, "Engine.SetStructIndex", mod, jit);
 	efunc_CheckArrayIndex = RegisterEngineFunction(LLVMAulCheckArrayIndex, "Engine.CheckArrayIndex", mod, jit);
-	efunc_CheckArrayIndex->addFnAttr(llvm::Attribute::ReadOnly);
 	efunc_CompareEquals = RegisterEngineFunction(LLVMAulCompareEquals, "Engine.CompareEquals", mod, jit);
 	efunc_CompareEquals->addFnAttr(llvm::Attribute::ReadOnly);
 	efunc_Pow = RegisterEngineFunction(Pow, "EngineCPP.Pow", mod, jit); // TODO: Check linkage/calling convention accross platforms
