@@ -182,6 +182,7 @@ class C4AulCompiler::PreparseAstVisitor : public ::aul::DefaultRecursiveVisitor
 
 public:
 	PreparseAstVisitor(C4ScriptHost *host, C4ScriptHost *source_host, C4AulScriptFunc *func = nullptr) : target_host(host), host(source_host), Fn(func) {}
+	explicit PreparseAstVisitor(C4AulScriptFunc *func) : Fn(func), target_host(func->pOrgScript), host(target_host) {}
 
 	virtual ~PreparseAstVisitor() {}
 
@@ -632,7 +633,7 @@ public:
 	virtual void visit(const ::aul::ast::FunctionDecl *n) override;
 
 	void DumpLLVM() const { mod->dump(); }
-	void CompileScriptFunc(C4AulScriptFunc *func, const ::aul::ast::Function *def);
+	void StandaloneCompile(C4AulScriptFunc *func, const ::aul::ast::Function *def);
 
 	void finalize();
 private:
@@ -655,7 +656,8 @@ private:
 
 	void init();
 	void FnDecls();
-
+	void ExternDecls();
+	void FinalizeFunc(C4AulScriptFunc *func, const std::string&);
 	llvmValue* constLLVMPointer(void * ptr);
 	llvmValue* buildInt(int i) const {
 		return llvm::ConstantInt::get(llvmcontext, APInt(32, i, true));
@@ -712,9 +714,16 @@ void C4AulCompiler::Compile(C4ScriptHost *host, C4ScriptHost *source_host, const
 
 void C4AulCompiler::Compile(C4AulScriptFunc *func, const ::aul::ast::Function *def)
 {
-	assert(!"I'm unsure what this function should do or when it is called…"); // TODO
-	//CodegenAstVisitor v(func);
-	//v.CompileScriptFunc(func, def);
+	{
+		// Don't visit the whole definition here; that would create a new function
+		// and we don't want that.
+		PreparseAstVisitor v(func);
+		def->body->accept(&v);
+	}
+	{
+		CodegenAstVisitor v(func);
+		v.StandaloneCompile(func, def);
+	}
 }
 
 C4AulCompiler::CodegenAstVisitor::C4CompiledValue::C4CompiledValue(const C4V_Type &valType, llvmValue *llvmVal, const ::aul::ast::Node *n, const CodegenAstVisitor *compiler) : valType(valType), llvmVal(llvmVal), n(n), compiler(compiler)
@@ -1684,7 +1693,6 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::FunctionDecl *n)
 			vname = fdst;
 		}
 		auto par = std::make_unique<C4CompiledValue>(Fn->GetParType()[i], &*argit, n, this);
-		C4V_Type type;
 		fn_var_scope.insert({{vname, AulVariable(vname, getTypeSafe(vname), ::aul::ast::VarDecl::Scope::Func, this, move(par))}});
 	}
 	for (int i = 0; i < Fn->VarNamed.iSize; i++) {
@@ -1962,7 +1970,7 @@ extern "C" {
 	}
 }
 
-void C4AulCompiler::CodegenAstVisitor::FnDecls() {
+void C4AulCompiler::CodegenAstVisitor::ExternDecls() {
 	efunc_CallByPFunc = RegisterEngineFunction(LLVMAulPFuncCall, "Engine.LLVMAulPFuncCall", mod, jit); // Calling engine functions
 	efunc_ValueConversionFunc = RegisterEngineFunction(InternalValueConversionFunc, "Engine.LLVMVarTypeConv", mod, jit); // Converting between runtime types
 	efunc_ValueConversionFunc->addFnAttr(llvm::Attribute::ReadNone);
@@ -1983,6 +1991,10 @@ void C4AulCompiler::CodegenAstVisitor::FnDecls() {
 	efunc_CompareEquals->addFnAttr(llvm::Attribute::ReadOnly);
 	efunc_Pow = RegisterEngineFunction(Pow, "EngineCPP.Pow", mod, jit); // TODO: Check linkage/calling convention accross platforms
 	efunc_Pow->addFnAttr(llvm::Attribute::ReadNone);
+}
+
+void C4AulCompiler::CodegenAstVisitor::FnDecls() {
+	ExternDecls();
 
 	// Declarations for script functions
 	for (const auto& func: ::ScriptEngine.FuncLookUp) {
@@ -2039,17 +2051,38 @@ void C4AulCompiler::CodegenAstVisitor::finalize()
 		C4AulScriptFunc *sf = func->SFunc();
 		if(!sf)
 			continue;
-		sf->llvmFunc = nullptr; // now that we moved the module, who knows what will happen to the pointer
-		sf->jit = jit;
-		auto symbol = jit->findSymbol(sf->llvmDlgName);
-		assert(symbol);
-		sf->llvmImpl = reinterpret_cast<decltype(sf->llvmImpl)>(symbol.getAddress());
-		assert(sf->llvmImpl);
-		if (!sf->llvmImpl) {
-			sf->llvmImpl = LLVMAulDummyFunc;
-			throw Error("Internal Error: Could not synthesize code for %s.", sf->GetName());
-		}
+		FinalizeFunc(sf, sf->llvmDlgName);
 	}
+}
+	
+void C4AulCompiler::CodegenAstVisitor::FinalizeFunc(C4AulScriptFunc *sf, const std::string& name) {
+	sf->llvmFunc = nullptr; // now that we moved the module, who knows what will happen to the pointer
+	sf->jit = jit;
+	auto symbol = jit->findSymbol(name);
+	assert(symbol);
+	sf->llvmImpl = reinterpret_cast<decltype(sf->llvmImpl)>(symbol.getAddress());
+	assert(sf->llvmImpl);
+	if (!sf->llvmImpl) {
+		sf->llvmImpl = LLVMAulDummyFunc;
+		throw Error("Internal Error: Could not synthesize code for %s.", sf->GetName());
+	}
+}
+
+void C4AulCompiler::CodegenAstVisitor::StandaloneCompile(C4AulScriptFunc *func, const ::aul::ast::Function *def)
+{
+	func->llvmImpl = LLVMAulDummyFunc;
+	func->llvmFunc = nullptr;
+	std::string name = func->GetName();
+	m_builder = make_unique<IRBuilder<>>(llvmcontext);
+	FunctionType *ft = FunctionType::get(llvmType::getVoidTy(llvmcontext), std::vector<llvmType*>{},false);
+	auto lf = checkCompile(llvmFunction::Create(ft, llvmFunction::ExternalLinkage, name, mod.get()));
+	BasicBlock* bb = BasicBlock::Create(llvmcontext, "entrybb", lf);
+	SetInsertPoint(bb);
+	def->body->accept(this);
+	DumpLLVM();
+	assert(jit);
+	jit->addModule(move(mod));
+	FinalizeFunc(func, func->GetName());
 }
 
 static_assert(C4AUL_MAX_Par <= std::numeric_limits<int>::max(), "Use of int in loops iterating over parameters."); // I mean… yeah. This is pretty much given.

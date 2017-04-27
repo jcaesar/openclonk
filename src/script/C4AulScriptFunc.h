@@ -188,15 +188,9 @@ protected:
 	std::shared_ptr<C4JIT> jit;
 
 	// TODO: Remove all these
-	void AddBCC(C4AulBCCType eType, intptr_t = 0, const char * SPos = 0); // add byte code chunk and advance
-	void RemoveLastBCC();
 	void ClearCode();
-	int GetCodePos() const { return Code.size(); }
-	C4AulBCC *GetCodeByPos(int iPos) { return &Code[iPos]; }
-	C4AulBCC *GetLastCode() { return Code.empty() ? nullptr : &Code.back(); }
 	void DumpByteCode();
-	std::vector<C4AulBCC> Code;
-	std::vector<const char *> PosForCode;
+
 	int ParCount;
 	C4V_Type ParType[C4AUL_MAX_Par]; // parameter types
 	std::unordered_map<std::string, C4V_Type> var_type_hints;
@@ -227,9 +221,6 @@ public:
 	virtual const C4V_Type *GetParType() const { return ParType; }
 	virtual C4V_Type GetRetType() const { return C4V_Any; }
 	virtual C4Value Exec(C4PropList * p, C4Value pPars[], bool fPassErrors=false); // execute func
-
-	int GetLineOfCode(C4AulBCC * bcc);
-	C4AulBCC * GetCode();
 
 	uint32_t tProfileTime; // internally set by profiler
 

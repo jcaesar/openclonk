@@ -473,12 +473,7 @@ void C4AulDebug::ObtainStackTrace(C4AulScriptContext* pCtx, C4AulBCC* pCPos)
 
 StdStrBuf C4AulDebug::FormatCodePos(C4AulScriptContext *pCtx, C4AulBCC *pCPos)
 {
-	if (pCtx->Func->pOrgScript)
-		return FormatString("%s:%d",
-		                    RelativePath(pCtx->Func->pOrgScript->ScriptName),
-		                    pCtx->Func->GetLineOfCode(pCPos));
-	else
-		return StdStrBuf("(eval)");
+	return StdStrBuf("(llvm)");
 }
 
 C4AulDebug * C4AulDebug::pDebug = nullptr;

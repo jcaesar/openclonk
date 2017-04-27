@@ -20,6 +20,10 @@
 #include "script/C4ScriptHost.h"
 #include "script/C4Value.h"
 #include <llvm/ExecutionEngine/GenericValue.h>
+#include <llvm/IR/Function.h>
+#ifndef DEBUG_BYTECODE_DUMP
+#define DEBUG_BYTECODE_DUMP 0
+#endif
 
 C4AulScriptFunc::C4AulScriptFunc(C4PropListStatic * Parent, C4ScriptHost *pOrgScript, const char *pName, const char *Script):
 		C4AulFunc(Parent, pName),
@@ -30,8 +34,6 @@ C4AulScriptFunc::C4AulScriptFunc(C4PropListStatic * Parent, C4ScriptHost *pOrgSc
 		pOrgScript(pOrgScript),
 		tProfileTime(0)
 {
-	for (int i = 0; i < C4AUL_MAX_Par; i++) ParType[i] = C4V_Any;
-	AddBCC(AB_EOFN);
 }
 
 C4AulScriptFunc::C4AulScriptFunc(C4PropListStatic * Parent, const C4AulScriptFunc &FromFunc):
@@ -48,7 +50,6 @@ C4AulScriptFunc::C4AulScriptFunc(C4PropListStatic * Parent, const C4AulScriptFun
 {
 	for (int i = 0; i < C4AUL_MAX_Par; i++)
 		ParType[i] = FromFunc.ParType[i];
-	AddBCC(AB_EOFN);
 }
 
 C4AulScriptFunc::~C4AulScriptFunc()
@@ -64,46 +65,31 @@ void C4AulScriptFunc::SetOverloaded(C4AulFunc * f)
 	if (f) f->IncRef();
 }
 
-void C4AulScriptFunc::AddBCC(C4AulBCCType eType, intptr_t X, const char * SPos)
-{
-	// store chunk
-	Code.emplace_back(eType, X);
-	PosForCode.push_back(SPos);
-}
-
-void C4AulScriptFunc::RemoveLastBCC()
-{
-	Code.pop_back();
-	PosForCode.pop_back();
-}
-
 void C4AulScriptFunc::ClearCode()
 {
-	while(Code.size() > 0)
-		RemoveLastBCC();
-	// This function is now broken until an AddBCC call
+	// TODO: Is there anything we need to clean up?
 }
 
-int C4AulScriptFunc::GetLineOfCode(C4AulBCC * bcc)
-{
-	return SGetLine(pOrgScript ? pOrgScript->GetScript() : Script, PosForCode[bcc - &Code[0]]);
-}
-
-C4AulBCC * C4AulScriptFunc::GetCode()
-{
-	assert(!Code.empty());
-	return &Code[0];
-}
 
 #include "script/C4ValueMagic.h"
 
 C4Value C4AulScriptFunc::Exec(C4PropList * p, C4Value pPars[], bool fPassErrors)
 {
+	// TODO: Handle context p
 	C4V_Type retpar_types[C4AUL_MAX_Par];
 	C4V_Data retpar_data [C4AUL_MAX_Par];
 	for (int i = 0; i < GetParCount(); i++)
 		std::tie(retpar_types[i], retpar_data[i]) = C4ValueToAulLLVM(pPars[i]);
 	// TODO: Catch errors on fPassErrors
+	assert(llvmImpl);
 	llvmImpl(retpar_types, retpar_data);
 	return AulLLVMToC4Value(retpar_types[0], retpar_data[0]);
+}
+
+void C4AulScriptFunc::DumpByteCode()
+{
+	if (DEBUG_BYTECODE_DUMP && llvmFunc)
+	{
+		llvmFunc->dump();
+	}
 }
