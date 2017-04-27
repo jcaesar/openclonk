@@ -170,7 +170,7 @@ private:
 	}
 };
 
-#include "llvm/ExecutionEngine/Orc/JITSymbol.h"
+#include "llvm/ExecutionEngine/JITSymbol.h"
 class C4JIT;
 namespace llvm { class Function; }
 typedef llvm::Function llvmFunction;

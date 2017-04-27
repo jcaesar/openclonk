@@ -34,7 +34,7 @@ inline llvm::Function* RegisterEngineFunction(
 	auto at = std::vector<llvm::Type*>{CPPTypeToLLVM<ArgTypes>()...}; // magic happens here
 	llvm::FunctionType *ft = llvm::FunctionType::get(CPPTypeToLLVM<RetType>(), at, false/* I doubt that any of this would work with varargs anyway */);
 	rv = llvm::Function::Create(ft, llvm::Function::InternalLinkage, name, mod.get());
-	jit->addGlobalMapping(name, reinterpret_cast<llvm::orc::TargetAddress>(f));
+	jit->addGlobalMapping(name, reinterpret_cast<llvm::JITTargetAddress>(f));
 	assert(rv);
 	return rv;
 }

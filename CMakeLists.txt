@@ -338,11 +338,11 @@ include_directories(SYSTEM ${SDL2_INCLUDE_DIRS})
 
 # LLVM (for C4Script)
 # Done as per http://llvm.org/docs/CMake.html#embedding-llvm-in-your-project
-find_package(LLVM 3.9 REQUIRED)
+find_package(LLVM 4.0 REQUIRED)
 message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
 message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
 # LLVM comes with API incompatibilities even in the minor releases. So if your
-# distro does not ship 3.9, congratulations, you may compile it yourself.
+# distro does not ship what we need, congratulations, you may compile it yourself.
 # To make this succeed, copy the LLVMConfig.cmake from the compiled LLVM
 # library (likely under ${llvm}/lib/cmake/llvm/LLVMConfig.cmake) to
 # cmake/FindLLVM.cmake

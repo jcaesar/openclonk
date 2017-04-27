@@ -25,7 +25,7 @@
 #include "llvm/ExecutionEngine/RuntimeDyld.h"
 #include "llvm/ExecutionEngine/SectionMemoryManager.h"
 #include "llvm/ExecutionEngine/Orc/CompileUtils.h"
-#include "llvm/ExecutionEngine/Orc/JITSymbol.h"
+#include "llvm/ExecutionEngine/JITSymbol.h"
 #include "llvm/ExecutionEngine/Orc/IRCompileLayer.h"
 #include <llvm/ExecutionEngine/Orc/IRTransformLayer.h>
 #include "llvm/ExecutionEngine/Orc/LambdaResolver.h"
@@ -93,14 +93,14 @@ public:
 		auto Resolver = llvm::orc::createLambdaResolver(
 			[&](const std::string &Name) {
 				if (auto Sym = MappingLayer.findSymbol(Name, false))
-					return Sym.toRuntimeDyldSymbol();
+					return Sym;
 				if (auto Sym = CompileLayer.findSymbol(Name, false))
-					return Sym.toRuntimeDyldSymbol();
-				return llvm::RuntimeDyld::SymbolInfo(nullptr);
+					return Sym;
+				return llvm::JITSymbol(nullptr);
 			},
 			[&](const std::string &Name) {
 				// If it can't be resolved locally, it can be resolved. Go away.
-				return llvm::RuntimeDyld::SymbolInfo(nullptr);
+				return llvm::JITSymbol(nullptr);
 			}
 		);
 
@@ -115,7 +115,7 @@ public:
 			std::move(Resolver));
 	}
 
-	llvm::orc::JITSymbol findSymbol(llvm::StringRef Name, bool mangle = false) {
+	llvm::JITSymbol findSymbol(llvm::StringRef Name, bool mangle = false) {
 		if (mangle) {
 			std::string MangledName;
 			llvm::raw_string_ostream MangledNameStream(MangledName);
@@ -128,10 +128,10 @@ public:
 	void removeModule(ModuleHandle H) {
 		MappingLayer.removeModuleSet(H);
 	}
-	void addGlobalMapping(llvm::StringRef fn, llvm::orc::TargetAddress Addr) {
+	void addGlobalMapping(llvm::StringRef fn, llvm::JITTargetAddress Addr) {
 		MappingLayer.setGlobalMapping(fn, Addr);
 	}
-	void addGlobalMapping(llvm::Function* fn, llvm::orc::TargetAddress Addr) {
+	void addGlobalMapping(llvm::Function* fn, llvm::JITTargetAddress Addr) {
 		MappingLayer.setGlobalMapping(fn->getName(), Addr);
 	}
 	template<typename... T>
