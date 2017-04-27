@@ -2,6 +2,9 @@
 /* Generate minidumps on crash */
 #cmakedefine HAVE_DBGHELP 1
 
+/* Use backward-cpp to print stack traces on crash */
+#cmakedefine HAVE_BACKWARD 1
+
 /* Define to 1 if you have the <direct.h> header file. */
 #cmakedefine HAVE_DIRECT_H 1
 
@@ -73,9 +76,6 @@
 
 /* Define to 1 if you have the `vasprintf' function. */
 #cmakedefine HAVE_VASPRINTF 1
-
-/* Define to 1 if you have the `__mingw_vasprintf' function. */
-#cmakedefine HAVE___MINGW_VASPRINTF 1
 
 /* Define to 1 if you have the <X11/extensions/Xrandr.h> header file. */
 #cmakedefine HAVE_X11_EXTENSIONS_XRANDR_H 1

@@ -56,6 +56,12 @@ public func StartSearchLadder()
 	if (GetAction() == "WallJump" && this.ActMap.WallJump.StartCallLadderOverloaded)
 		Call(this.ActMap.WallJump.StartCallLadderOverloaded);
 	// Add an effect to search for ladders.
+	ScheduleCall(this, this.AddSearchLadderEffect, 1, 1);
+	return;
+}
+
+public func AddSearchLadderEffect()
+{
 	if (!GetEffect("InSearchLadder", this))
 		AddEffect("IntSearchLadder", this, 1, 2, this);
 	FxIntSearchLadderTimer();
@@ -81,7 +87,7 @@ public func FxIntSearchLadderTimer(object target, proplist effect, int time)
 	for (ladder in FindObjects(Find_AtRect(-5, -10, 10, 8), Find_Func("IsLadder"), Find_NoContainer(), Find_Layer(GetObjectLayer())))
 	{
 		// Don't climb ladders that are blocked.
-		if (ladder->~CanNotBeClimbed() || IsBlockedLadder(ladder))
+		if (ladder->~CanNotBeClimbed(false, this) || IsBlockedLadder(ladder))
 			continue;
 		
 		SetAction("Climb");
@@ -207,7 +213,7 @@ public func FxIntClimbControlTimer(object target, effect fx, int time)
 {
 	if (GetAction() != "Climb" || Contained()) 
 		return FX_Execute_Kill;
-	if (!fx.ladder || fx.ladder->~CanNotBeClimbed(true)) 
+	if (!fx.ladder || fx.ladder->~CanNotBeClimbed(true, this)) 
 	{
 		AddLadderBlock(fx.ladder, 5);
 		SetAction("Jump");
@@ -337,13 +343,13 @@ public func FxIntClimbControlStop(object target, effect fx, int reason, bool tmp
 	return FX_OK;
 }
 
-public func FxIntClimbControlControl(object target, effect fx, int ctrl, int x, int y, int strength, bool repeat, bool release)
+public func FxIntClimbControlControl(object target, effect fx, int ctrl, int x, int y, int strength, bool repeat, int status)
 {
 	// Only handle movement controls.
 	if (ctrl != CON_Up && ctrl != CON_Down && ctrl != CON_Right && ctrl != CON_Left) 
 		return false;
 	// Perform actions on key down and not on release.
-	if (release) 
+	if (status != CONS_Down) 
 		return false;
 	// Move up and down by setting com dir.	
 	if (ctrl == CON_Up)

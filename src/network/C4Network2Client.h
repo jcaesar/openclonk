@@ -20,11 +20,12 @@
 #include "network/C4Network2IO.h"
 #include "network/C4PacketBase.h"
 #include "network/C4Client.h"
+#include "network/C4Network2Address.h"
 
 class C4Network2; class C4Network2IOConnection;
 
 // maximum address count that is saved for one client
-const int32_t C4ClientMaxAddr = 20;
+const int32_t C4ClientMaxAddr = 40;
 
 // retry count and interval for connecting a client
 const int32_t C4NetClientConnectAttempts = 3,
@@ -38,47 +39,6 @@ enum C4Network2ClientStatus
 	NCS_NotReady,   // client is behind (status not acknowledged)
 	NCS_Ready,      // client acknowledged network status
 	NCS_Remove      // client is to be removed
-};
-
-class C4Network2Address
-{
-public:
-	C4Network2Address()
-			: eProtocol(P_NONE)
-	{ ZeroMem(&addr, sizeof(addr)); }
-
-	C4Network2Address(C4NetIO::addr_t addr, C4Network2IOProtocol eProtocol)
-			: addr(addr), eProtocol(eProtocol)
-	{ }
-
-	C4Network2Address(const C4Network2Address &addr)
-			: addr(addr.getAddr()), eProtocol(addr.getProtocol())
-	{ }
-
-	void operator = (const C4Network2Address &addr)
-	{ SetAddr(addr.getAddr()); SetProtocol(addr.getProtocol()); }
-
-	bool operator == (const C4Network2Address &addr) const;
-
-protected:
-	C4NetIO::addr_t addr;
-	C4Network2IOProtocol eProtocol;
-
-public:
-	const C4NetIO::addr_t &getAddr() const { return addr; }
-	in_addr               getIPAddr() const { return addr.sin_addr; }
-	bool                  isIPNull() const { return !addr.sin_addr.s_addr; }
-	uint16_t              getPort() const { return htons(addr.sin_port); }
-	C4Network2IOProtocol  getProtocol() const { return eProtocol; }
-
-	StdStrBuf toString() const;
-
-	void SetAddr(C4NetIO::addr_t naddr) { addr = naddr; }
-	void SetIP(in_addr ip) { addr.sin_addr = ip; }
-	void SetPort(uint16_t iPort) { addr.sin_port = htons(iPort); }
-	void SetProtocol(C4Network2IOProtocol enProtocol) { eProtocol = enProtocol; }
-
-	void CompileFunc(StdCompiler *pComp);
 };
 
 class C4Network2Client
@@ -96,6 +56,9 @@ protected:
 	C4Network2Address Addr[C4ClientMaxAddr];
 	int32_t AddrAttempts[C4ClientMaxAddr];
 	int32_t iAddrCnt;
+
+	// interface ids
+	std::set<int> InterfaceIDs;
 
 	// status
 	C4Network2ClientStatus eStatus;
@@ -127,6 +90,8 @@ public:
 
 	int32_t     getAddrCnt()    const { return iAddrCnt; }
 	const C4Network2Address &getAddr(int32_t i) const { return Addr[i]; }
+
+	const std::set<int> &getInterfaceIDs() const { return InterfaceIDs; }
 
 	C4Network2ClientStatus getStatus() const { return eStatus; }
 	bool        hasJoinData()   const { return getStatus() != NCS_Joining; }
@@ -193,6 +158,7 @@ public:
 	C4Network2Client *GetLocal() const { return pLocal; }
 	C4Network2Client *GetHost();
 	C4Network2Client *GetNextClient(C4Network2Client *pClient);
+	unsigned int Count();
 
 	void Init(C4ClientList *pClientList, bool fHost);
 	C4Network2Client *RegClient(C4Client *pClient);
@@ -244,4 +210,3 @@ public:
 };
 
 #endif
-

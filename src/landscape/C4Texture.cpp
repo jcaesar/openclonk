@@ -36,9 +36,9 @@
 
 C4Texture::C4Texture()
 {
-	Surface32=NULL;
+	Surface32=nullptr;
 	AvgColor = 0x00000000;
-	Next=NULL;
+	Next=nullptr;
 }
 
 C4Texture::~C4Texture()
@@ -47,7 +47,7 @@ C4Texture::~C4Texture()
 }
 
 C4TexMapEntry::C4TexMapEntry()
-		: iMaterialIndex(MNone), pMaterial(NULL)
+		: iMaterialIndex(MNone), pMaterial(nullptr)
 {
 }
 
@@ -55,7 +55,7 @@ void C4TexMapEntry::Clear()
 {
 	Material.Clear(); Texture.Clear();
 	iMaterialIndex = MNone;
-	pMaterial = NULL;
+	pMaterial = nullptr;
 	MatPattern.Clear();
 }
 
@@ -98,7 +98,7 @@ bool C4TexMapEntry::Init()
 	return true;
 }
 
-C4TextureMap::C4TextureMap() : FirstTexture(NULL), fEntriesAdded(false), fOverloadMaterials(false), fOverloadTextures(false), fInitialized(false)
+C4TextureMap::C4TextureMap() : FirstTexture(nullptr), fEntriesAdded(false), fOverloadMaterials(false), fOverloadTextures(false), fInitialized(false)
 {
 	Order.reserve(C4M_MaxTexIndex);
 }
@@ -183,7 +183,7 @@ void C4TextureMap::Clear()
 		next2=ctex->Next;
 		delete ctex;
 	}
-	FirstTexture=NULL;
+	FirstTexture=nullptr;
 	fInitialized = false;
 	fEntriesAdded = false;
 	fOverloadMaterials = false;
@@ -218,7 +218,7 @@ bool C4TextureMap::LoadFlags(C4Group &hGroup, const char *szEntryName, bool *pOv
 
 int32_t C4TextureMap::LoadMap(C4Group &hGroup, const char *szEntryName, bool *pOverloadMaterials, bool *pOverloadTextures)
 {
-	static re::regex line_terminator("\r?\n", static_cast<re::regex::flag_type>(re::regex_constants::optimize | re::regex_constants::ECMAScript));
+	static std::regex line_terminator("\r?\n", static_cast<std::regex::flag_type>(std::regex_constants::optimize | std::regex_constants::ECMAScript));
 
 	char *bpMap;
 	size_t map_size;
@@ -230,7 +230,7 @@ int32_t C4TextureMap::LoadMap(C4Group &hGroup, const char *szEntryName, bool *pO
 	char *end = begin + map_size;
 
 	size_t line = 1; // Counter for error messages
-	for (auto it = re::cregex_token_iterator(begin, end, line_terminator, -1); it != re::cregex_token_iterator(); ++it, ++line)
+	for (auto it = std::cregex_token_iterator(begin, end, line_terminator, -1); it != std::cregex_token_iterator(); ++it, ++line)
 	{
 		if (it->compare("OverloadMaterials") == 0)
 		{
@@ -478,7 +478,7 @@ C4Texture * C4TextureMap::GetTexture(const char *szTexture)
 	for (pTexture=FirstTexture; pTexture; pTexture=pTexture->Next)
 		if (SEqualNoCase(pTexture->Name.getData(),szTexture))
 			return pTexture;
-	return NULL;
+	return nullptr;
 }
 
 int32_t C4TextureMap::GetTextureIndex(const char *szName)
@@ -507,7 +507,7 @@ const char* C4TextureMap::GetTexture(int32_t iIndex)
 	for (pTexture=FirstTexture,cindex=0; pTexture; pTexture=pTexture->Next,cindex++)
 		if (cindex==iIndex)
 			return pTexture->Name.getData();
-	return NULL;
+	return nullptr;
 }
 
 BYTE C4TextureMap::DefaultBkgMatTex(BYTE fg) const
@@ -551,10 +551,15 @@ void C4TextureMap::StoreMapPalette(CStdPalette *Palette, C4MaterialMap &rMateria
 	bool fSet[C4M_MaxTexIndex];
 	ZeroMem(&fSet, sizeof (fSet));
 	int32_t i;
-	for (i = 0; i < C4M_MaxTexIndex; i++)
+	for (i = 1; i < C4M_MaxTexIndex; i++)
 	{
 		// Find material
-		DWORD dwPix = Entry[i].GetPattern().PatternClr(0, 0);
+		DWORD dwPix;
+		auto texture = GetTexture(Entry[i].GetTextureName());
+		if (texture)
+			dwPix = texture->GetAverageColor();
+		else
+			dwPix = Entry[i].GetPattern().PatternClr(0, 0);
 		Palette->Colors[i] = dwPix;
 		fSet[i] = true;
 	}

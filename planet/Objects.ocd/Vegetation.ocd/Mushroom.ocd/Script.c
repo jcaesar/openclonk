@@ -7,10 +7,10 @@
 
 #include Library_Plant
 
-private func SeedChance() { return 600; }
-private func SeedArea() { return 150; }
-private func SeedAmount() { return 4; }
-private func SeedOffset() { return 10; }
+local plant_seed_chance = 17;
+local plant_seed_area = 150;
+local plant_seed_amount = 4;
+local plant_seed_offset = 5;
 
 private func Incineration()
 {
@@ -50,6 +50,20 @@ protected func ControlUse(object clonk)
 
 // Nutritional value depends on the completion of the mushroom.
 public func NutritionalValue() { return GetCon() / 10; }
+
+/*-- Display --*/
+
+public func GetCarryMode()
+{
+	return CARRY_Hand;
+}
+
+public func GetCarryTransform()
+{
+	return Trans_Scale(750);
+}
+
+/*-- Properties --*/
 
 local Name = "$Name$";
 local Description = "$Description$";

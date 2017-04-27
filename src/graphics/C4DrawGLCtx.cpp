@@ -17,6 +17,7 @@
 /* OpenGL implementation of NewGfx, the context */
 
 #include "C4Include.h"
+#include "C4ForbidLibraryCompilation.h"
 #include "graphics/C4DrawGL.h"
 
 #include "platform/C4Window.h"
@@ -320,15 +321,32 @@ bool CStdGLCtx::Init(C4Window * pWindow, C4AbstractApp *pApp)
 				// create context
 				if (wglCreateContextAttribsARB)
 				{
-					const int attribs[] = {
-						WGL_CONTEXT_FLAGS_ARB, Config.Graphics.DebugOpenGL ? WGL_CONTEXT_DEBUG_BIT_ARB : 0,
-						WGL_CONTEXT_MAJOR_VERSION_ARB, REQUESTED_GL_CTX_MAJOR,
-						WGL_CONTEXT_MINOR_VERSION_ARB, REQUESTED_GL_CTX_MINOR,
-						WGL_CONTEXT_PROFILE_MASK_ARB, WGL_CONTEXT_CORE_PROFILE_BIT_ARB,
-						0
-					};
+					{
+						const int attribs[] = {
+							WGL_CONTEXT_FLAGS_ARB, Config.Graphics.DebugOpenGL ? WGL_CONTEXT_DEBUG_BIT_ARB : 0,
+							WGL_CONTEXT_MAJOR_VERSION_ARB, REQUESTED_GL_CTX_MAJOR,
+							WGL_CONTEXT_MINOR_VERSION_ARB, REQUESTED_GL_CTX_MINOR,
+							WGL_CONTEXT_PROFILE_MASK_ARB, WGL_CONTEXT_CORE_PROFILE_BIT_ARB,
+							0
+						};
 
-					hrc = wglCreateContextAttribsARB(hDC, 0, attribs);
+						hrc = wglCreateContextAttribsARB(hDC, 0, attribs);
+					}
+
+					if (!hrc)
+					{
+						LogSilentF("  gl: OpenGL %d.%d not available; falling back to 3.1 emergency context.", REQUESTED_GL_CTX_MAJOR, REQUESTED_GL_CTX_MINOR);
+						// Some older Intel drivers don't support OpenGL 3.2; we don't use (much?) of
+						// that so we'll request a 3.1 context as a fallback.
+						const int attribs[] = {
+							WGL_CONTEXT_FLAGS_ARB, Config.Graphics.DebugOpenGL ? WGL_CONTEXT_DEBUG_BIT_ARB : 0,
+							WGL_CONTEXT_MAJOR_VERSION_ARB, 3,
+							WGL_CONTEXT_MINOR_VERSION_ARB, 1,
+							0
+						};
+						pGL->Workarounds.ForceSoftwareTransform = true;
+						hrc = wglCreateContextAttribsARB(hDC, 0, attribs);
+					}
 				}
 				else
 				{
@@ -364,7 +382,7 @@ bool CStdGLCtx::Init(C4Window * pWindow, C4AbstractApp *pApp)
 		return true;
 	}
 
-	ReleaseDC(pWindow->renderwnd, hDC); hDC = NULL;
+	ReleaseDC(pWindow->renderwnd, hDC); hDC = nullptr;
 	return false;
 }
 
@@ -407,9 +425,9 @@ void CStdGLCtx::Deselect()
 {
 	if (pGL && pGL->pCurrCtx == this)
 	{
-		wglMakeCurrent(NULL, NULL);
-		pGL->pCurrCtx=NULL;
-		pGL->RenderTarget=NULL;
+		wglMakeCurrent(nullptr, nullptr);
+		pGL->pCurrCtx=nullptr;
+		pGL->RenderTarget=nullptr;
 	}
 }
 
@@ -421,160 +439,14 @@ bool CStdGLCtx::PageFlip()
 	return true;
 }
 
-#elif defined(USE_GTK)
-#include <GL/glxew.h>
-#include <GL/glx.h>
-#include <gtk/gtk.h>
-#include <gdk/gdkx.h>
+#elif defined(USE_SDL_MAINLOOP)
 
-namespace {
-void InitGLXPointers()
-{
-	glXGetVisualFromFBConfig = (PFNGLXGETVISUALFROMFBCONFIGPROC)(glXGetProcAddress((const GLubyte*)"glXGetVisualFromFBConfig"));
-	glXChooseFBConfig = (PFNGLXCHOOSEFBCONFIGPROC)(glXGetProcAddress((const GLubyte*)"glXChooseFBConfig"));
-	glXCreateNewContext = (PFNGLXCREATENEWCONTEXTPROC)(glXGetProcAddress((const GLubyte*)"glXCreateNewContext"));
-}
-}
-
-CStdGLCtx::CStdGLCtx(): pWindow(0), ctx(0), this_context(contexts.end()) { }
+CStdGLCtx::CStdGLCtx(): pWindow(0), this_context(contexts.end()) { ctx = nullptr; }
 
 void CStdGLCtx::Clear(bool multisample_change)
 {
 	Deselect();
-	if (ctx)
-	{
-		Display * const dpy = gdk_x11_display_get_xdisplay(gdk_display_get_default());
-		glXDestroyContext(dpy, (GLXContext)ctx);
-		ctx = 0;
-	}
-	pWindow = 0;
-
-	if (this_context != contexts.end())
-	{
-		contexts.erase(this_context);
-		this_context = contexts.end();
-	}
-}
-
-bool CStdGLCtx::Init(C4Window * pWindow, C4AbstractApp *)
-{
-	// safety
-	if (!pGL) return false;
-	// store window
-	this->pWindow = pWindow;
-	Display * const dpy = gdk_x11_display_get_xdisplay(gdk_display_get_default());
-	InitGLXPointers();
-	if (!glXGetVisualFromFBConfig || !glXChooseFBConfig || !glXCreateNewContext)
-	{
-		return pGL->Error("  gl: Unable to retrieve GLX 1.4 entry points");
-	}
-	XVisualInfo *vis_info = glXGetVisualFromFBConfig(dpy, pWindow->Info);
-	// Create base context so we can initialize GLEW
-	GLXContext dummy_ctx = glXCreateContext(dpy, vis_info, 0, True);
-	XFree(vis_info);
-	glXMakeCurrent(dpy, pWindow->renderwnd, dummy_ctx);
-	glewExperimental = GL_TRUE;
-	GLenum err = glewInit();
-	if (err != GLEW_OK)
-	{
-		return pGL->Error((const char*)glewGetErrorString(err));
-	}
-
-	// Create Context with sharing (if this is the main context, our ctx will be 0, so no sharing)
-	const int attribs[] = {
-		GLX_CONTEXT_MAJOR_VERSION_ARB, REQUESTED_GL_CTX_MAJOR,
-		GLX_CONTEXT_MINOR_VERSION_ARB, REQUESTED_GL_CTX_MINOR,
-		GLX_CONTEXT_FLAGS_ARB, (Config.Graphics.DebugOpenGL ? GLX_CONTEXT_DEBUG_BIT_ARB : 0),
-		GLX_CONTEXT_PROFILE_MASK_ARB, GLX_CONTEXT_CORE_PROFILE_BIT_ARB,
-		None
-	};
-	GLXContext share_context = (pGL->pMainCtx != this) ? static_cast<GLXContext>(pGL->pMainCtx->ctx) : 0;
-
-	if (glXCreateContextAttribsARB)
-	{
-		gdk_x11_display_error_trap_push(gdk_display_get_default());
-		ctx = glXCreateContextAttribsARB(dpy, pWindow->Info, share_context, True, attribs);
-		gdk_x11_display_error_trap_pop_ignored(gdk_display_get_default());
-	}
-	if(!ctx) {
-		Log("  gl: falling back to attribute-less context creation.");
-		ctx = glXCreateNewContext(dpy, pWindow->Info, GLX_RGBA_TYPE, share_context, True);
-	}
-
-	glXMakeCurrent(dpy, None, NULL);
-	glXDestroyContext(dpy, dummy_ctx);
-
-	// No luck?
-	if (!ctx) return pGL->Error("  gl: Unable to create context");
-	if (!Select(true)) return pGL->Error("  gl: Unable to select context");
-	// init extensions
-	glewExperimental = GL_TRUE;
-	err = glewInit();
-	if (GLEW_OK != err)
-	{
-		// Problem: glewInit failed, something is seriously wrong.
-		return pGL->Error(reinterpret_cast<const char*>(glewGetErrorString(err)));
-	}
-
-	this_context = contexts.insert(contexts.end(), this);
-	return true;
-}
-
-bool CStdGLCtx::Select(bool verbose)
-{
-	// safety
-	if (!pGL || !ctx)
-	{
-		if (verbose) pGL->Error("  gl: pGL is zero");
-		return false;
-	}
-	Display * const dpy = gdk_x11_display_get_xdisplay(gdk_display_get_default());
-	// make context current
-	if (!pWindow->renderwnd || !glXMakeCurrent(dpy, pWindow->renderwnd, (GLXContext)ctx))
-	{
-		if (verbose) pGL->Error("  gl: glXMakeCurrent failed");
-		return false;
-	}
-	SelectCommon();
-	// update clipper - might have been done by UpdateSize
-	// however, the wrong size might have been assumed
-	if (!pGL->UpdateClipper())
-	{
-		if (verbose) pGL->Error("  gl: UpdateClipper failed");
-		return false;
-	}
-	// success
-	return true;
-}
-
-void CStdGLCtx::Deselect()
-{
-	if (pGL && pGL->pCurrCtx == this)
-	{
-		Display * const dpy = gdk_x11_display_get_xdisplay(gdk_display_get_default());
-		glXMakeCurrent(dpy, None, NULL);
-		pGL->pCurrCtx = 0;
-		pGL->RenderTarget = 0;
-	}
-}
-
-bool CStdGLCtx::PageFlip()
-{
-	// flush GL buffer
-	glFlush();
-	if (!pWindow || !pWindow->renderwnd) return false;
-	Display * const dpy = gdk_x11_display_get_xdisplay(gdk_display_get_default());
-	glXSwapBuffers(dpy, pWindow->renderwnd);
-	return true;
-}
-
-#elif defined(USE_SDL_MAINLOOP)
-
-CStdGLCtx::CStdGLCtx(): pWindow(0), this_context(contexts.end()) { }
-
-void CStdGLCtx::Clear(bool multisample_change)
-{
-	SDL_GL_DeleteContext(ctx);
+	if (ctx) SDL_GL_DeleteContext(ctx);
 	ctx = 0;
 	pWindow = 0;
 
@@ -592,6 +464,14 @@ bool CStdGLCtx::Init(C4Window * pWindow, C4AbstractApp *)
 	// store window
 	this->pWindow = pWindow;
 	ctx = SDL_GL_CreateContext(pWindow->window);
+	if (!ctx)
+	{
+		LogSilentF("  gl: OpenGL %d.%d not available; falling back to 3.1 emergency context.", REQUESTED_GL_CTX_MAJOR, REQUESTED_GL_CTX_MINOR);
+		SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+		SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
+		pGL->Workarounds.ForceSoftwareTransform = true;
+		ctx = SDL_GL_CreateContext(pWindow->window);
+	}
 	if (!ctx)
 	{
 		return pGL->Error(FormatString("SDL_GL_CreateContext: %s", SDL_GetError()).getData());
@@ -645,6 +525,116 @@ bool CStdGLCtx::PageFlip()
 	return true;
 }
 
-#endif //USE_GTK/USE_SDL_MAINLOOP
+#endif // USE_*
+
+#ifdef WITH_QT_EDITOR
+#undef LineFeed // conflicts with Qt
+#undef new
+#undef delete
+#include <QOpenGLWidget>
+#include <QOpenGLContext>
+#include <QOffscreenSurface>
+
+CStdGLCtxQt::CStdGLCtxQt() { context = nullptr; surface = nullptr; }
+
+void CStdGLCtxQt::Clear(bool multisample_change)
+{
+	Deselect();
+
+	if (context)
+	{
+		if (!pWindow->glwidget) delete context;
+		delete surface;
+	}
+	pWindow = nullptr;
+}
+
+bool CStdGLCtxQt::Init(C4Window *window, C4AbstractApp *app)
+{
+	if (!pGL) return false;
+	pWindow = window;
+
+	if (!pWindow->glwidget)
+	{
+		surface = new QOffscreenSurface();
+		surface->create();
+		context = new QOpenGLContext();
+		QOpenGLContext* share_context = QOpenGLContext::globalShareContext();
+		if (share_context) context->setShareContext(share_context);
+		if (!context->create())
+			return false;
+
+		if (!Select(true)) return false;
+
+		// init extensions
+		glewExperimental = GL_TRUE;
+		GLenum err = glewInit();
+		if (GLEW_OK != err)
+		{
+			// Problem: glewInit failed, something is seriously wrong.
+			return pGL->Error(reinterpret_cast<const char*>(glewGetErrorString(err)));
+		}
+	}
+	else
+	{
+		// The Qt GL widget has its own context
+		context = pWindow->glwidget->context();
+	}
+
+	this_context = contexts.insert(contexts.end(), this);
+	return true;
+}
+
+bool CStdGLCtxQt::Select(bool verbose)
+{
+	if (!pWindow->glwidget)
+	{
+		if (!context->makeCurrent(surface))
+			return false;
+	}
+	else
+	{
+		// done automatically
+		/* pWindow->glwidget->makeCurrent(); */
+	}
+	SelectCommon();
+	// update clipper - might have been done by UpdateSize
+	// however, the wrong size might have been assumed
+	if (!pGL->UpdateClipper())
+	{
+		if (verbose) pGL->Error("  gl: UpdateClipper failed");
+		return false;
+	}
+	// success
+	return true;
+}
+
+void CStdGLCtxQt::Deselect()
+{
+	if (!pWindow->glwidget)
+		context->doneCurrent();
+	else
+	{
+		// done automatically
+		/* pWindow->glwidget->doneCurrent(); */
+	}
+	if (pGL && pGL->pCurrCtx == this)
+	{
+		pGL->pCurrCtx = 0;
+		pGL->RenderTarget = 0;
+	}
+}
+
+bool CStdGLCtxQt::PageFlip()
+{
+	// flush GL buffer
+	glFlush();
+	if (!pWindow) return false;
+	if (!pWindow->glwidget)
+		return false;
+	return true;
+}
+
+#endif
 
 #endif // USE_CONSOLE

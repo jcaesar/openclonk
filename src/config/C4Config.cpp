@@ -17,6 +17,7 @@
 /* Game configuration as stored in registry */
 
 #include "C4Include.h"
+#include "C4ForbidLibraryCompilation.h"
 #include "config/C4Config.h"
 
 #include "C4Version.h"
@@ -38,6 +39,12 @@
 #endif
 #ifdef HAVE_LOCALE_H
 #include <locale.h>
+#endif
+
+#ifdef USE_CONSOLE
+#define DONCOFF 0
+#else
+#define DONCOFF 1
 #endif
 
 #include "game/C4Application.h"
@@ -80,12 +87,30 @@ void C4ConfigGeneral::CompileFunc(StdCompiler *pComp)
 
 void C4ConfigDeveloper::CompileFunc(StdCompiler *pComp)
 {
-	pComp->Value(mkNamingAdapt(AutoFileReload,      "AutoFileReload",     1                   , false, true));
-	pComp->Value(mkNamingAdapt(ExtraWarnings,      "ExtraWarnings",       0                   , false, true));
-	pComp->Value(mkNamingAdapt(s(TodoFilename),    "TodoFilename",       "{SCENARIO}/TODO.txt", false, true));
-	pComp->Value(mkNamingAdapt(s(AltTodoFilename), "AltTodoFilename2",   "{USERPATH}/TODO.txt", false, true));
-	pComp->Value(mkNamingAdapt(MaxScriptMRU,        "MaxScriptMRU",       30                  , false, false));
-	pComp->Value(mkNamingAdapt(DebugShapeTextures,  "DebugShapeTextures", 0                   , false, true));
+	pComp->Value(mkNamingAdapt(AutoFileReload,      "AutoFileReload",     1                    , false, true));
+	pComp->Value(mkNamingAdapt(s(TodoFilename),     "TodoFilename",       "{SCENARIO}/TODO.txt", false, true));
+	pComp->Value(mkNamingAdapt(s(AltTodoFilename),  "AltTodoFilename2",   "{USERPATH}/TODO.txt", false, true));
+	pComp->Value(mkNamingAdapt(MaxScriptMRU,        "MaxScriptMRU",       30                   , false, false));
+	pComp->Value(mkNamingAdapt(DebugShapeTextures,  "DebugShapeTextures", 0                    , false, true));
+	pComp->Value(mkNamingAdapt(ShowHelp,            "ShowHelp",           true                 , false, false));
+	for (int32_t i = 0; i < CFG_MaxEditorMRU; ++i)
+		pComp->Value(mkNamingAdapt(s(RecentlyEditedSzenarios[i]), FormatString("EditorMRU%02d", (int)i).getData(), "", false, false));
+}
+
+void C4ConfigDeveloper::AddRecentlyEditedScenario(const char *fn)
+{
+	if (!fn || !*fn) return;
+	// Put given scenario first in list by moving all other scenarios down
+	// Check how many scenarios to move down the list. Stop moving down when the given scenario is in the list
+	int32_t move_down_num;
+	for (move_down_num = 0; move_down_num < CFG_MaxEditorMRU - 1; ++move_down_num)
+		if (!strncmp(fn, RecentlyEditedSzenarios[move_down_num], CFG_MaxString))
+			break;
+	// Move them down
+	for (int32_t i = move_down_num; i > 0; --i)
+		strcpy(RecentlyEditedSzenarios[i], RecentlyEditedSzenarios[i - 1]);
+	// Put current scenario in
+	strncpy(RecentlyEditedSzenarios[0], fn, CFG_MaxString);
 }
 
 void C4ConfigGraphics::CompileFunc(StdCompiler *pComp)
@@ -108,7 +133,6 @@ void C4ConfigGraphics::CompileFunc(StdCompiler *pComp)
 	pComp->Value(mkNamingAdapt(Gamma,                 "Gamma"  ,              100           ));
 	pComp->Value(mkNamingAdapt(Currency,              "Currency"  ,           0             ));
 	pComp->Value(mkNamingAdapt(Monitor,               "Monitor",              0             )); // 0 = D3DADAPTER_DEFAULT
-	pComp->Value(mkNamingAdapt(FireParticles,         "FireParticles",        1         ));
 	pComp->Value(mkNamingAdapt(MaxRefreshDelay,       "MaxRefreshDelay",      30            ));
 	pComp->Value(mkNamingAdapt(NoOffscreenBlits,      "NoOffscreenBlits",     1             ));
 	pComp->Value(mkNamingAdapt(MultiSampling,         "MultiSampling",        4             ));
@@ -118,11 +142,10 @@ void C4ConfigGraphics::CompileFunc(StdCompiler *pComp)
 
 void C4ConfigSound::CompileFunc(StdCompiler *pComp)
 {
-	pComp->Value(mkNamingAdapt(RXSound,               "Sound",                1             ,false, true));
-	pComp->Value(mkNamingAdapt(RXMusic,               "Music",                1             ,false, true));
-	pComp->Value(mkNamingAdapt(FEMusic,               "MenuMusic",            1             ,false, true));
-	pComp->Value(mkNamingAdapt(FESamples,             "MenuSound",            1             ,false, true));
-	pComp->Value(mkNamingAdapt(FMMode,                "FMMode",               1             ));
+	pComp->Value(mkNamingAdapt(RXSound,               "Sound",                DONCOFF       ,false, true));
+	pComp->Value(mkNamingAdapt(RXMusic,               "Music",                DONCOFF       ,false, true));
+	pComp->Value(mkNamingAdapt(FEMusic,               "MenuMusic",            DONCOFF       ,false, true));
+	pComp->Value(mkNamingAdapt(FESamples,             "MenuSound",            DONCOFF       ,false, true));
 	pComp->Value(mkNamingAdapt(Verbose,               "Verbose",              0             ));
 	pComp->Value(mkNamingAdapt(MusicVolume,           "MusicVolume2",         40            ,false, true));
 	pComp->Value(mkNamingAdapt(SoundVolume,           "SoundVolume",          100           ,false, true));
@@ -164,6 +187,7 @@ void C4ConfigNetwork::CompileFunc(StdCompiler *pComp)
 	pComp->Value(mkNamingAdapt(PacketLogging,           "PacketLogging",        0             ));
 	
 
+	pComp->Value(mkNamingAdapt(s(PuncherAddress),       "PuncherAddress",       "netpuncher.openclonk.org:11115"));
 	pComp->Value(mkNamingAdapt(mkParAdapt(LastLeagueServer, StdCompiler::RCT_All),     "LastLeagueServer",     ""            ));
 	pComp->Value(mkNamingAdapt(mkParAdapt(LastLeaguePlayerName, StdCompiler::RCT_All), "LastLeaguePlayerName", ""            ));
 	pComp->Value(mkNamingAdapt(mkParAdapt(LastLeagueAccount, StdCompiler::RCT_All),    "LastLeagueAccount",    ""            ));
@@ -238,6 +262,12 @@ void C4ConfigGamepad::Reset()
 void C4ConfigControls::CompileFunc(StdCompiler *pComp)
 {
 #ifndef USE_CONSOLE
+	if (pComp->isSerializer())
+	{
+		// The registry compiler is broken with arrays. It doesn't delete extra items if the config got shorter
+		// Solve it by defaulting the array before writing to it.
+		pComp->Default("UserSets");
+	}
 	pComp->Value(mkNamingAdapt(UserSets, "UserSets",    C4PlayerControlAssignmentSets()));
 	pComp->Value(mkNamingAdapt(MouseAutoScroll,      "MouseAutoScroll",      0 /* change default 33 to enable */ ));
 	pComp->Value(mkNamingAdapt(GamepadGuiControl, "GamepadGuiControl",    0,     false, true));
@@ -386,7 +416,7 @@ bool C4Config::Save()
 #endif
 		{
 			StdStrBuf filename;
-			GetConfigFileName(filename, ConfigFilename.getLength() ? ConfigFilename.getData() : NULL);
+			GetConfigFileName(filename, ConfigFilename.getLength() ? ConfigFilename.getData() : nullptr);
 			StdCompilerINIWrite IniWrite;
 			IniWrite.Decompile(*this);
 			IniWrite.getOutput().SaveToFile(filename.getData());
@@ -406,7 +436,7 @@ void C4ConfigGeneral::DeterminePaths()
 #ifdef _WIN32
 	// Exe path
 	wchar_t apath[CFG_MaxString];
-	if (GetModuleFileNameW(NULL,apath,CFG_MaxString))
+	if (GetModuleFileNameW(nullptr,apath,CFG_MaxString))
 	{
 		ExePath = StdStrBuf(apath);
 		TruncatePath(ExePath.getMData());
@@ -450,7 +480,7 @@ void C4ConfigGeneral::DeterminePaths()
 	// Use ExePath: on windows, everything is installed to one directory
 	SCopy(ExePath.getMData(),SystemDataPath);
 #elif defined(__APPLE__)
-	SCopy(::Application.GetGameDataPath().getData(),SystemDataPath);
+	SCopy(::Application.GetGameDataPath().c_str(),SystemDataPath);
 #elif defined(WITH_AUTOMATIC_UPDATE)
 	// WITH_AUTOMATIC_UPDATE builds are our tarball releases and
 	// development snapshots, i.e. where the game data is at the

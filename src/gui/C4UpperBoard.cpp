@@ -19,6 +19,7 @@
 #include "game/C4Game.h"
 #include "config/C4Config.h"
 #include "graphics/C4GraphicsResource.h"
+#include "graphics/C4Draw.h"
 
 C4UpperBoard::C4UpperBoard()
 {
@@ -41,7 +42,7 @@ void C4UpperBoard::Draw(C4Facet &cgo)
 {
 	if (!cgo.Surface) return;
 	// Background
-	pDraw->BlitSurfaceTile(::GraphicsResource.fctUpperBoard.Surface,Output.Surface,0,0,Output.Wdt,Output.Hgt,0,0,NULL);
+	pDraw->BlitSurfaceTile(::GraphicsResource.fctUpperBoard.Surface,Output.Surface,0,0,Output.Wdt,Output.Hgt,0,0,nullptr);
 	// Logo
 	C4Facet cgo2;
 	float fLogoZoom = 1.0f;

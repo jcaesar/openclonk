@@ -19,6 +19,7 @@
 #ifndef INC_STDAPP
 #define INC_STDAPP
 
+#include "C4ForbidLibraryCompilation.h"
 #include "platform/StdScheduler.h"
 #include "platform/StdSync.h"
 #include "platform/C4StdInProc.h"
@@ -29,13 +30,15 @@
 
 #ifdef USE_SDL_MAINLOOP
 #include <SDL.h>
+
+const char* KeycodeToString(C4KeyCode code);
 #endif
 
 #ifdef USE_WIN32_WINDOWS
 class CStdMessageProc : public StdSchedulerProc
 {
 public:
-	CStdMessageProc() : pApp(NULL) { }
+	CStdMessageProc() : pApp(nullptr) { }
 	~CStdMessageProc() { }
 
 private:
@@ -71,13 +74,16 @@ public:
 
 	virtual bool DoScheduleProcs(int iTimeout);
 	bool FlushMessages();
+#ifdef WITH_QT_EDITOR
+	void ProcessQtEvents();
+#endif
 	C4Window * pWindow;
 	bool fQuitMsgReceived; // if true, a quit message has been received and the application should terminate
 
 	// Copy the text to the clipboard or the primary selection
-	bool Copy(const StdStrBuf & text, bool fClipboard = true);
+	bool Copy(const std::string &text, bool fClipboard = true);
 	// Paste the text from the clipboard or the primary selection
-	StdStrBuf Paste(bool fClipboard = true);
+	std::string Paste(bool fClipboard = true);
 	// Is there something in the clipboard?
 	bool IsClipboardFull(bool fClipboard = true);
 	// a command from stdin
@@ -89,8 +95,8 @@ public:
 	// notify user to get back to the program
 	void NotifyUserIfInactive();
 	void MessageDialog(const char * message);
-	const char *GetLastError() { return sLastError.getData(); }
-	void Error(const char * m) { sLastError.Copy(m); }
+	const char *GetLastError() { return sLastError.c_str(); }
+	void Error(const char * m) { sLastError = m; }
 
 #ifdef _WIN32
 private:
@@ -122,11 +128,7 @@ public:
 	pthread_t MainThread;
 #endif
 
-#if defined(USE_GTK)
-protected:
-	class C4X11AppImpl * Priv;
-
-#elif defined(USE_SDL_MAINLOOP)
+#if defined(USE_SDL_MAINLOOP)
 public:
 	void HandleSDLEvent(SDL_Event& event);
 
@@ -137,7 +139,7 @@ protected:
 
 #ifdef __APPLE__
 public:
-	StdStrBuf GetGameDataPath();
+	std::string GetGameDataPath();
 #endif
 
 #ifdef USE_WIN32_WINDOWS
@@ -151,7 +153,7 @@ protected:
 #endif
 
 protected:
-	StdStrBuf sLastError;
+	std::string sLastError;
 	bool fDspModeSet;           // true if display mode was changed
 	virtual bool DoInit(int argc, char * argv[]) = 0;
 

@@ -18,6 +18,7 @@ protected func Initialize()
 	CreateObject(Rule_ObjectFade)->DoFadeTime(7 * 36);
 	CreateObject(Rule_KillLogs);
 	CreateObject(Rule_Gravestones);
+	GetRelaunchRule()->SetLastWeaponUse(false);
 	
 	//make lava collapse
 	CreateObjectAbove(Firestone,625,480);
@@ -115,7 +116,7 @@ global func FxIntFillChestsStart(object target, effect, int temporary)
 {
 	if(temporary) return 1;
 	var chests = FindObjects(Find_ID(Chest));
-	var w_list = [Bow, Musket, Shield, Sword, Club, Javelin, Bow, Musket, Shield, Sword, Club, Javelin, DynamiteBox];
+	var w_list = [Bow, Blunderbuss, Shield, Sword, Club, Javelin, Bow, Blunderbuss, Shield, Sword, Club, Javelin, DynamiteBox];
 	
 	for(var chest in chests)
 		for(var i=0; i<4; ++i)
@@ -127,7 +128,7 @@ global func FxIntFillChestsTimer()
 {
 	SetTemperature(100); 
 	var chests = FindObjects(Find_ID(Chest));
-	var w_list = [IronBomb, Rock, IronBomb, Firestone, Firestone, Bow, Musket, Sword, Javelin];
+	var w_list = [IronBomb, Rock, IronBomb, Firestone, Firestone, Bow, Blunderbuss, Sword, Javelin];
 	for(var chest in chests)
 		if (chest->ContentsCount() < 5 )
 			chest->CreateChestContents(w_list[Random(GetLength(w_list))]);
@@ -141,37 +142,15 @@ global func CreateChestContents(id obj_id)
 	var obj = CreateObjectAbove(obj_id);
 	if (obj_id == Bow)
 		obj->CreateContents(Arrow);
-	if (obj_id == Musket)
-		obj->CreateContents(LeadShot);
+	if (obj_id == Blunderbuss)
+		obj->CreateContents(LeadBullet);
 	obj->Enter(this);
 	return;
 }
 
-protected func InitializePlayer(int plr)
+public func RelaunchPosition()
 {
-	return JoinPlayer(plr);
+	return [[420,200],[300,440],[130,176],[140,368],[700,192],[670,336],[750,440],[440,392],[45,256]];
 }
 
-// GameCall from RelaunchContainer.
-protected func RelaunchPlayer(int plr)
-{
-	var clonk = CreateObjectAbove(Clonk, 0, 0, plr);
-	clonk->MakeCrewMember(plr);
-	SetCursor(plr, clonk);
-	JoinPlayer(plr);
-	return;
-}
-
-protected func JoinPlayer(int plr)
-{
-	var clonk = GetCrew(plr);
-	clonk->DoEnergy(100000);
-	var position = [[420,200],[300,440],[130,176],[140,368],[700,192],[670,336],[750,440],[440,392],[45,256]];
-	var r=Random(GetLength(position));
-	var x = position[r][0], y = position[r][1];
-	var relaunch = CreateObjectAbove(RelaunchContainer, x, y, clonk->GetOwner());
-	relaunch->StartRelaunch(clonk);
-	return;
-}
-
-func RelaunchWeaponList() { return [Bow, Shield, Sword, Javelin, Musket, Club]; }
+func RelaunchWeaponList() { return [Bow, Shield, Sword, Javelin, Blunderbuss, Club]; }

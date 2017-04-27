@@ -43,7 +43,8 @@ local current_objects;
 			callback_target: object to which the callback is made, ususally the target object (except for contents menus)
 			menu_object: MenuStyle_Grid object, used to add/remove entries later
 			entry_index_count: used to generate unique IDs for the entries
-			entries_callback: (callback) function that can be used to retrieve a list of entries for that menu (at any point - it might also be called later)
+			entries_callback: (callback) function that can be used to retrieve a list of entries for that menu (at any point - it might also be called later).
+				The function is called in the object that the menu was opened for and passes the player's Clonk as the first argument. 
 				This callback should return an array of entries shown in the menu, the entries are proplists with the following attributes:
 				symbol: icon of the item
 				extra_data: custom user data (internal: in case of inventory menus this is a proplist containing some extra data (f.e. the one object for unstackable objects))
@@ -51,6 +52,8 @@ local current_objects;
 				custom (optional): completely custom menu entry that is passed to the grid menu - allows for custom design
 				unique_index: generated from entry_index_count (not set by user)
 				fx: (optional) effect that gets a "OnMenuOpened(int menu_id, object menu_target, int subwindow_id)" callback once which can be used to update a specific entry only
+			entries_callback_parameter (optional):
+				Passed as second argument to entries_callback. Can be used for custom information.
 			entries: last result of the callback function described above
 				additional properties that are added are:
 				ID: (menu) id of the entry as returned by the menu_object - can be used for updating
@@ -100,6 +103,9 @@ func Destruction()
 	var i = ContentsCount(), obj = nil;
 	while (obj = Contents(--i))
 		obj->RemoveObject(false);
+	// Remove check objects effect.
+	if (cursor)
+		RemoveEffect("IntCheckObjects", cursor);
 }
 
 // used as a static function
@@ -156,7 +162,7 @@ func FxIntCheckObjectsTimer(target, effect fx)
 		container_restriction = Find_Or(Find_Container(container), Find_InArray([container]));
 	}
 	
-	var new_objects = FindObjects(Find_AtRect(target->GetX() - 5, target->GetY() - 10, 10, 20), container_restriction, Find_Layer(target->GetObjectLayer()),
+	var new_objects = FindObjects(Find_AtRect(target->GetX() - 5, target->GetY() - 10, 10, 21), container_restriction, Find_Layer(target->GetObjectLayer()),
 		// Find all containers and objects with a custom menu.
 		Find_Or(Find_Func("IsContainer"), Find_Func("HasInteractionMenu")),
 		// Do not show objects with an extra slot though - even if they are containers. They count as items here and can be accessed via the surroundings tab.
@@ -500,9 +506,9 @@ public func OnToggleMinimizeClicked()
 	config.minimized = !(GetProperty("minimized", config) ?? false);
 	
 	// Reopen with new layout..
-	var cursor = this.cursor;
+	var last_cursor = this.cursor;
 	RemoveObject();
-	GUI_ObjectInteractionMenu->CreateFor(cursor);
+	GUI_ObjectInteractionMenu->CreateFor(last_cursor);
 }
 
 // Tries to put all items from the other menu's target into the target of menu menu_id. Returns nil.
@@ -575,13 +581,13 @@ func CreateSideBar(int slot)
 	for (var obj in sidebar_items)
 	{
 		var background_color = nil;
-		var symbol = {Std = Icon_Menu_RectangleRounded, OnHover = Icon_Menu_RectangleBrightRounded};
+		var symbol = {Std = SidebarIconStandard(), OnHover = SidebarIconOnHover()};
 		// figure out whether the object is already selected
 		// if so, highlight the entry
 		if (current_menus[slot].target == obj)
 		{
 			background_color = RGBa(255, 255, 0, 10);
-			symbol = Icon_Menu_RectangleBrightRounded;
+			symbol = SidebarIconSelected();
 		}
 		var priority = 10000 - obj.Plane;
 		// Cross-out the entry?
@@ -707,16 +713,24 @@ func CreateMainMenu(object obj, int slot)
 	{
 		var menu = menus[i];
 		if (!menu.flag)
+		{
 			menu.flag = InteractionMenu_Custom;
+		}
 		if (menu.entries_callback)
-			menu.entries = obj->Call(menu.entries_callback, cursor);
+		{
+			menu.entries = obj->Call(menu.entries_callback, cursor, menu.entries_callback_parameter);
+		}
 		if (menu.entries == nil)
 		{
 			FatalError(Format("An interaction menu did not return valid entries. %s -> %v() (object %v)", obj->GetName(), menu.entries_callback, obj));
 			continue;
 		}
 		menu.menu_object = CreateObject(MenuStyle_Grid);
-		
+		if (menu.flag == InteractionMenu_Contents)
+		{
+			menu.menu_object->SetTightGridLayout();
+		}
+	
 		menu.menu_object.Top = "+1em";
 		menu.menu_object.Priority = 2;
 		menu.menu_object->SetPermanent();
@@ -751,11 +765,17 @@ func CreateMainMenu(object obj, int slot)
 			spacer = {Left = "0em", Right = "0em", Bottom = "3em"} // guarantees a minimum height
 		};
 		if (menu.flag == InteractionMenu_Contents)
+		{
 			all.BackgroundColor = RGB(0, 50, 0);
+		}
 		else if (menu.BackgroundColor)
-				all.BackgroundColor = menu.BackgroundColor;
+		{
+			all.BackgroundColor = menu.BackgroundColor;
+		}
 		else if (menu.decoration)
+		{
 			menu.menu_object.BackgroundColor = menu.decoration->FrameDecorationBackClr();
+		}
 		GuiAddSubwindow(all, container);
 	}
 	
@@ -997,7 +1017,7 @@ func FxIntRefreshContentsMenuTimer(target, effect, time)
 		{
 			var j = 0, e = nil;
 			var found_tracker = false;
-			while (e = GetEffect(nil, obj, j++))
+			while (e = GetEffect("ExtraSlotTracker", obj, j++))
 			{
 				if (e.keep_alive != extra_slot_keep_alive) continue;
 				found_tracker = true;
@@ -1005,9 +1025,10 @@ func FxIntRefreshContentsMenuTimer(target, effect, time)
 			}
 			if (!found_tracker)
 			{
-				var e = AddEffect("ExtraSlotTracker", obj, 1, 30 + Random(60), this);
+				var e = AddEffect("ExtraSlotTracker", obj, 1, 30 + Random(60), nil, GetID());
 				e.keep_alive = extra_slot_keep_alive;
 				e.callback_effect = effect;
+				e.obj = effect.obj;
 			}
 		}
 		// How many objects are this object?!
@@ -1044,8 +1065,8 @@ func FxIntRefreshContentsMenuTimer(target, effect, time)
 				// Use a default grid-menu entry as the base.
 				custom = MenuStyle_Grid->MakeEntryProplist(symbol, nil);
 				// Pack it into a larger frame to allow for another button below.
-				// The entries with contents are sorted to the back of the inventory menu. This makes for a nicer layout.
-				custom = {Right = custom.Right, Bottom = "4em", top = custom, Priority = 10000 + obj->GetValue()};
+				// The priority offset makes sure that double-height items are at the front.
+				custom = {Right = custom.Right, Bottom = "4em", top = custom, Priority = -10000 + obj->GetValue()};
 				// Then add a little container-symbol (that can be clicked).
 				custom.bottom =
 				{
@@ -1170,8 +1191,8 @@ func FxIntRefreshContentsMenuTimer(target, effect, time)
 
 func FxExtraSlotTrackerTimer(object target, proplist effect, int time)
 {
-	if (!effect.keep_alive) return -1;
-	return 1;
+	if (!effect.keep_alive)
+		return -1;
 }
 
 // This is called by the extra-slot library.
@@ -1209,7 +1230,9 @@ func DoMenuRefresh(int slot, int menu_index, array new_entries)
 	var menu = current_menus[slot].menus[menu_index];
 	var current_entries = menu.entries;
 	if (!new_entries && menu.entries_callback)
-		new_entries = current_menus[slot].target->Call(menu.entries_callback, this.cursor);
+	{
+		new_entries = current_menus[slot].target->Call(menu.entries_callback, this.cursor, menu.entries_callback_parameter);
+	}
 	
 	// step 0.1: update all items where the symbol and extra_data did not change but other things (f.e. the text)
 	// this is done to maintain a consistent order that would be shuffled constantly if the entry was removed and re-added at the end
@@ -1334,7 +1357,10 @@ func UpdateInteractionMenuFor(object target, callbacks)
 				for (var menu_index = 0; menu_index < GetLength(current_menu.menus); ++menu_index)
 				{
 					var menu = current_menu.menus[menu_index];
-					if (menu.entries_callback != callback) continue;
+					if (menu.entries_callback != callback)
+					{
+						continue;
+					}
 					DoMenuRefresh(slot, menu_index);
 				}
 			}
@@ -1370,4 +1396,21 @@ func PlaySoundTransferIncomplete()
 func PlaySoundError()
 {
 	Sound("Objects::Balloon::Pop", true, nil, GetOwner());
+}
+
+// Overloadable functions for customization
+
+func SidebarIconStandard()
+{
+	return Icon_Menu_RectangleRounded;
+}
+
+func SidebarIconOnHover()
+{
+	return Icon_Menu_RectangleBrightRounded;
+}
+
+func SidebarIconSelected()
+{
+	return Icon_Menu_RectangleBrightRounded;
 }

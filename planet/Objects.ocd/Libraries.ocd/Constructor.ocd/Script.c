@@ -41,11 +41,26 @@ public func GetConstructionPlans(int plr)
 {
 	var construction_plans = [];
 	var construct_id, index = 0;
-	while (construct_id = GetPlrKnowledge(plr, nil, index++, C4D_Structure))
-		construction_plans[index-1] = construct_id;
+	while (construct_id = GetPlrKnowledge(plr, nil, index++, C4D_Structure)) // Structures
+		if (CanBuild(construct_id))
+			construction_plans[GetLength(construction_plans)] = construct_id;
+	index = 0;
+	while (construct_id = GetPlrKnowledge(plr, nil, index++, C4D_Vehicle)) // Vehicles
+		if (CanBuild(construct_id))
+			construction_plans[GetLength(construction_plans)] = construct_id;
+	index = 0;
+	while (construct_id = GetPlrKnowledge(plr, nil, index++, C4D_Object)) // Objects
+		if (CanBuild(construct_id))
+			construction_plans[GetLength(construction_plans)] = construct_id;
 	return construction_plans;
 }
 
+// Checks whether a certain construction plans can be built by this constructor.
+// Overload as seem fit.
+func CanBuild(id construction_plan)
+{
+	return true;
+}
 
 /*-- Construction preview --*/
 
@@ -68,12 +83,12 @@ public func FxControlConstructionPreviewStart(object clonk, effect, int temp, id
 }
 
 // Called by Control2Effect
-public func FxControlConstructionPreviewControl(object clonk, effect, int ctrl, int x, int y, int strength, bool repeat, bool release)
+public func FxControlConstructionPreviewControl(object clonk, effect, int ctrl, int x, int y, int strength, bool repeat, int status)
 {
 	if (ctrl != CON_Aim)
 	{
 		// CON_Use is accept, but don't remove the preview, this is done on releasing the button.
-		if (ctrl == CON_Use && !release)
+		if (ctrl == CON_Use && status == CONS_Down)
 		{
 			var ok = CreateConstructionSite(clonk, effect.structure, AbsX(effect.preview->GetX()), AbsY(effect.preview->GetY() + effect.preview.dimension_y/2), effect.preview.blocked, effect.preview.direction, effect.preview.stick_to);
 			if (ok)
@@ -90,7 +105,7 @@ public func FxControlConstructionPreviewControl(object clonk, effect, int ctrl, 
 		// (yes, this means that actionbar-hotkeys wont work for it. However clicking the button will.)
 		else if (IsInteractionControl(ctrl))
 		{
-			if (release)
+			if (status == CONS_Up)
 				effect.preview->Flip();
 			return true;
 		}

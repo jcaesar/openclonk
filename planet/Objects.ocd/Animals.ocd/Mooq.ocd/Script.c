@@ -49,6 +49,8 @@ public func Place(int amount, proplist rectangle, proplist settings)
 	return animal;
 }
 
+public func IsAnimal() { return true; }
+
 func Construction()
 {
 	turn_angle = -60;
@@ -62,8 +64,6 @@ func Construction()
 	CheckTurn(GetDir());
 
 	SetTailOnFire();
-
-	SetCreatureControlled();
 }
 
 func Death()
@@ -508,7 +508,7 @@ func UpdateEnemy()
 
 	var x = GetX();
 	var y = GetY();
-	for (var obj in FindObjects(Find_Distance(200), Find_OCF(OCF_Alive), Find_Hostile(GetOwner()), Sort_Distance()))
+	for (var obj in FindObjects(Find_Distance(200), Find_OCF(OCF_Alive), Find_AnimalHostile(GetOwner()), Sort_Distance()))
 	{
 		if (!PathFree(x, y, obj->GetX(), obj->GetY())) continue;
 		if (obj->GBackLiquid()) continue;
@@ -925,3 +925,8 @@ local JumpSpeed = MaxJumpSpeed;
 local NoBurnDecay = 1;
 local BorderBound = C4D_Border_Sides;
 local ContactCalls = true;
+
+public func Definition(proplist def)
+{
+	def.PictureTransformation = Trans_Mul(Trans_Translate(2000, 3000, 0), Trans_Scale(1400), Trans_Rotate(20, 1, 0, 0), Trans_Rotate(60, 0, 1, 0));
+}

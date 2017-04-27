@@ -34,8 +34,9 @@ C4AulExec AulExec;
 
 C4AulExecError::C4AulExecError(const char *szError)
 {
+	assert(szError);
 	// direct error message string
-	sMessage.Format("ERROR: %s.", szError ? szError : "(no error message)");
+	sMessage.Copy(szError ? szError : "(no error message)");
 }
 
 StdStrBuf C4AulScriptContext::ReturnDump(StdStrBuf Dump)
@@ -116,7 +117,7 @@ C4String *C4AulExec::FnTranslate(C4PropList * _this, C4String *text)
 	} \
 } while(0)
 
-	if (!text || text->GetData().isNull()) return NULL;
+	if (!text || text->GetData().isNull()) return nullptr;
 	// Find correct script: translations of the context if possible, containing script as fallback
 	if (_this && _this->GetDef())
 		ReturnIfTranslationAvailable(&(_this->GetDef()->Script), text->GetCStr());
@@ -141,7 +142,7 @@ void C4AulExec::ClearPointers(C4Object * obj)
 	for (C4AulScriptContext *pCtx = pCurCtx; pCtx >= Contexts; pCtx--)
 	{
 		if (pCtx->Obj == obj)
-			pCtx->Obj = NULL;
+			pCtx->Obj = nullptr;
 	}
 }
 
@@ -161,10 +162,10 @@ C4Value C4AulExec::Exec(C4AulScriptFunc *pSFunc, C4PropList * p, C4Value *pnPars
 		C4AulScriptContext ctx;
 		ctx.tTime = 0;
 		ctx.Obj = p;
-		ctx.Return = NULL;
+		ctx.Return = nullptr;
 		ctx.Pars = pPars;
 		ctx.Func = pSFunc;
-		ctx.CPos = NULL;
+		ctx.CPos = nullptr;
 		PushContext(ctx);
 
 		// Execute
@@ -172,8 +173,10 @@ C4Value C4AulExec::Exec(C4AulScriptFunc *pSFunc, C4PropList * p, C4Value *pnPars
 	}
 	catch (C4AulError &e)
 	{
-		if(!e.shown) e.show();
+		if (!fPassErrors)
+			::ScriptEngine.GetErrorHandler()->OnError(e.what());
 		// Unwind stack
+		// TODO: The stack dump should be passed to the error handler somehow
 		while (pCurCtx > pOldCtx)
 		{
 			pCurCtx->dump(StdStrBuf(" by: "));
@@ -693,7 +696,7 @@ C4Value C4AulExec::Exec(C4AulBCC *pCPos)
 				pCurCtx->CPos = pCPos;
 				assert(pCurCtx->Func->GetCode() <= pCPos);
 				// Do the call
-				C4AulBCC *pJump = Call(pFunc, pPars, pPars, NULL);
+				C4AulBCC *pJump = Call(pFunc, pPars, pPars, nullptr);
 				if (pJump)
 				{
 					pCPos = pJump;
@@ -808,7 +811,7 @@ C4Value C4AulExec::Exec(C4AulBCC *pCPos)
 		}
 
 	}
-	catch (C4AulError &e)
+	catch (C4AulError &)
 	{
 		// Save current position
 		assert(pCurCtx->Func->GetCode() <= pCPos);
@@ -840,7 +843,7 @@ C4AulBCC *C4AulExec::Call(C4AulFunc *pFunc, C4Value *pReturn, C4Value *pPars, C4
 		ctx.Return = pReturn;
 		ctx.Pars = pPars;
 		ctx.Func = pSFunc;
-		ctx.CPos = NULL;
+		ctx.CPos = nullptr;
 		PushContext(ctx);
 
 		// Jump to code
@@ -851,8 +854,7 @@ C4AulBCC *C4AulExec::Call(C4AulFunc *pFunc, C4Value *pReturn, C4Value *pPars, C4
 		if (pContext && !pContext->Status)
 			throw C4AulExecError("using removed object");
 
-#ifdef DEBUGREC_SCRIPT
-		if (Config.General.DebugRec)
+		if (DEBUGREC_SCRIPT && Config.General.DebugRec)
 		{
 			StdStrBuf sCallText;
 			if (pContext && pContext->GetObject())
@@ -882,7 +884,6 @@ C4AulBCC *C4AulExec::Call(C4AulFunc *pFunc, C4Value *pReturn, C4Value *pPars, C4
 			sCallText.AppendChar(';');
 			AddDbgRec(RCT_AulFunc, sCallText.getData(), sCallText.getLength()+1);
 		}
-#endif
 
 		// Execute
 #ifdef _DEBUG
@@ -900,7 +901,7 @@ C4AulBCC *C4AulExec::Call(C4AulFunc *pFunc, C4Value *pReturn, C4Value *pPars, C4
 		PopValuesUntil(pReturn);
 
 		// Continue
-		return NULL;
+		return nullptr;
 	}
 
 }
@@ -978,7 +979,7 @@ void C4AulProfiler::StopProfiling()
 	AulExec.StopProfiling();
 	// collect profiler times
 	C4AulProfiler Profiler;
-	Profiler.CollectEntry(NULL, AulExec.tDirectExecTotal);
+	Profiler.CollectEntry(nullptr, AulExec.tDirectExecTotal);
 	if(AulExec.pProfiledScript)
 		Profiler.CollectTimes(AulExec.pProfiledScript->GetPropList());
 	else
@@ -1014,16 +1015,14 @@ void C4AulProfiler::Show()
 	// done!
 }
 
-C4Value C4AulExec::DirectExec(C4PropList *p, const char *szScript, const char *szContext, bool fPassErrors, C4AulScriptContext* context)
+C4Value C4AulExec::DirectExec(C4PropList *p, const char *szScript, const char *szContext, bool fPassErrors, C4AulScriptContext* context, bool parse_function)
 {
-#ifdef DEBUGREC_SCRIPT
-	if (Config.General.DebugRec)
+	if (DEBUGREC_SCRIPT && Config.General.DebugRec)
 	{
 		AddDbgRec(RCT_DirectExec, szScript, strlen(szScript)+1);
 		int32_t iObjNumber = p && p->GetPropListNumbered() ? p->GetPropListNumbered()->Number : -1;
 		AddDbgRec(RCT_DirectExec, &iObjNumber, sizeof(int32_t));
 	}
-#endif
 	// profiler
 	StartDirectExec();
 	C4PropListStatic * script = ::GameScript.GetPropList();
@@ -1036,7 +1035,16 @@ C4Value C4AulExec::DirectExec(C4PropList *p, const char *szScript, const char *s
 	// Parse function
 	try
 	{
-		pFunc->ParseFn(&::ScriptEngine, context);
+		if (parse_function)
+		{
+			// Expect a full function (e.g. "func foo() { return bar(); }")
+			pFunc->ParseDirectExecFunc(&::ScriptEngine, context);
+		}
+		else
+		{
+			// Expect a single statement (e.g. "bar()")
+			pFunc->ParseDirectExecStatement(&::ScriptEngine, context);
+		}
 		C4AulParSet Pars;
 		C4Value vRetVal(Exec(pFunc.get(), p, Pars.Par, fPassErrors));
 		// profiler
@@ -1047,7 +1055,7 @@ C4Value C4AulExec::DirectExec(C4PropList *p, const char *szScript, const char *s
 	{
 		if(fPassErrors)
 			throw;
-		ex.show();
+		::ScriptEngine.GetErrorHandler()->OnError(ex.what());
 		LogCallStack();
 		StopDirectExec();
 		return C4VNull;

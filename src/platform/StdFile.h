@@ -54,7 +54,6 @@ bool TruncatePath(char *szPath);
 // szBuffer has to be of at least _MAX_PATH length.
 bool GetParentPath(const char *szFilename, char *szBuffer);
 bool GetParentPath(const char *szFilename, StdStrBuf *outBuf);
-bool GetRelativePath(const char *strPath, const char *strRelativeTo, char *strBuffer, int iBufferSize=_MAX_PATH);
 const char *GetRelativePathS(const char *strPath, const char *strRelativeTo);
 bool IsGlobalPath(const char *szPath);
 
@@ -94,6 +93,9 @@ public:
 	~DirectoryIterator();
 
 	const char * operator * () const;
+	const char *GetName() const { return **this; }
+	size_t GetFileSize() const;
+
 	DirectoryIterator& operator ++ ();
 	DirectoryIterator operator ++ (int);
 	void Clear(); // put iterator into empty state and clear any cached directory listing
@@ -102,7 +104,7 @@ public:
 private:
 	void Read(const char *dirname);
 	friend struct DirectoryIteratorP;
-	typedef std::vector<std::string> FileList;
+	typedef std::vector<std::pair<std::string, size_t>> FileList;
 	DirectoryIteratorP *p;
 	FileList::iterator iter;
 };

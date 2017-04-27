@@ -24,7 +24,7 @@
 #include "graphics/C4Surface.h"
 #include "graphics/C4FacetEx.h"
 #include "gui/C4Gui.h"
-#include "player/C4ScenarioParameters.h"
+#include "player/C4Achievement.h"
 
 class C4GraphicsResource
 {
@@ -68,13 +68,12 @@ public:
 	C4FacetID fctGamepad;
 	C4FacetID fctBuild;
 	C4Facet fctClonkSkin;
-	C4Facet fctCursor;
-	C4Facet fctDropTarget;
 	C4Facet fctKeyboard;
 	C4Facet fctMouse;
 	C4Facet fctCommand;
 	C4Facet fctKey;
 	C4Facet fctOKCancel;
+	C4FacetID fctTransformKnob;
 	C4FacetID fctCrewClr; // ColorByOwner-surface of fctCrew
 	C4FacetID fctFlagClr; // ColorByOwner-surface of fctFlag
 	C4FacetID fctPlayerClr; // ColorByOwner-surface of fctPlayer
@@ -106,7 +105,7 @@ public:
 	// achievement graphics
 	C4AchievementGraphics Achievements;
 public:
-	CStdFont &GetFontByHeight(int32_t iHgt, float *pfZoom=NULL); // get optimal font for given control size
+	CStdFont &GetFontByHeight(int32_t iHgt, float *pfZoom=nullptr); // get optimal font for given control size
 	void Default();
 	void Clear();
 	bool InitFonts();

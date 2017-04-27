@@ -69,10 +69,10 @@ private func InitCave()
 	CreateObjectAbove(Torch, 500, 474)->AttachToWall(true);
 	CreateObjectAbove(Torch, 506, 628)->AttachToWall(true);
 	CreateObjectAbove(Torch, 728, 696)->AttachToWall(true);
-	// A hidden chest with a musket.
+	// A hidden chest with a blunderbuss.
 	var chest = CreateObjectAbove(Chest, 10, 526);
-	var musket = chest->CreateContents(Musket);
-	musket->CreateContents(LeadShot);
+	var blunderbuss = chest->CreateContents(Blunderbuss);
+	blunderbuss->CreateContents(LeadBullet);
 	return;
 }
 
@@ -376,7 +376,7 @@ global func FxClonkRestoreStop(object target, effect, int reason, bool  temporar
 		var plr = target->GetOwner();
 		var clonk = CreateObject(Clonk, 0, 0, plr);
 		clonk->GrabObjectInfo(target);
-		Rule_BaseRespawn->TransferInventory(target, clonk);
+		Rule_Relaunch->TransferInventory(target, clonk);
 		SetCursor(plr, clonk);
 		clonk->DoEnergy(100000);
 		restorer->SetRestoreObject(clonk, nil, to_x, to_y, 0, "ClonkRestore");

@@ -19,16 +19,21 @@ global func GetSpeed(int prec)
 	return Sqrt(GetXDir(prec)**2 + GetYDir(prec)**2);
 }
 
+// You can add to the two components of the velocity vector individually with this function.
+global func AddSpeed(int x_dir, int y_dir, int prec)
+{
+	SetXDir(GetXDir(prec) + x_dir, prec);
+	SetYDir(GetYDir(prec) + y_dir, prec);
+}
+
 // Sets an objects's speed and its direction, doesn't it?
 // Can set either speed or angle of velocity, or both
 global func SetVelocity(int angle, int speed, int precAng, int precSpd)
 {
-	if(!precSpd) precSpd = 10;
-	if(!precAng) precAng = 1;
-	if(!speed)
-		speed = Distance(0,0, GetXDir(precSpd), GetYDir(precSpd));
-	if(!angle)
-		angle = Angle(0,0, GetXDir(precSpd), GetYDir(precSpd), precAng);
+	if (!precSpd) precSpd = 10;
+	if (!precAng) precAng = 1;
+	speed = speed ?? Distance(0, 0, GetXDir(precSpd), GetYDir(precSpd));
+	angle = angle ?? Angle(0, 0, GetXDir(precSpd), GetYDir(precSpd), precAng);
 		
 	var x_dir = Sin(angle, speed, precAng);
 	var y_dir = -Cos(angle, speed, precAng);
@@ -37,6 +42,27 @@ global func SetVelocity(int angle, int speed, int precAng, int precSpd)
 	SetYDir(y_dir, precSpd);
 	return;
 }
+
+// Adds to an objects's speed and its direction:
+// Can set either speed or angle of velocity, or both
+global func AddVelocity(int angle, int speed, int precision_angle, int precision_speed)
+{
+	precision_speed = precision_speed ?? 10;
+	precision_angle = precision_angle ?? 1;
+	speed = speed ?? 0;
+	angle = angle ?? 0;
+
+	var current_x_dir = GetXDir(precision_speed);
+	var current_y_dir = GetYDir(precision_speed);
+		
+	var x_dir = +Sin(angle, speed, precision_angle);
+	var y_dir = -Cos(angle, speed, precision_angle);
+
+	SetXDir(current_x_dir + x_dir, precision_speed);
+	SetYDir(current_y_dir + y_dir, precision_speed);
+	return;
+}
+
 
 // Sets the completion of this to new_con.
 global func SetCon(int new_con, int precision, bool grow_from_center)
@@ -76,6 +102,15 @@ global func MakeInvincible(bool allow_fire)
 	this.RejectWindbagForce = Global.Invincibility_RejectWindbagForce;
 	this.QueryCatchBlow = Global.Invincibility_QueryCatchBlow;
 	return true;
+}
+
+global func SetInvincibility(bool to_val)
+{
+	// Turn invincibility on or off
+	if (to_val)
+		return MakeInvincible(false);
+	else
+		return ClearInvincible();
 }
 
 global func FxIntInvincibleDamage(target)
@@ -226,6 +261,7 @@ global func GetMaxBreath()
 // max_size = the maximum object size in tenths of percent.
 global func StartGrowth(int value, int max_size)
 {
+	if (value <= 0) return nil;
 	// Ensure max size is set and does not conflict with Oversize.
 	max_size = max_size ?? 1000;
 	if (!GetDefCoreVal("Oversize", "DefCore"))
@@ -361,14 +397,6 @@ global func Sell (int iPlr, object pObj, object pToVendor)
 		return false;
 	return pToVendor->DoSell(pObj, iPlr);
 }
-
-// Returns the owner if this is a base.
-global func GetBase ()
-{
-	if(!(this->~IsBase())) return NO_OWNER;
-	return GetOwner();
-}
-
 
 /* GetXEdge returns the position of the objects top/bottom/left/right edge */
 global func GetLeftEdge()

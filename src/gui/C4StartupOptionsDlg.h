@@ -94,7 +94,7 @@ private:
 	protected:
 		void OnCheckChange(C4GUI::Element *pCheckBox);
 	public:
-		BoolConfig(const C4Rect &rcBounds, const char *szName, bool *pbVal, int32_t *piVal, bool fInvert=false, int32_t *piRestartChangeCfgVal=NULL);
+		BoolConfig(const C4Rect &rcBounds, const char *szName, bool *pbVal, int32_t *piVal, bool fInvert=false, int32_t *piRestartChangeCfgVal=nullptr);
 	};
 	// editbox below descriptive label sharing one window for common tooltip
 	class EditConfig : public C4GUI::LabeledEdit
@@ -130,7 +130,7 @@ private:
 	bool OnGfxResComboSelChange(C4GUI::ComboBox *pForCombo, int32_t idNewSelection);
 	void OnGfxMSComboFill(C4GUI::ComboBox_FillCB *pFiller);
 	bool OnGfxMSComboSelChange(C4GUI::ComboBox *pForCombo, int32_t idNewSelection);
-	bool TryNewResolution(int32_t iResX, int32_t iResY);
+	bool TryNewResolution(int32_t iResX, int32_t iResY, int32_t iRefreshRate);
 	StdStrBuf GetGfxResString(int32_t iResX, int32_t iResY); // convert resolution to string to be displayed in resolution choice combobox
 	const char * GetWindowedName(int32_t mode = -1);
 

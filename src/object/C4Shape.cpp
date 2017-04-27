@@ -44,7 +44,7 @@ void C4Shape::Rotate(C4Real Angle, bool bUpdateVertices)
 	int32_t i = 0;
 	if (Config.General.DebugRec)
 	{
-		rc.x=x; rc.y=y; rc.wdt=Wdt; rc.hgt=Hgt; rc.r=Angle;
+		rc.x=x; rc.y=y; rc.wdt=Wdt; rc.hgt=Hgt; rc.r=fixtoi(Angle);
 		for (; i<4; ++i)
 			{ rc.VtxX[i]=VtxX[i]; rc.VtxY[i]=VtxY[i]; }
 		AddDbgRec(RCT_RotVtx1, &rc, sizeof(rc));
@@ -535,7 +535,7 @@ void C4Shape::CompileFunc(StdCompiler *pComp, const C4Shape *default_shape)
 		{ "CNAT_NoCollision", CNAT_NoCollision },
 		{ "CNAT_PhaseHalfVehicle", CNAT_PhaseHalfVehicle },
 
-		{ NULL, 0 }
+		{ nullptr, 0 }
 	};
 
 	// a default shape is given in object compilation context only

@@ -16,6 +16,8 @@
 #ifndef C4FOWBEAM_H
 #define C4FOWBEAM_H
 
+#include "C4ForbidLibraryCompilation.h"
+
 #ifndef USE_CONSOLE
 #include "lib/StdBuf.h"
 
@@ -41,7 +43,7 @@ public:
 		  iLeftEndY(0), iRightEndY(0),
 		  iError(0),
 		  fDirty(true),
-		  pNext(NULL)
+		  pNext(nullptr)
 	{ }
 
 private:

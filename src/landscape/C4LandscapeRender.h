@@ -17,6 +17,7 @@
 #ifndef C4LANDSCAPE_RENDER_H
 #define C4LANDSCAPE_RENDER_H
 
+#include "C4ForbidLibraryCompilation.h"
 #include "graphics/C4Surface.h"
 #include "graphics/C4FacetEx.h"
 #include "graphics/C4Shader.h"
@@ -52,6 +53,7 @@ enum C4LR_Uniforms
 	C4LRU_MaterialSize,
 	C4LRU_AmbientBrightness,
 	C4LRU_AmbientTransform,
+	C4LRU_Modulation,
 
 	C4LRU_Count
 };
@@ -78,7 +80,7 @@ class C4LandscapeRender
 {
 public:
 	C4LandscapeRender()
-		: iWidth(0), iHeight(0), pTexs(NULL) { }
+		: iWidth(0), iHeight(0), pTexs(nullptr) { }
 	virtual ~C4LandscapeRender()
 		{}
 
@@ -99,7 +101,7 @@ public:
 	// the given rectangle
 	virtual void Update(C4Rect Rect, C4Landscape *pSource) = 0;
 
-	virtual void Draw(const C4TargetFacet &cgo, const class C4FoWRegion *Light) = 0;
+	virtual void Draw(const C4TargetFacet &cgo, const class C4FoWRegion *Light, uint32_t clrMod) = 0;
 };
 
 #ifndef USE_CONSOLE
@@ -145,7 +147,7 @@ public:
 	virtual C4Rect GetAffectedRect(C4Rect Rect);
 	virtual void Update(C4Rect Rect, C4Landscape *pSource);
 
-	virtual void Draw(const C4TargetFacet &cgo, const C4FoWRegion *Light);
+	virtual void Draw(const C4TargetFacet &cgo, const C4FoWRegion *Light, uint32_t clrMod);
 
 private:
 	bool InitLandscapeTexture();

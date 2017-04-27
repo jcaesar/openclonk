@@ -24,6 +24,8 @@
 #include "lib/C4Random.h"
 #include "C4Version.h"
 
+#include <regex>
+
 //========================== Some Support Functions =======================================
 
 StdStrBuf FnStringFormat(C4PropList * _this, C4String *szFormatPar, C4Value * Pars, int ParCount)
@@ -388,11 +390,11 @@ static C4Effect * FnGetEffect(C4PropList * _this, C4String *psEffectName, C4Prop
 	const char *szEffect = FnStringPar(psEffectName);
 	// get effects
 	C4Effect *pEffect = *FnGetEffectsFor(pTarget);
-	if (!pEffect) return NULL;
+	if (!pEffect) return nullptr;
 	// name/wildcard given: find effect by name and index
 	if (szEffect && *szEffect)
 		return pEffect->Get(szEffect, index, iMaxPriority);
-	return NULL;
+	return nullptr;
 }
 
 static bool FnRemoveEffect(C4PropList * _this, C4String *psEffectName, C4PropList *pTarget, C4Effect * pEffect2, bool fDoNoCalls)
@@ -468,6 +470,136 @@ static C4Value FnEffectCall(C4PropList * _this, C4Value * Pars)
 	return pEffect->DoCall(pTarget, szCallFn, Pars[3], Pars[4], Pars[5], Pars[6], Pars[7], Pars[8], Pars[9]);
 }
 
+/* Regex */
+
+static const long
+	Regex_CaseInsensitive = (1 << 0),
+	Regex_FirstOnly       = (1 << 1);
+
+static std::regex_constants::syntax_option_type C4IntToSyntaxOption(long flags)
+{
+	std::regex_constants::syntax_option_type out = std::regex::ECMAScript;
+	if (flags & Regex_CaseInsensitive)
+		out |= std::regex::icase;
+	return out;
+}
+
+static std::regex_constants::match_flag_type C4IntToMatchFlag(long flags)
+{
+	std::regex_constants::match_flag_type out = std::regex_constants::match_default;
+	if (flags & Regex_FirstOnly)
+		out |= std::regex_constants::format_first_only;
+	return out;
+}
+
+static Nillable<C4String *> FnRegexReplace(C4PropList * _this, C4String *source, C4String *regex, C4String *replacement, long flags)
+{
+	if (!source || !regex || !replacement) return C4Void();
+	try
+	{
+		std::regex re(regex->GetCStr(), C4IntToSyntaxOption(flags));
+		std::string out = std::regex_replace(source->GetCStr(), re, replacement->GetCStr(), C4IntToMatchFlag(flags));
+		return ::Strings.RegString(out.c_str());
+	}
+	catch (const std::regex_error& e)
+	{
+		throw C4AulExecError(FormatString("RegexReplace: %s", e.what()).getData());
+	}
+}
+
+
+static Nillable<C4ValueArray *> FnRegexSearch(C4PropList * _this, C4String *source, C4String *regex, long flags)
+{
+	if (!source || !regex) return C4Void();
+	try
+	{
+		std::regex re(regex->GetCStr(), C4IntToSyntaxOption(flags));
+		C4ValueArray *out = new C4ValueArray();
+		const auto &data = source->GetData();
+		size_t pos = 0;
+		std::cmatch m;
+		long i = 0;
+		// std::regex_iterator would be the better way to do this, but is is broken in libc++ (see LLVM bug #21597).
+		while (pos <= data.getLength() && std::regex_search(data.getData() + pos, data.getData() + data.getLength(), m, re))
+		{
+			int char_pos = GetCharacterCount(std::string(data.getData(), pos + m.position()).c_str());
+			(*out)[i++] = C4VInt(char_pos);
+			if (flags & Regex_FirstOnly) break;
+			pos += m.position() + std::max<size_t>(m.length(), 1);
+		}
+		return out;
+	}
+	catch (const std::regex_error& e)
+	{
+		throw C4AulExecError(FormatString("RegexSearch: %s", e.what()).getData());
+	}
+}
+
+static Nillable<C4ValueArray *> FnRegexMatch(C4PropList * _this, C4String *source, C4String *regex, long flags)
+{
+	if (!source || !regex) return C4Void();
+	try
+	{
+		std::regex re(regex->GetCStr(), C4IntToSyntaxOption(flags));
+		C4ValueArray *out = new C4ValueArray();
+		const auto &data = source->GetData();
+		size_t pos = 0;
+		std::cmatch m;
+		long i = 0;
+		while (pos <= data.getLength() && std::regex_search(data.getData() + pos, data.getData() + data.getLength(), m, re))
+		{
+			C4ValueArray *match = new C4ValueArray(m.size());
+			long j = 0;
+			for (auto sm : m)
+			{
+				(*match)[j++] = C4VString(String(sm.str().c_str()));
+			}
+			(*out)[i++] = C4VArray(match);
+			if (flags & Regex_FirstOnly) break;
+			pos += m.position() + std::max<size_t>(m.length(), 1);
+		}
+		return out;
+	}
+	catch (const std::regex_error& e)
+	{
+		throw C4AulExecError(FormatString("RegexMatch: %s", e.what()).getData());
+	}
+}
+
+static Nillable<C4ValueArray *> FnRegexSplit(C4PropList * _this, C4String *source, C4String *regex, long flags)
+{
+	if (!source || !regex) return C4Void();
+	try
+	{
+		std::regex re(regex->GetCStr(), C4IntToSyntaxOption(flags));
+		C4ValueArray *out = new C4ValueArray();
+		const auto &data = source->GetData();
+		size_t pos = 0;
+		std::cmatch m;
+		long i = 0;
+		while (pos <= data.getLength() && std::regex_search(data.getData() + pos, data.getData() + data.getLength(), m, re))
+		{
+			// As we're advancing by one character for zero-length matches, always
+			// include at least one character here.
+			std::string substr(data.getData() + pos, std::max<size_t>(m.position(), 1));
+			(*out)[i++] = C4VString(String(substr.c_str()));
+			if (flags & Regex_FirstOnly) break;
+			pos += m.position() + std::max<size_t>(m.length(), 1);
+		}
+		if (pos <= data.getLength())
+		{
+			std::string substr(data.getData() + pos, data.getLength() - pos);
+			(*out)[i++] = C4VString(String(substr.c_str()));
+		}
+		return out;
+	}
+	catch (const std::regex_error& e)
+	{
+		throw C4AulExecError(FormatString("RegexSplit: %s", e.what()).getData());
+	}
+}
+
+
 static C4Value FnLog(C4PropList * _this, C4Value * Pars)
 {
 	Log(FnStringFormat(_this, Pars[0].getStr(), &Pars[1], 9).getData());
@@ -483,6 +615,16 @@ static C4Value FnDebugLog(C4PropList * _this, C4Value * Pars)
 static C4Value FnFormat(C4PropList * _this, C4Value * Pars)
 {
 	return C4VString(FnStringFormat(_this, Pars[0].getStr(), &Pars[1], 9));
+}
+
+// Parse a string into an integer. Returns nil if the conversion fails.
+static Nillable<int32_t> FnParseInt(C4PropList *_this, C4String *str)
+{
+	const char *cstr = str->GetCStr();
+	const char *end = nullptr;
+	int32_t result = StrToI32(cstr, 10, &end);
+	if (end == cstr || *end != '\0') return C4Void();
+	return result;
 }
 
 static long FnAbs(C4PropList * _this, long iVal)
@@ -717,9 +859,50 @@ static Nillable<long> FnGetChar(C4PropList * _this, C4String *pString, long iInd
 	return c;
 }
 
-static C4Value Fneval(C4PropList * _this, C4String *strScript)
+static C4String *FnStringToIdentifier(C4PropList * _this, C4String *pString)
 {
-	return ::AulExec.DirectExec(_this, FnStringPar(strScript), "eval", true);
+	// Change an arbitrary string so that it becomes an identifier
+	const char *text = FnStringPar(pString);
+	if (!text) return nullptr;
+	StdStrBuf result;
+	bool had_valid = false, had_invalid = false;
+	const char *ptext = text, *t0 = text;
+	uint32_t c = GetNextCharacter(&text);
+	while (c)
+	{
+		if (isalnum(c) || c == '_')
+		{
+			// Starting with a digit? Needs to prepend a character
+			if (isdigit(c) && !had_valid)
+			{
+				result.Append("_");
+				had_invalid = true;
+			}
+			// Valid character: Append to result string if a modification had to be done
+			if (had_invalid) result.Append(ptext, text - ptext);
+			had_valid = true;
+		}
+		else
+		{
+			// Invalid character. Make sure result is created from previous valid characters
+			if (!had_invalid)
+			{
+				result.Copy(t0, ptext - t0);
+				had_invalid = true;
+			}
+		}
+		ptext = text;
+		c = GetNextCharacter(&text);
+	}
+	// Make sure no empty string is returned
+	if (!had_valid) return ::Strings.RegString("_");
+	// Return either modified string or the original if no modifications were needed
+	return had_invalid ? ::Strings.RegString(result) : pString;
+}
+
+static C4Value Fneval(C4PropList * _this, C4String *strScript, bool dont_pass_errors)
+{
+	return ::AulExec.DirectExec(_this, FnStringPar(strScript), "eval", !dont_pass_errors);
 }
 
 static bool FnLocateFunc(C4PropList * _this, C4String *funcname, C4PropList * p)
@@ -757,7 +940,7 @@ static bool FnLocateFunc(C4PropList * _this, C4String *funcname, C4PropList * p)
 				LogF("%s%s (%s:%d)", szPrefix, pFunc->GetName(), pSFunc->pOrgScript->ScriptName.getData(), (int)iLine);
 			}
 			// next func in overload chain
-			pFunc = pSFunc ? pSFunc->OwnerOverloaded : NULL;
+			pFunc = pSFunc ? pSFunc->OwnerOverloaded : nullptr;
 			szPrefix = "overloads ";
 		}
 	}
@@ -803,7 +986,7 @@ static bool FnStartScriptProfiler(C4PropList * _this, C4Def * pDef)
 	if (pDef)
 		pScript = &pDef->Script;
 	else
-		pScript = NULL;
+		pScript = nullptr;
 	// profile it
 	C4AulProfiler::StartProfiling(pScript);
 	return true;
@@ -832,6 +1015,23 @@ static Nillable<C4String *> FnGetConstantNameByValue(C4PropList * _this, int val
 	}
 	// nothing found (at index)
 	return C4Void();
+}
+
+static Nillable<C4String *> FnReplaceString(C4PropList * _this, C4String *source, C4String *from, C4String *to)
+{
+	if (!from) return source;
+	if (!source) return C4Void();
+	const char *szto = to ? to->GetCStr() : "";
+	const char *szfrom = from->GetCStr();
+	StdStrBuf s(source->GetData(), true);
+	if (s.Replace(szfrom, szto))
+	{
+		return ::Strings.RegString(s.getData());
+	}
+	else
+	{
+		return source;
+	}
 }
 
 static bool FnSortArray(C4PropList * _this, C4ValueArray *pArray, bool descending)
@@ -869,7 +1069,7 @@ static bool FnFileWrite(C4PropList * _this, int32_t file_handle, C4String *data)
 	C4AulUserFile *file = ::ScriptEngine.GetUserFile(file_handle);
 	if (!file) throw C4AulExecError("FileWrite: invalid file handle");
 	// prepare string to write
-	if (!data) return false; // write NULL? No.
+	if (!data) return false; // write nullptr? No.
 	// write it
 	file->Write(data->GetCStr(), data->GetData().getLength());
 	return true;
@@ -906,6 +1106,9 @@ C4ScriptConstDef C4ScriptConstMap[]=
 	{ "FX_Call_EngCorrosion"      ,C4V_Int,      C4FxCall_EngCorrosion      }, // energy loss through corrosion (acid)
 	{ "FX_Call_EngGetPunched"     ,C4V_Int,      C4FxCall_EngGetPunched     }, // energy loss from punch
 
+	{ "Regex_CaseInsensitive"     ,C4V_Int,      Regex_CaseInsensitive      },
+	{ "Regex_FirstOnly"           ,C4V_Int,      Regex_FirstOnly            },
+
 	{ "C4V_Nil",         C4V_Int, C4V_Nil},
 	{ "C4V_Int",         C4V_Int, C4V_Int},
 	{ "C4V_Bool",        C4V_Int, C4V_Bool},
@@ -920,7 +1123,7 @@ C4ScriptConstDef C4ScriptConstMap[]=
 	{ "C4X_Ver1",        C4V_Int, C4XVER1},
 	{ "C4X_Ver2",        C4V_Int, C4XVER2},
 
-	{ NULL, C4V_Nil, 0}
+	{ nullptr, C4V_Nil, 0}
 };
 
 C4ScriptFnDef C4ScriptFnMap[]=
@@ -932,7 +1135,7 @@ C4ScriptFnDef C4ScriptFnMap[]=
 	{ "Format",        1, C4V_String, { C4V_String  ,C4V_Any     ,C4V_Any     ,C4V_Any     ,C4V_Any     ,C4V_Any     ,C4V_Any    ,C4V_Any    ,C4V_Any    ,C4V_Any}, FnFormat   },
 	{ "Trans_Mul",     1, C4V_Array,  { C4V_Array   ,C4V_Any     ,C4V_Any     ,C4V_Any     ,C4V_Any     ,C4V_Any     ,C4V_Any    ,C4V_Any    ,C4V_Any    ,C4V_Any}, FnTrans_Mul},
 
-	{ NULL,            0, C4V_Nil,    { C4V_Nil     ,C4V_Nil     ,C4V_Nil     ,C4V_Nil     ,C4V_Nil     ,C4V_Nil     ,C4V_Nil    ,C4V_Nil    ,C4V_Nil    ,C4V_Nil}, 0          }
+	{ nullptr,            0, C4V_Nil,    { C4V_Nil     ,C4V_Nil     ,C4V_Nil     ,C4V_Nil     ,C4V_Nil     ,C4V_Nil     ,C4V_Nil    ,C4V_Nil    ,C4V_Nil    ,C4V_Nil}, 0          }
 };
 
 void InitCoreFunctionMap(C4AulScriptEngine *pEngine)
@@ -949,6 +1152,7 @@ void InitCoreFunctionMap(C4AulScriptEngine *pEngine)
 	for (C4ScriptFnDef *pDef = &C4ScriptFnMap[0]; pDef->Identifier; pDef++)
 		new C4AulDefFunc(p, pDef);
 #define F(f) ::AddFunc(p, #f, Fn##f)
+	F(ParseInt);
 	F(Abs);
 	F(Min);
 	F(Max);
@@ -976,6 +1180,10 @@ void InitCoreFunctionMap(C4AulScriptEngine *pEngine)
 	F(RemoveEffect);
 	F(GetEffect);
 	F(GetEffectCount);
+	F(RegexReplace);
+	F(RegexSearch);
+	F(RegexMatch);
+	F(RegexSplit);
 	F(Distance);
 	F(Angle);
 	F(GetChar);
@@ -999,9 +1207,10 @@ void InitCoreFunctionMap(C4AulScriptEngine *pEngine)
 	F(Trans_Rotate);
 	F(LocateFunc);
 	F(FileWrite);
-
 	F(eval);
+	F(StringToIdentifier);
 	F(GetConstantNameByValue);
+	F(ReplaceString);
 
 	::AddFunc(p, "Translate", C4AulExec::FnTranslate);
 	::AddFunc(p, "LogCallStack", C4AulExec::FnLogCallStack);

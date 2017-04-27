@@ -20,3 +20,49 @@ global func TakeString(string str, int begin, int end)
 		reduced_str = Format("%s%c", reduced_str, GetChar(str, index));
 	return reduced_str;
 }
+
+// Converts a char into a string.
+global func CharToString(int char)
+{
+	return Format("%c", char);
+}
+
+// Returns whether a char is a digit [0-9].
+global func CharIsDigit(int char)
+{
+	return Inside(char, 48, 57);
+}
+
+// Returns whether a char is a letter [A-Za-z].
+global func CharIsLetter(int char)
+{
+	return CharIsLowerCase(char) || CharIsUpperCase(char);
+}
+
+// Returns whether a char is a lower-case letter [a-z].
+global func CharIsLowerCase(int char)
+{
+	return Inside(char, 97, 122);
+}
+
+// Returns whether a char is an upper-case letter [A-Z].
+global func CharIsUpperCase(int char)
+{
+	return Inside(char, 65, 90);
+}
+
+// Converts a string to an integer if it consists of digits only.
+global func StringToInteger(string str)
+{
+	var integer = 0;
+	var power = 0;
+	for (var index = GetLength(str) - 1; index >= 0; index--)
+	{
+		var char = GetChar(str, index);
+		if (!CharIsDigit(char))
+			return nil;
+		integer += (char - 48) * 10**power;
+		power++;	
+	}
+	return integer;
+}

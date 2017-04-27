@@ -25,7 +25,7 @@
 #include Library_PowerConsumer
 
 // Production queue, a list of items to be produced.
-// Contains proplists of format {Product = <objid>, Amount = <int>, Infinite = (optional)<bool>}. /Infinite/ == true -> infinite production.
+// Contains proplists of format {Product = <objid>, Amount = <int>, Infinite = (optional)<bool>, ProducingPlayer = (optional)<int>}. /Infinite/ == true -> infinite production.
 local queue;
 
 
@@ -142,7 +142,7 @@ public func GetProductionMenuEntries(object clonk)
 
 public func GetInteractionMenus(object clonk)
 {
-	var menus = _inherited() ?? [];
+	var menus = _inherited(clonk, ...) ?? [];
 	var prod_menu =
 	{
 		title = "$Production$",
@@ -208,7 +208,7 @@ public func FxIntUpgradeProductProgressBarOnMenuOpened(object target, effect fx,
 
 public func FxIntUpgradeProductProgressBarTimer(object target, effect fx, int time)
 {
-	if (fx.menu_target == nil) return FX_OK;
+	if (fx.menu_target == nil) return -1;
 	// Find (new?) production effect if not already given.
 	if (fx.production_effect == nil)
 	{
@@ -364,7 +364,7 @@ public func ModifyQueueIndex(int position, int amount, bool infinite_production)
 	@param amount the amount of items of \c item_id which should be produced. Amount must not be negative.
 	@paramt infinite whether to enable infinite production.
 */
-public func AddToQueue(id product_id, int amount, bool infinite)
+public func AddToQueue(id product_id, int amount, bool infinite, int producing_player)
 {
 	// Check if this producer can produce the requested item.
 	if (!IsProduct(product_id))
@@ -384,7 +384,7 @@ public func AddToQueue(id product_id, int amount, bool infinite)
 
 	// Otherwise create a new entry in the queue.
 	if (!found)
-		PushBack(queue, { Product = product_id, Amount = amount, Infinite = infinite});
+		PushBack(queue, { Product = product_id, Amount = amount, Infinite = infinite, ProducingPlayer=producing_player });
 	// Notify all production menus open for this producer.
 	UpdateInteractionMenus(this.GetProductionMenuEntries);
 }
@@ -429,7 +429,7 @@ private func ModifyProduction(proplist info, int player)
 	
 	if (index == nil && (amount > 0 || infinite))
 	{
-		AddToQueue(product, amount, infinite);
+		AddToQueue(product, amount, infinite, player);
 	}
 	else if (index != nil)
 	{
@@ -458,7 +458,6 @@ public func GetQueue()
 	return queue;
 }
 
-
 private func ProcessQueue()
 {
 	// If target is currently producing, don't do anything.
@@ -471,8 +470,9 @@ private func ProcessQueue()
 	
 	// Produce first item in the queue.
 	var product_id = queue[0].Product;
+	var producing_player = queue[0].ProducingPlayer;
 	// Check raw material need.
-	if (!Produce(product_id))
+	if (!Produce(product_id, producing_player))
 	{
 		// No material available? request from cable network.
 		RequestAllMissingComponents(product_id);
@@ -504,7 +504,7 @@ public func PowerNeed() { return 80; }
 public func GetConsumerPriority() { return 50; }
 
 
-private func Produce(id product)
+private func Produce(id product, producing_player)
 {
 	// Already producing? Wait a little.
 	if (IsProducing())
@@ -527,8 +527,7 @@ private func Produce(id product)
 	CheckFuel(product, true);
 	
 	// Add production effect.
-	AddEffect("ProcessProduction", this, 100, 2, this, nil, product);
-
+	AddEffect("ProcessProduction", this, 100, 2, this, nil, product, producing_player);
 	return true;
 }
 
@@ -636,13 +635,14 @@ private func IsProducing()
 }
 
 
-protected func FxProcessProductionStart(object target, proplist effect, int temporary, id product)
+protected func FxProcessProductionStart(object target, proplist effect, int temporary, id product, int producing_player)
 {
 	if (temporary)
 		return FX_OK;
 		
-	// Set product.
+	// Set product information
 	effect.Product = product;
+	effect.producing_player = producing_player;
 		
 	// Set production duration to zero.
 	effect.Duration = 0;
@@ -713,7 +713,7 @@ protected func FxProcessProductionTimer(object target, proplist effect, int time
 protected func FxProcessProductionStop(object target, proplist effect, int reason, bool temp)
 {
 	if (temp) 
-		return FX_OK;
+		return FX_OK;	
 	
 	// No need to consume power anymore. Always unregister even if there's a queue left to
 	// process, because OnNotEnoughPower relies on it and it gives other producers the chance
@@ -723,12 +723,17 @@ protected func FxProcessProductionStop(object target, proplist effect, int reaso
 
 	if (reason != 0)
 		return FX_OK;
-
+		
 	// Callback to the producer.
 	this->~OnProductionFinish(effect.Product);
 	// Create product. 	
 	var product = CreateObject(effect.Product);
 	OnProductEjection(product);
+	// Global callback.
+	if (product)
+		GameCallEx("OnProductionFinished", product, effect.producing_player);
+	// Try to process the queue immediately and don't wait for the timer to prevent pauses.
+	ProcessQueue();
 	return FX_OK;
 }
 
@@ -847,8 +852,8 @@ public func IsCollectionAllowed(object item)
 
 public func RejectCollect(id item_id, object item)
 {
-	// Is the object a container? If so, try to empty it.
-	if (item->~IsContainer() || item->~IsLiquidContainer())
+	// Is the object a container? If so, try to empty it. Don't empty extra slots.
+	if ((item->~IsContainer() && !item->~HasExtraSlot()) || item->~IsLiquidContainer() || item->~IsBucket())
 	{
 	 	GrabContents(item);
 	}

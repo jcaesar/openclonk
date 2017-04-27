@@ -56,7 +56,7 @@ private func GetAttraction(proplist coordinates)
 
 private func MissionComplete()
 {
-	if (!attraction) return _inherited();
+	if (!attraction) return _inherited(...);
 	var wait = 20 + Random(80);
 	// Slow animation speed
 	fly_anim = PlayAnimation("Fly", 1, Anim_Linear(GetAnimationPosition(fly_anim), 0, fly_anim_len, 20, ANIM_Loop));
@@ -78,14 +78,14 @@ private func RegularSpeed()
 private func SleepComplete()
 {
 	fly_anim = PlayAnimation("Fly", 1, Anim_Linear(GetAnimationPosition(fly_anim), 0, fly_anim_len/2, 10, ANIM_Hold));
-	_inherited();
+	_inherited(...);
 }
 
 // Restart the animation
 private func WakeUp()
 {
 	fly_anim = PlayAnimation("Fly", 1, Anim_Linear(GetAnimationPosition(fly_anim), 0, fly_anim_len, 10, ANIM_Loop));
-	_inherited();
+	_inherited(...);
 }
 
 private func GetRestingPlace(proplist coordinates)
@@ -218,7 +218,8 @@ local NoBurnDecay = 1;
 local BorderBound = C4D_Border_Sides | C4D_Border_Top | C4D_Border_Bottom;
 local ContactCalls = true;
 
-func Definition(def) {
-	SetProperty("PictureTransformation", Trans_Mul(Trans_Rotate(20,1,0,0),Trans_Rotate(70,0,1,0)), def);
+public func Definition(proplist def)
+{
+	def.PictureTransformation = Trans_Mul(Trans_Translate(400, 600, 0), Trans_Scale(1400), Trans_Rotate(20, 1, 0, 0), Trans_Rotate(40, 0, 1, 0));
 }
 

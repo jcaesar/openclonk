@@ -236,7 +236,7 @@ void C4ControlScript::Execute() const
 	if (!Game.Parameters.AllowDebug) return;
 
 	// execute
-	C4PropList *pPropList = NULL;
+	C4PropList *pPropList = nullptr;
 	if (iTargetObj == SCOPE_Console)
 		pPropList = ::GameScript.ScenPropList.getPropList();
 	else if (iTargetObj == SCOPE_Global)
@@ -244,7 +244,7 @@ void C4ControlScript::Execute() const
 	else if (!(pPropList = ::Objects.SafeObjectPointer(iTargetObj)))
 		// default: Fallback to global context
 		pPropList = ::ScriptEngine.GetPropList();
-	C4Value rVal(AulExec.DirectExec(pPropList, szScript, "console script", false, fUseVarsFromCallerContext ? AulExec.GetContext(AulExec.GetContextDepth()-1) : NULL));
+	C4Value rVal(AulExec.DirectExec(pPropList, szScript, "console script", false, fUseVarsFromCallerContext ? AulExec.GetContext(AulExec.GetContextDepth()-1) : nullptr));
 #ifndef NOAULDEBUG
 	C4AulDebug* pDebug;
 	if ( (pDebug = C4AulDebug::GetDebugger()) )
@@ -256,11 +256,18 @@ void C4ControlScript::Execute() const
 	// print script
 	LogF("-> %s::%s", pPropList->GetName(), szScript);
 	// print result
+	bool is_local_script = true;
 	if (!LocalControl())
 	{
-		C4Network2Client *pClient = NULL;
+		C4Network2Client *pClient = nullptr;
 		if (::Network.isEnabled())
+		{
 			pClient = ::Network.Clients.GetClientByID(iByClient);
+			if (pClient != ::Network.Clients.GetLocal())
+			{
+				is_local_script = false;
+			}
+		}
 		if (pClient)
 			LogF(" = %s (by %s)", rVal.GetDataString().getData(), pClient->getName());
 		else
@@ -268,12 +275,26 @@ void C4ControlScript::Execute() const
 	}
 	else
 		LogF(" = %s", rVal.GetDataString().getData());
+	// Editor update
+	if (::Console.Active)
+	{
+		C4Object *returned_object = rVal.getObj();
+		if (editor_select_result && is_local_script && returned_object)
+		{
+			::Console.EditCursor.ClearSelection(returned_object);
+			::Console.EditCursor.AddToSelection(returned_object);
+			::Console.EditCursor.OnSelectionChanged();
+		}
+		// Always: refresh property view after script command
+		::Console.EditCursor.InvalidateSelection();
+	}
 }
 
 void C4ControlScript::CompileFunc(StdCompiler *pComp)
 {
 	pComp->Value(mkNamingAdapt(iTargetObj, "TargetObj", -1));
 	pComp->Value(mkNamingAdapt(fUseVarsFromCallerContext, "UseVarsFromCallerContext", false));
+	pComp->Value(mkNamingAdapt(editor_select_result, "EditorSelectResult", false));
 	pComp->Value(mkNamingAdapt(Script, "Script", ""));
 	C4ControlPacket::CompileFunc(pComp);
 }
@@ -386,7 +407,7 @@ void C4ControlPlayerSelect::CompileFunc(StdCompiler *pComp)
 	pComp->Value(mkNamingAdapt(fIsAlt, "IsAlt", false));
 	pComp->Value(mkNamingAdapt(iObjCnt, "ObjCnt", 0));
 	// Compile array
-	if (pComp->isCompiler())
+	if (pComp->isDeserializer())
 		{ delete[] pObjNrs; pObjNrs = new int32_t [iObjCnt]; }
 	pComp->Value(mkNamingAdapt(mkArrayAdapt(pObjNrs, iObjCnt), "Objs", 0));
 
@@ -398,7 +419,7 @@ void C4ControlPlayerSelect::CompileFunc(StdCompiler *pComp)
 
 void C4ControlPlayerControl::Execute() const
 {
-	C4PlayerControl *pTargetCtrl = NULL;
+	C4PlayerControl *pTargetCtrl = nullptr;
 	if (iPlr == -1)
 	{
 		// neutral control packet: Execute in global control
@@ -719,7 +740,7 @@ void C4ControlPlayerAction::CompileFunc(StdCompiler *pComp)
 		{ "SetTeam",               CPA_SetTeam  },
 		{ "InitScenarioPlayer",    CPA_InitScenarioPlayer  },
 		{ "InitPlayerControl",     CPA_InitPlayerControl  },
-		{ NULL, CPA_NoAction }
+		{ nullptr, CPA_NoAction }
 	};
 	pComp->Value(mkNamingAdapt(mkEnumAdapt<Action, int32_t>(action, ActionNames), "Action", CPA_NoAction));
 	pComp->Value(mkNamingAdapt(target, "Target", NO_OWNER));
@@ -919,6 +940,8 @@ void C4ControlClientUpdate::Execute() const
 		break;
 		}
 	}
+	// Update console net menu to reflect activation/etc.
+	::Console.UpdateNetMenu();
 }
 
 void C4ControlClientUpdate::CompileFunc(StdCompiler *pComp)
@@ -1043,65 +1066,67 @@ void C4ControlJoinPlayer::Execute() const
 
 	// get client
 	C4Client *pClient = Game.Clients.getClientByID(iAtClient);
-	if (!pClient) return;
-
-	// get info
-	C4PlayerInfo *pInfo = Game.PlayerInfos.GetPlayerInfoByID(idInfo);
-	if (!pInfo)
+	if (pClient)
 	{
-		LogF("ERROR: Ghost player join: No info for %d", idInfo);
-		assert(false);
-		return;
-	}
-
-	else if (LocalControl())
-	{
-		// Local player: Just join from local file
-		Game.JoinPlayer(szFilename, iAtClient, pClient->getName(), pInfo);
-	}
-	else if (!fByRes)
-	{
-		if (PlrData.getSize())
+		// get info
+		C4PlayerInfo *pInfo = Game.PlayerInfos.GetPlayerInfoByID(idInfo);
+		if (!pInfo)
 		{
-			// create temp file
-			StdStrBuf PlayerFilename; PlayerFilename.Format("%s-%s",pClient->getName(),GetFilename(szFilename));
-			PlayerFilename = Config.AtTempPath(PlayerFilename.getData());
-			// copy to it
-			if (PlrData.SaveToFile(PlayerFilename.getData()))
+			LogF("ERROR: Ghost player join: No info for %d", idInfo);
+			assert(false);
+		}
+		else if (LocalControl())
+		{
+			// Local player: Just join from local file
+			Game.JoinPlayer(szFilename, iAtClient, pClient->getName(), pInfo);
+		}
+		else if (!fByRes)
+		{
+			if (PlrData.getSize())
 			{
-				Game.JoinPlayer(PlayerFilename.getData(), iAtClient, pClient->getName(), pInfo);
-				EraseFile(PlayerFilename.getData());
+				// create temp file
+				StdStrBuf PlayerFilename; PlayerFilename.Format("%s-%s", pClient->getName(), GetFilename(szFilename));
+				PlayerFilename = Config.AtTempPath(PlayerFilename.getData());
+				// copy to it
+				if (PlrData.SaveToFile(PlayerFilename.getData()))
+				{
+					Game.JoinPlayer(PlayerFilename.getData(), iAtClient, pClient->getName(), pInfo);
+					EraseFile(PlayerFilename.getData());
+				}
+			}
+			else if (pInfo->GetType() == C4PT_Script)
+			{
+				// script players may join without data
+				Game.JoinPlayer(nullptr, iAtClient, pClient->getName(), pInfo);
+			}
+			else
+			{
+				// no player data for user player present: Must not happen
+				LogF("ERROR: Ghost player join: No player data for %s", (const char*)pInfo->GetName());
+				assert(false);
 			}
 		}
-		else if (pInfo->GetType() == C4PT_Script)
+		else if (::Control.isNetwork())
 		{
-			// script players may join without data
-			Game.JoinPlayer(NULL, iAtClient, pClient->getName(), pInfo);
+			// Find resource
+			C4Network2Res::Ref pRes = ::Network.ResList.getRefRes(ResCore.getID());
+			if (pRes && pRes->isComplete())
+				Game.JoinPlayer(pRes->getFile(), iAtClient, pClient->getName(), pInfo);
+		}
+		else if (::Control.isReplay())
+		{
+			// Expect player in scenario file
+			StdStrBuf PlayerFilename; PlayerFilename.Format("%s" DirSep "%d-%s", Game.ScenarioFilename, ResCore.getID(), GetFilename(ResCore.getFileName()));
+			Game.JoinPlayer(PlayerFilename.getData(), iAtClient, pClient ? pClient->getName() : "Unknown", pInfo);
 		}
 		else
 		{
-			// no player data for user player present: Must not happen
-			LogF("ERROR: Ghost player join: No player data for %s", (const char*)pInfo->GetName());
+			// Shouldn't happen
 			assert(false);
-			return;
 		}
 	}
-	else if (::Control.isNetwork())
-	{
-		// Find resource
-		C4Network2Res::Ref pRes = ::Network.ResList.getRefRes(ResCore.getID());
-		if (pRes && pRes->isComplete())
-			Game.JoinPlayer(pRes->getFile(), iAtClient, pClient->getName(), pInfo);
-	}
-	else if (::Control.isReplay())
-	{
-		// Expect player in scenario file
-		StdStrBuf PlayerFilename; PlayerFilename.Format("%s" DirSep "%d-%s", Game.ScenarioFilename, ResCore.getID(), GetFilename(ResCore.getFileName()));
-		Game.JoinPlayer(PlayerFilename.getData(), iAtClient, pClient ? pClient->getName() : "Unknown", pInfo);
-	}
-	else
-		// Shouldn't happen
-		assert(false);
+	// After last of the initial player joins, do a game callback
+	::Game.OnPlayerJoinFinished();
 }
 
 void C4ControlJoinPlayer::Strip()
@@ -1120,7 +1145,7 @@ void C4ControlJoinPlayer::Strip()
 			{ EraseFile(PlayerFilename.getData()); return; }
 		// remove bigicon, if the file size is too large
 		size_t iBigIconSize=0;
-		if (Grp.FindEntry(C4CFN_BigIcon, NULL, &iBigIconSize))
+		if (Grp.FindEntry(C4CFN_BigIcon, nullptr, &iBigIconSize))
 			if (iBigIconSize > C4NetResMaxBigicon*1024)
 				Grp.Delete(C4CFN_BigIcon);
 		Grp.Close();
@@ -1191,37 +1216,43 @@ void C4ControlJoinPlayer::CompileFunc(StdCompiler *pComp)
 // *** C4ControlEMMoveObject
 
 C4ControlEMMoveObject::C4ControlEMMoveObject(C4ControlEMObjectAction eAction, C4Real tx, C4Real ty, C4Object *pTargetObj,
-    int32_t iObjectNum, int32_t *pObjects, const char *szScript)
+    int32_t iObjectNum, int32_t *pObjects, const char *szScript, bool drag_finished)
 		: eAction(eAction), tx(tx), ty(ty), iTargetObj(pTargetObj ? pTargetObj->Number : 0),
-		iObjectNum(iObjectNum), pObjects(pObjects), StringParam(szScript, true)
+		iObjectNum(iObjectNum), pObjects(pObjects), StringParam(szScript, true), drag_finished(drag_finished)
 {
 
 }
 
-C4ControlEMMoveObject *C4ControlEMMoveObject::CreateObject(const C4ID &id, C4Real x, C4Real y)
+C4ControlEMMoveObject *C4ControlEMMoveObject::CreateObject(const C4ID &id, C4Real x, C4Real y, C4Object *container)
 {
-	auto ctl = new C4ControlEMMoveObject(EMMO_Create, x, y, nullptr);
+#ifdef WITH_QT_EDITOR
+	::StartSoundEffect("UI::Click2");
+#endif
+	auto ctl = new C4ControlEMMoveObject(EMMO_Create, x, y, container);
 	ctl->StringParam = id.ToString();
 	return ctl;
 }
 
 C4ControlEMMoveObject::~C4ControlEMMoveObject()
 {
-	delete [] pObjects; pObjects = NULL;
+	delete [] pObjects; pObjects = nullptr;
 }
 
-void C4ControlEMMoveObject::MoveObject(C4Object *moved_object) const
+void C4ControlEMMoveObject::MoveObject(C4Object *moved_object, bool move_forced) const
 {
 	// move given object by this->tx/ty and do callbacks
 	if (!moved_object || !moved_object->Status) return;
 	int32_t old_x = moved_object->GetX(), old_y = moved_object->GetY();
 	C4Real tx = this->tx;
-	if (moved_object->Def->NoHorizontalMove) tx = Fix0;
+	if (moved_object->Def->NoHorizontalMove && !move_forced) tx = Fix0;
 	moved_object->ForcePosition(moved_object->fix_x + tx, moved_object->fix_y + ty);
 	moved_object->xdir = moved_object->ydir = 0;
 	moved_object->Mobile = false;
-	C4AulParSet pars(C4VInt(old_x), C4VInt(old_y));
-	moved_object->Call(PSF_EditCursorMoved, &pars);
+	C4AulParSet pars(C4VInt(old_x), C4VInt(old_y), C4VBool(drag_finished));
+	if (moved_object->Call(PSF_EditCursorMoved, &pars))
+	{
+		::Console.EditCursor.InvalidateSelection();
+	}
 }
 
 void C4ControlEMMoveObject::Execute() const
@@ -1230,6 +1261,7 @@ void C4ControlEMMoveObject::Execute() const
 	switch (eAction)
 	{
 	case EMMO_Move:
+	case EMMO_MoveForced:
 	{
 		if (!pObjects) break;
 		// move all given objects
@@ -1238,15 +1270,15 @@ void C4ControlEMMoveObject::Execute() const
 			if ((pObj = ::Objects.SafeObjectPointer(pObjects[i])))
 				if (pObj->Status)
 				{
-					MoveObject(pObj);
+					MoveObject(pObj, eAction == EMMO_MoveForced);
 					// attached objects: Also move attachment target
 					while (pObj->GetProcedure() == DFA_ATTACH)
 					{
 						pObj = pObj->Action.Target;
 						if (!pObj) break; // leftover action cancelled next frame
-						for (int j = 0; j < iObjectNum; ++j) if (pObjects[j] == pObj->Number) { pObj = NULL; break; } // ensure we aren't moving twice
+						for (int j = 0; j < iObjectNum; ++j) if (pObjects[j] == pObj->Number) { pObj = nullptr; break; } // ensure we aren't moving twice
 						if (!pObj) break;
-						MoveObject(pObj);
+						MoveObject(pObj, eAction==EMMO_MoveForced);
 					}
 				}
 	}
@@ -1259,38 +1291,20 @@ void C4ControlEMMoveObject::Execute() const
 		if (pTarget)
 			for (int i=0; i<iObjectNum; ++i)
 				if ((pObj = ::Objects.SafeObjectPointer(pObjects[i])))
+				{
 					pObj->Enter(pTarget);
+					if (!pTarget->Status) break;
+					C4AulParSet pars(C4VObj(pObj));
+					if (pObj && pObj->Status && pTarget->Status) pTarget->Call(P_EditorCollection, &pars);
+					if (!pTarget->Status) break;
+				}
 	}
 	break;
 	case EMMO_Duplicate:
 	{
 		if (!pObjects) break;
 		// perform duplication
-		C4Object *pOldObj, *pObj;
-		for (int i=0; i<iObjectNum; ++i)
-			if ((pOldObj = ::Objects.SafeObjectPointer(pObjects[i])))
-			{
-				pObj = Game.CreateObject(pOldObj->GetPrototype(), pOldObj, pOldObj->Owner, pOldObj->GetX(), pOldObj->GetY());
-				if (pObj && pObj->Status)
-				{
-					// local call? adjust selection then
-					// do callbacks for all clients for sync reasons
-					if (fLocalCall) Console.EditCursor.GetSelection().Add(pObj, C4ObjectList::stNone);
-					C4AulParSet pars(C4VObj(pObj));
-					if (pOldObj->Status) pOldObj->Call(PSF_EditCursorDeselection, &pars);
-					if (pObj->Status) pObj->Call(PSF_EditCursorSelection);
-				}
-			}
-		// update status
-		if (fLocalCall)
-		{
-			if (fLocalCall)
-				for (int i = 0; i<iObjectNum; ++i)
-					if ((pOldObj = ::Objects.SafeObjectPointer(pObjects[i])))
-						Console.EditCursor.GetSelection().Remove(pOldObj);
-			Console.EditCursor.SetHold(true);
-			Console.EditCursor.OnSelectionChanged();
-		}
+		::Console.EditCursor.PerformDuplication(pObjects, iObjectNum, fLocalCall);
 	}
 	break;
 	case EMMO_Script:
@@ -1327,33 +1341,59 @@ void C4ControlEMMoveObject::Execute() const
 				pObj->Exit(pObj->GetX(), pObj->GetY(), pObj->GetR());
 	}
 	break;
-	case EMMO_Select:
-	{
-		// callback to script
-		C4Object *target = ::Objects.SafeObjectPointer(iTargetObj);
-		if (!target) return;
-		target->Call(PSF_EditCursorSelection);
-	}
-	break;
-	case EMMO_Deselect:
-	{
-		// callback to script
-		C4Object *target = ::Objects.SafeObjectPointer(iTargetObj), *next_selection = NULL;
-		if (!target) return;
-		// next selection may be passed to EditCursorSelection
-		if (iObjectNum) next_selection = ::Objects.SafeObjectPointer(pObjects[0]);
-		C4AulParSet pars(C4VObj(next_selection));
-		target->Call(PSF_EditCursorDeselection, &pars);
-	}
-	break;
 	case EMMO_Create:
 	{
-		::Game.CreateObject(C4ID(StringParam), nullptr, NO_OWNER, fixtoi(tx), fixtoi(ty));
+		// Check max object count
+		C4ID iddef = C4ID(StringParam);
+		C4Def *def = C4Id2Def(iddef);
+		if (!def) return;
+		int32_t placement_limit = def->GetPropertyInt(P_EditorPlacementLimit);
+		if (placement_limit)
+		{
+			if (Game.ObjectCount(iddef) >= placement_limit)
+			{
+				// Too many objects
+				::Console.Message(FormatString(LoadResStr("IDS_CNS_CREATORTOOMANYINSTANCES"), int(placement_limit)).getData());
+				return;
+			}
+		}
+		// Create object outside or contained
+		// If container is desired but not valid, do nothing (don't create object outside instead)
+		C4Object *container = nullptr;
+		if (iTargetObj)
+		{
+			container = ::Objects.SafeObjectPointer(iTargetObj);
+			if (!container || !container->Status) return;
+		}
+		bool create_centered = false;
+#ifdef WITH_QT_EDITOR
+		// Qt editor: Object creation is done through creator; centered creation is usually more convenient
+		create_centered = true;
+#endif
+		C4Object *obj = ::Game.CreateObject(iddef, nullptr, NO_OWNER, fixtoi(tx), fixtoi(ty), 0, create_centered);
+		if (container && obj && container->Status && obj->Status)
+		{
+			obj->Enter(container);
+			C4AulParSet pars(C4VObj(obj));
+			if (obj && obj->Status) container->Call(P_EditorCollection, &pars);
+		}
+		if (obj && obj->Status) obj->Call(P_EditorInitialize); // specific initialization when placed in editor
 	}
 	break;
+	case EMMO_Transform:
+	{
+		C4Object *pTarget = ::Objects.SafeObjectPointer(iTargetObj);
+		if (pTarget)
+		{
+			int32_t new_rot = fixtoi(this->tx, 1);
+			int32_t new_con = fixtoi(this->ty, FullCon/100);
+			if (pTarget->Def->Rotateable) pTarget->SetRotation(new_rot);
+			if (pTarget->Def->GrowthType) pTarget->DoCon(new_con - pTarget->GetCon(), false);
+		}
+	}
 	}
 	// update property dlg & status bar
-	if (fLocalCall)
+	if (fLocalCall && eAction != EMMO_Move && eAction != EMMO_MoveForced)
 		Console.EditCursor.OnSelectionChanged();
 }
 
@@ -1364,7 +1404,7 @@ void C4ControlEMMoveObject::CompileFunc(StdCompiler *pComp)
 	pComp->Value(mkNamingAdapt(ty, "ty", 0));
 	pComp->Value(mkNamingAdapt(iTargetObj, "TargetObj", -1));
 	pComp->Value(mkNamingAdapt(mkIntPackAdapt(iObjectNum), "ObjectNum", 0));
-	if (pComp->isCompiler()) { delete [] pObjects; pObjects = new int32_t [iObjectNum]; }
+	if (pComp->isDeserializer()) { delete [] pObjects; pObjects = new int32_t [iObjectNum]; }
 	pComp->Value(mkNamingAdapt(mkArrayAdapt(pObjects, iObjectNum), "Objs", -1));
 	if (eAction == EMMO_Script)
 		pComp->Value(mkNamingAdapt(StringParam, "Script", ""));
@@ -1390,7 +1430,7 @@ void C4ControlEMDrawTool::Execute() const
 	// set new mode
 	if (eAction == EMDT_SetMode)
 	{
-		Console.ToolsDlg.SetLandscapeMode(iMode, true);
+		Console.ToolsDlg.SetLandscapeMode(iMode, iX==1, true);
 		return;
 	}
 	// check current mode
@@ -1457,7 +1497,7 @@ void C4ControlMessage::Execute() const
 {
 	const char *szMessage = Message.getData();
 	// get player
-	C4Player *pPlr = (iPlayer < 0 ? NULL : ::Players.Get(iPlayer));
+	C4Player *pPlr = (iPlayer < 0 ? nullptr : ::Players.Get(iPlayer));
 	// security
 	if (pPlr && pPlr->AtClient != iByClient) return;
 	// do not record message as control, because it is not synced!
@@ -1481,12 +1521,14 @@ void C4ControlMessage::Execute() const
 			str.Format((eType == C4CMT_Normal ? "<%s> %s" : " * %s %s"),
 			           pClient ? pClient->getNick() : "???", szMessage);
 		}
-		// 2 lobby
+		// to lobby
 		if (pLobby)
 			pLobby->OnMessage(Game.Clients.getClientByID(iByClient), str.getData());
-		// or 2 log
+#ifndef USE_CONSOLE
 		else
-			Log(str.getData());
+#endif
+		// to log
+		Log(str.getData());
 		break;
 
 	case C4CMT_Say:
@@ -1549,7 +1591,7 @@ void C4ControlMessage::Execute() const
 		// tehehe, sound!
 		C4Client *singer = Game.Clients.getClientByID(iByClient);
 		if (!singer || !singer->IsIgnored())
-			if (!StartSoundEffect(szMessage, false, 100, NULL))
+			if (!StartSoundEffect(szMessage, false, 100, nullptr))
 				// probably wrong sound file name
 				break;
 		// Sound icon even if someone you ignored just tried. So you know you still need to ignore.
@@ -1843,4 +1885,73 @@ void C4ControlVoteEnd::Execute() const
 void C4ControlVoteEnd::CompileFunc(StdCompiler *pComp)
 {
 	C4ControlVote::CompileFunc(pComp);
+}
+
+
+// *** C4ControlReInitScenario
+
+C4ControlReInitScenario::C4ControlReInitScenario()
+{
+	// Create a temp file with the scenario files to be loaded as a section
+	char *tmp_fn = const_cast<char *>(Config.AtTempPath("ReinitSectionSave.ocs"));
+	MakeTempFilename(tmp_fn);
+	C4Group grp;
+	grp.Open(tmp_fn, true);
+	StdBuf buf;
+	bool success = true;
+	const char *section_components[] = { C4CFN_ScenarioCore, C4CFN_ScenarioObjects, C4CFN_ScenarioObjectsScript, C4CFN_Map, C4CFN_MapFg, C4CFN_MapBg };
+	for (const char *section_component : section_components)
+	{
+		if (::Game.ScenarioFile.LoadEntry(section_component, &buf))
+		{
+			if (!grp.Add(section_component, buf, false, true)) success = false;
+		}
+		buf.Clear();
+	}
+	if (!grp.Save(false)) success = false;
+	if (!success) return;
+	// Move into buffer to be sent via queue
+	success = data.LoadFromFile(tmp_fn);
+	EraseFile(tmp_fn);
+	if (!success) return;
+}
+
+void C4ControlReInitScenario::CompileFunc(StdCompiler *comp)
+{
+	comp->Value(data);
+}
+
+void C4ControlReInitScenario::Execute() const
+{
+	// Valid?
+	if (!data.getSize()) return;
+	// Store section group to temp file
+	char *tmp_fn = const_cast<char *>(Config.AtTempPath("ReinitSection.ocs"));
+	MakeTempFilename(tmp_fn);
+	if (!data.SaveToFile(tmp_fn)) return;
+	// Group to section
+	const char *reinit_section_name = "EditorReloadSection";
+	if (!::Game.CreateSectionFromTempFile(reinit_section_name, tmp_fn))
+	{
+		EraseFile(tmp_fn);
+		return;
+	}
+	// Load that section!
+	::Game.LoadScenarioSection(reinit_section_name, C4S_REINIT_SCENARIO);
+}
+
+void C4ControlEditGraph::CompileFunc(StdCompiler *comp)
+{
+	comp->Value(mkNamingAdapt(path, "Path", StdCopyStrBuf()));
+	comp->Value(mkNamingAdapt(mkIntAdaptT<uint8_t>(action), "Action", CEG_None));
+	comp->Value(mkNamingAdapt(index, "Index", -1));
+	comp->Value(mkNamingAdapt(x, "x", 0));
+	comp->Value(mkNamingAdapt(y, "y", 0));
+	C4ControlPacket::CompileFunc(comp);
+}
+
+void C4ControlEditGraph::Execute() const
+{
+	// Forward to console for execution
+	::Console.EditGraphControl(this);
 }

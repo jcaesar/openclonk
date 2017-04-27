@@ -20,11 +20,13 @@
 #ifndef INC_PLATFORMABSTRACTION
 #define INC_PLATFORMABSTRACTION
 
+#include <vector>
+
 #ifdef HAVE_CONFIG_H
 #include <config.h>
 #endif // HAVE_CONFIG_H
 
-#if defined(USE_WIN32_WINDOWS) || (defined(_WIN32) && defined(USE_GTK))
+#if defined(USE_WIN32_WINDOWS)
 #define USE_WGL
 #endif
 
@@ -70,13 +72,6 @@
 // Use IPv4 functions (inet_ntoa) since we don't support IPv6 yet.
 #define _WINSOCK_DEPRECATED_NO_WARNINGS
 #endif
-
-
-
-// C++0x nullptr
-#undef NULL
-#define NULL nullptr
-
 
 
 // Integer dataypes
@@ -174,6 +169,9 @@ bool IsGermanSystem();
 
 // open a weblink in an external browser
 bool OpenURL(const char* szURL);
+
+// reopen the engine with given parameters
+bool RestartApplication(std::vector<const char *> parameters);
 
 #ifdef _WIN32
 #include <io.h>

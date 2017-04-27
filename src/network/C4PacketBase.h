@@ -33,7 +33,7 @@ public:
 	// conversion (using above functions)
 	C4NetIOPacket pack(const C4NetIO::addr_t &addr = C4NetIO::addr_t()) const;
 	C4NetIOPacket pack(uint8_t cStatus, const C4NetIO::addr_t &addr = C4NetIO::addr_t()) const;
-	void unpack(const C4NetIOPacket &Pkt, char *pStatus = NULL);
+	void unpack(const C4NetIOPacket &Pkt, char *pStatus = nullptr);
 
 };
 
@@ -54,13 +54,13 @@ struct C4NetFilenameAdapt
 		pComp->Value(FileName);
 #else
 		StdCopyStrBuf FileName2;
-		if (pComp->isDecompiler() && FileName)
+		if (pComp->isSerializer() && FileName)
 		{
 			FileName2.Copy(FileName);
 			SReplaceChar(FileName2.getMData(),DirectorySeparator,'\\');
 		}
 		pComp->Value(FileName2);
-		if (pComp->isCompiler())
+		if (pComp->isDeserializer())
 		{
 			FileName.Take(FileName2);
 			SReplaceChar(FileName.getMData(),'\\',DirectorySeparator);
@@ -165,9 +165,14 @@ enum C4PacketType
 
 	CID_EMMoveObj     = CID_First | 0x30,
 	CID_EMDrawTool    = CID_First | 0x31,
+	CID_ReInitScenario= CID_First | 0x32,
+	CID_EditGraph     = CID_First | 0x33,
 
 	CID_DebugRec      = CID_First | 0x40,
 	CID_MenuCommand   = CID_First | 0x41,
+
+	// Note: There are some more packet types in src/netpuncher/C4PuncherPacket.h
+	// They have been picked to be distinct from these for safety, not for necessary.
 };
 
 // packet classes
@@ -186,7 +191,7 @@ enum C4PacketHandlerID
 	PH_C4Network2ClientList   = 1 << 3,   // client list class
 	PH_C4Network2Players      = 1 << 4,   // player list class
 	PH_C4Network2ResList      = 1 << 5,   // resource list class
-	PH_C4GameControlNetwork   = 1 << 6      // network control class
+	PH_C4GameControlNetwork   = 1 << 6,   // network control class
 };
 
 

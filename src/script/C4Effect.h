@@ -106,7 +106,7 @@ public:
 	void Denumerate(C4ValueNumbers *); // numbers to object pointers
 	void ClearPointers(C4PropList *pObj); // clear all pointers to object - may kill some effects w/o callback, because the callback target is lost
 
-	void SetDead() { iPriority=0; }      // mark effect to be removed in next execution cycle
+	void SetDead();                      // mark effect to be removed in next execution cycle
 	bool IsDead() { return !iPriority; } // return whether effect is to be removed
 	void FlipActive() { iPriority*=-1; } // alters activation status
 	bool IsActive() { return iPriority>0; } // returns whether effect is active
@@ -137,7 +137,7 @@ public:
 	virtual C4Effect * GetEffect() { return this; }
 	virtual void SetPropertyByS(C4String * k, const C4Value & to);
 	virtual void ResetProperty(C4String * k);
-	virtual bool GetPropertyByS(C4String *k, C4Value *pResult) const;
+	virtual bool GetPropertyByS(const C4String *k, C4Value *pResult) const;
 	virtual C4ValueArray * GetProperties() const;
 
 protected:

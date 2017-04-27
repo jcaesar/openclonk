@@ -314,12 +314,51 @@ public func CatapultDismount(object clonk)
 	return true;
 }
 
-/*-- Properties --*/
+
+/* Register enemy spawn with catapult */
 
 func Definition(proplist def)
 {
 	def.PictureTransformation = Trans_Mul(Trans_Translate(-1000, -4000, 0), Trans_Rotate(-20, 1, 0, 0), Trans_Rotate(35, 0, 1, 0));
+	var spawn_editor_props = { Type="proplist", Name=def->GetName(), EditorProps= {
+		Gunner = new EnemySpawn->GetAICreatureEditorProps(EnemySpawn->GetAIClonkDefaultPropValues("Firestone"), "$NoGunnerHelp$") { Name="$Gunner$", EditorHelp="$GunnerHelp$" },
+	} };
+	var spawn_default_values = {
+		Gunner = { Type="Clonk", Properties=EnemySpawn->GetAIClonkDefaultPropValues("Firestone") },
+	};
+	EnemySpawn->AddEnemyDef("Catapult",
+			{ SpawnType=Catapult,
+				SpawnFunction=def.SpawnCatapult,
+				OffsetAttackPathByPos=false,
+				GetInfoString=def.GetSpawnInfoString },
+		spawn_default_values,
+		spawn_editor_props);
 }
+
+private func SpawnCatapult(array pos, proplist enemy_data, proplist enemy_def, array attack_path, object spawner)
+{
+	// First spawn the catapult
+	var catapult = CreateObjectAbove(Catapult, pos[0], pos[1], g_enemyspawn_player);
+	catapult->Unstick(10);
+	if (!catapult) return;
+	// Next let a clonk steer the catapult
+	var clonk = EnemySpawn->SpawnAICreature(enemy_data.Gunner, pos, enemy_def, attack_path, spawner);
+	if (!clonk) return;
+	clonk->SetAction("Push", catapult);
+	// Set attack mode
+	AI->SetVehicle(clonk, catapult);
+	// Only the clonk is an actual enemy
+	return clonk;
+}
+
+private func GetSpawnInfoString(proplist enemy_data)
+{
+	// Prepend balloon to clonk info string
+	return Format("{{Catapult}}%s", EnemySpawn->GetAICreatureInfoString(enemy_data.Gunner));
+}
+
+
+/* Properties */
 
 local Name = "$Name$";
 local Description = "$Description$";

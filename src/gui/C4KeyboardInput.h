@@ -98,11 +98,15 @@ const C4KeyCode
 	KEY_MOUSE_ButtonLeft         = KEY_MOUSE_Button1 + 0,
 	KEY_MOUSE_ButtonRight        = KEY_MOUSE_Button1 + 1,
 	KEY_MOUSE_ButtonMiddle       = KEY_MOUSE_Button1 + 2,
+	KEY_MOUSE_ButtonX1           = KEY_MOUSE_Button1 + 3,
+	KEY_MOUSE_ButtonX2           = KEY_MOUSE_Button1 + 4,
 	KEY_MOUSE_ButtonMax          = KEY_MOUSE_Button1 + 0x1f, // max number of supported mouse buttons
 	KEY_MOUSE_Button1Double      = 0x30, // double clicks have special events because double click speed is issued by OS
 	KEY_MOUSE_ButtonLeftDouble   = KEY_MOUSE_Button1Double + 0,
 	KEY_MOUSE_ButtonRightDouble  = KEY_MOUSE_Button1Double + 1,
 	KEY_MOUSE_ButtonMiddleDouble = KEY_MOUSE_Button1Double + 2,
+	KEY_MOUSE_ButtonX1Double     = KEY_MOUSE_Button1Double + 3,
+	KEY_MOUSE_ButtonX2Double     = KEY_MOUSE_Button1Double + 4,
 	KEY_MOUSE_ButtonMaxDouble    = KEY_MOUSE_Button1Double + 0x1f, // max number of supported mouse buttons
 	KEY_MOUSE_Wheel1Up           = 0x40,    // mouse control: wheel up
 	KEY_MOUSE_Wheel1Down         = 0x41;    // mouse control: wheel down
@@ -229,7 +233,7 @@ struct C4KeyCodeEx
 		return Key == v2.Key && dwShift == v2.dwShift;
 	}
 
-	void CompileFunc(StdCompiler *pComp, StdStrBuf *pOutBuf=NULL);
+	void CompileFunc(StdCompiler *pComp, StdStrBuf *pOutBuf=nullptr);
 
 	C4KeyCodeEx(C4KeyCode Key = KEY_Default, C4KeyShiftState Shift = KEYS_None, bool fIsRepeated = false, int32_t deviceId = -1);
 
@@ -284,7 +288,7 @@ public:
 	inline void Ref() { ++iRef; }
 	inline void Deref() { if (!--iRef) delete this; }
 
-	C4KeyboardCallbackInterface() : iRef(0), pOriginalKey(NULL) {}
+	C4KeyboardCallbackInterface() : iRef(0), pOriginalKey(nullptr) {}
 	virtual ~C4KeyboardCallbackInterface() {}
 
 	bool IsOriginalKey(const class C4CustomKey *pCheckKey) const { return pCheckKey == pOriginalKey; }
@@ -317,7 +321,7 @@ protected:
 	virtual bool CheckCondition() { return true; }
 
 public:
-	C4KeyCB(TargetClass &rTarget, CallbackFunc pFuncDown, CallbackFunc pFuncUp=NULL, CallbackFunc pFuncPressed=NULL, CallbackFunc pFuncMoved=NULL)
+	C4KeyCB(TargetClass &rTarget, CallbackFunc pFuncDown, CallbackFunc pFuncUp=nullptr, CallbackFunc pFuncPressed=nullptr, CallbackFunc pFuncMoved=nullptr)
 			: rTarget(rTarget), pFuncDown(pFuncDown), pFuncUp(pFuncUp), pFuncPressed(pFuncPressed), pFuncMoved(pFuncMoved) {}
 };
 
@@ -348,7 +352,7 @@ protected:
 	virtual bool CheckCondition() { return true; }
 
 public:
-	C4KeyCBPassKey(TargetClass &rTarget, CallbackFunc pFuncDown, CallbackFunc pFuncUp=NULL, CallbackFunc pFuncPressed=NULL, CallbackFunc pFuncMoved=NULL)
+	C4KeyCBPassKey(TargetClass &rTarget, CallbackFunc pFuncDown, CallbackFunc pFuncUp=nullptr, CallbackFunc pFuncPressed=nullptr, CallbackFunc pFuncMoved=nullptr)
 			: rTarget(rTarget), pFuncDown(pFuncDown), pFuncUp(pFuncUp), pFuncPressed(pFuncPressed), pFuncMoved(pFuncMoved) {}
 };
 
@@ -380,7 +384,7 @@ protected:
 	virtual bool CheckCondition() { return true; }
 
 public:
-	C4KeyCBEx(TargetClass &rTarget, const ParameterType &par, CallbackFunc pFuncDown, CallbackFunc pFuncUp=NULL, CallbackFunc pFuncPressed=NULL, CallbackFunc pFuncMoved=NULL)
+	C4KeyCBEx(TargetClass &rTarget, const ParameterType &par, CallbackFunc pFuncDown, CallbackFunc pFuncUp=nullptr, CallbackFunc pFuncPressed=nullptr, CallbackFunc pFuncMoved=nullptr)
 			: rTarget(rTarget), pFuncDown(pFuncDown), pFuncUp(pFuncUp), pFuncPressed(pFuncPressed), pFuncMoved(pFuncMoved), par(par) {}
 };
 
@@ -411,7 +415,7 @@ protected:
 	virtual bool CheckCondition() { return true; }
 
 public:
-	C4KeyCBExPassKey(TargetClass &rTarget, const ParameterType &par, CallbackFunc pFuncDown, CallbackFunc pFuncUp=NULL, CallbackFunc pFuncPressed=NULL, CallbackFunc pFuncMoved=NULL)
+	C4KeyCBExPassKey(TargetClass &rTarget, const ParameterType &par, CallbackFunc pFuncDown, CallbackFunc pFuncUp=nullptr, CallbackFunc pFuncPressed=nullptr, CallbackFunc pFuncMoved=nullptr)
 			: rTarget(rTarget), pFuncDown(pFuncDown), pFuncUp(pFuncUp), pFuncPressed(pFuncPressed), pFuncMoved(pFuncMoved), par(par) {}
 };
 

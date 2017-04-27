@@ -21,15 +21,16 @@
 #include "landscape/C4TransferZone.h"
 
 #include "graphics/C4FacetEx.h"
+#include "graphics/C4Draw.h"
 #include "landscape/C4Landscape.h"
 #include "object/C4GameObjects.h"
 #include "lib/StdColors.h"
 
 C4TransferZone::C4TransferZone()
 {
-	Object = NULL;
+	Object = nullptr;
 	X = Y = Wdt = Hgt = 0;
-	Next = NULL;
+	Next = nullptr;
 	Used = false;
 }
 
@@ -49,14 +50,14 @@ C4TransferZones::~C4TransferZones()
 
 void C4TransferZones::Default()
 {
-	First=NULL;
+	First=nullptr;
 }
 
 void C4TransferZones::Clear()
 {
 	C4TransferZone *pZone,*pNext;
 	for (pZone=First; pZone; pZone=pNext) { pNext=pZone->Next; delete pZone; }
-	First=NULL;
+	First=nullptr;
 }
 
 void C4TransferZones::ClearPointers(C4Object *pObj)
@@ -64,7 +65,7 @@ void C4TransferZones::ClearPointers(C4Object *pObj)
 	// Clear object pointers
 	for (C4TransferZone *pZone=First; pZone; pZone=pZone->Next)
 		if (pZone->Object==pObj)
-			pZone->Object=NULL;
+			pZone->Object=nullptr;
 	// Remove cleared zones immediately
 	RemoveNullZones();
 }
@@ -113,7 +114,7 @@ C4TransferZone* C4TransferZones::Find(int32_t iX, int32_t iY)
 		if (Inside<int32_t>(iX-pZone->X,0,pZone->Wdt-1))
 			if (Inside<int32_t>(iY-pZone->Y,0,pZone->Hgt-1))
 				return pZone;
-	return NULL;
+	return nullptr;
 }
 
 void C4TransferZones::Draw(C4TargetFacet &cgo)
@@ -139,7 +140,7 @@ bool C4TransferZone::At(int32_t iX, int32_t iY)
 int32_t C4TransferZones::RemoveNullZones()
 {
 	int32_t iResult=0;
-	C4TransferZone *pZone,*pNext,*pPrev=NULL;
+	C4TransferZone *pZone,*pNext,*pPrev=nullptr;
 	for (pZone=First; pZone; pZone=pNext)
 	{
 		pNext=pZone->Next;
@@ -211,5 +212,5 @@ C4TransferZone* C4TransferZones::Find(C4Object *pObj)
 	for (C4TransferZone *pZone=First; pZone; pZone=pZone->Next)
 		if (pZone->Object==pObj)
 			return pZone;
-	return NULL;
+	return nullptr;
 }

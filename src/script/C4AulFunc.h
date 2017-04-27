@@ -53,7 +53,7 @@ class C4AulFunc: public C4RefCnt
 public:
 	C4AulFunc(C4PropListStatic * Parent, const char *pName);
 
-	const C4PropListStatic * Parent;
+	C4PropListStatic * Parent;
 	const char * GetName() const { return Name ? Name->GetCStr() : 0; }
 	virtual StdStrBuf GetFullName() const; // get a fully classified name (C4ID::Name) for debug output
 
@@ -63,14 +63,14 @@ protected:
 	virtual ~C4AulFunc();
 
 public:
-	virtual C4AulScriptFunc *SFunc() { return NULL; } // type check func...
+	virtual C4AulScriptFunc *SFunc() { return nullptr; } // type check func...
 
 	// Wether this function should be visible to players
 	virtual bool GetPublic() const { return false; }
 	virtual int GetParCount() const { return C4AUL_MAX_Par; }
 	virtual const C4V_Type* GetParType() const = 0;
 	virtual C4V_Type GetRetType() const = 0;
-	C4Value Exec(C4PropList * p = NULL, C4AulParSet *pPars = NULL, bool fPassErrors=false)
+	C4Value Exec(C4PropList * p = nullptr, C4AulParSet *pPars = nullptr, bool fPassErrors=false)
 	{
 		// Every parameter type allows conversion from nil, so no parameters are always allowed
 		if (!pPars)

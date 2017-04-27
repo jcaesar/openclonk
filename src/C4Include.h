@@ -27,24 +27,22 @@ don't need to include this file or any of the files it includes. */
 
 #include "platform/PlatformAbstraction.h"
 
-#define DEBUGREC_SCRIPT
-#define DEBUGREC_START_FRAME 0
-#define DEBUGREC_PXS
-#define DEBUGREC_OBJCOM
-#define DEBUGREC_MATSCAN
-#define DEBUGREC_MENU
-#define DEBUGREC_OCF
-//#define DEBUGREC_RECRUITMENT
+constexpr bool DEBUGREC_SCRIPT = true;
+constexpr int DEBUGREC_START_FRAME = 0;
+constexpr bool DEBUGREC_PXS = true;
+constexpr bool DEBUGREC_MATSCAN = true;
+constexpr bool DEBUGREC_MENU = true;
+constexpr bool DEBUGREC_OCF = true;
+constexpr bool DEBUGREC_RECRUITMENT = false;
 
 // solidmask debugging
-//#define SOLIDMASK_DEBUG
+constexpr bool SOLIDMASK_DEBUG = false;
 
 #include <algorithm>
 #include <cassert>
 #include <cctype>
 #include <cerrno>
 #include <climits>
-
 #include <cmath>
 #include <cstdarg>
 #include <cstddef>
@@ -56,32 +54,14 @@ don't need to include this file or any of the files it includes. */
 #include <list>
 #include <map>
 #include <memory>
+#include <regex>
 #include <set>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
-
-#include <regex>
-namespace re = std;
-
-// debug memory management - must come after standard headers,
-// because those libraries use placement new
-#ifndef NODEBUGMEM
-#if defined(_DEBUG) && defined(_MSC_VER)
-#define _CRTDBG_MAP_ALLOC
-#include <stdlib.h>
-#include <crtdbg.h>
-inline void *operator new(size_t s, const char *szFile, long iLine)
-{ return ::operator new(s, _NORMAL_BLOCK, szFile, iLine); }
-inline void operator delete(void *p, const char *, long)
-{ ::operator delete(p); }
-#define new_orig new
-#define new new(__FILE__, __LINE__)
-#endif
-#endif
-#include <new>
+#include <math.h>
 
 #include "lib/Standard.h"
 #include "C4Prototypes.h"

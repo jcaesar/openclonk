@@ -22,6 +22,7 @@
 #include "script/C4PropList.h"
 #include "control/C4Record.h"
 #include "config/C4Reloc.h"
+#include "object/C4ObjectList.h"
 
 /* Parts of the ScriptEngine that are normally in C4Globals for initialization order reasons. */
 #ifdef _DEBUG
@@ -31,6 +32,7 @@ C4Set<C4PropListNumbered *> C4PropListNumbered::PropLists;
 C4Set<C4PropListScript *> C4PropListScript::PropLists;
 std::vector<C4PropListNumbered *> C4PropListNumbered::ShelvedPropLists;
 int32_t C4PropListNumbered::EnumerationIndex = 0;
+C4LangStringTable C4LangStringTable::system_string_table;
 C4StringTable Strings;
 C4AulScriptEngine ScriptEngine;
 
@@ -60,3 +62,5 @@ bool C4Reloc::Open(C4Group&, char const*) const { return false; }
 void C4Def::IncludeDefinition(C4Def*) {}
 bool EraseItemSafe(const char *szFilename) {return false;}
 void AddDbgRec(C4RecordChunkType, const void *, int) {}
+
+void RecordRandom(uint32_t range, uint32_t val) { }

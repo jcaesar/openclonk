@@ -94,8 +94,9 @@ static int ToNumber(char c)
 
 //------------------------------- Strings ------------------------------------------------
 
-int32_t StrToI32(const char *s, int base, const char **scan_end)
+int32_t StrToI32(const char *str, int base, const char **scan_end)
 {
+	const char *s = str;
 	int sign = 1;
 	int32_t result = 0;
 	if (*s == '-')
@@ -106,6 +107,12 @@ int32_t StrToI32(const char *s, int base, const char **scan_end)
 	else if (*s == '+')
 	{
 		s++;
+	}
+	if (!*s)
+	{
+		// Abort if there are no digits to parse
+		if (scan_end) *scan_end = str;
+		return 0;
 	}
 	while (IsNumber(*s,base))
 	{
@@ -334,7 +341,7 @@ const char *SSearch(const char *szString, const char *szIndex)
 {
 	const char *cscr;
 	size_t indexlen,match=0;
-	if (!szString || !szIndex) return NULL;
+	if (!szString || !szIndex) return nullptr;
 	indexlen=SLen(szIndex);
 	for (cscr=szString; cscr && *cscr; cscr++)
 	{
@@ -342,14 +349,14 @@ const char *SSearch(const char *szString, const char *szIndex)
 		else match=0;
 		if (match>=indexlen) return cscr+1;
 	}
-	return NULL;
+	return nullptr;
 }
 
 const char *SSearchNoCase(const char *szString, const char *szIndex)
 {
 	const char *cscr;
 	size_t indexlen,match=0;
-	if (!szString || !szIndex) return NULL;
+	if (!szString || !szIndex) return nullptr;
 	indexlen=SLen(szIndex);
 	for (cscr=szString; cscr && *cscr; cscr++)
 	{
@@ -357,14 +364,14 @@ const char *SSearchNoCase(const char *szString, const char *szIndex)
 		else match=0;
 		if (match>=indexlen) return cscr+1;
 	}
-	return NULL;
+	return nullptr;
 }
 
 void SWordWrap(char *szText, char cSpace, char cSepa, int iMaxLine)
 {
 	if (!szText) return;
 	// Scan string
-	char *cPos,*cpLastSpace=NULL;
+	char *cPos,*cpLastSpace=nullptr;
 	int iLineRun=0;
 	for (cPos=szText; *cPos; cPos++)
 	{
@@ -383,25 +390,25 @@ void SWordWrap(char *szText, char cSpace, char cSepa, int iMaxLine)
 
 const char *SAdvanceSpace(const char *szSPos)
 {
-	if (!szSPos) return NULL;
+	if (!szSPos) return nullptr;
 	while (IsWhiteSpace(*szSPos)) szSPos++;
 	return szSPos;
 }
 
 const char *SRewindSpace(const char *szSPos, const char *pBegin)
 {
-	if (!szSPos || !pBegin) return NULL;
+	if (!szSPos || !pBegin) return nullptr;
 	while (IsWhiteSpace(*szSPos))
 	{
 		szSPos--;
-		if (szSPos<pBegin) return NULL;
+		if (szSPos<pBegin) return nullptr;
 	}
 	return szSPos;
 }
 
 const char *SAdvancePast(const char *szSPos, char cPast)
 {
-	if (!szSPos) return NULL;
+	if (!szSPos) return nullptr;
 	while (*szSPos)
 	{
 		if (*szSPos==cPast) { szSPos++; break; }
@@ -529,7 +536,7 @@ bool SAddModule(char *szList, const char *szModule, bool fCaseSensitive)
 	// Safety / no empties
 	if (!szList || !szModule || !szModule[0]) return false;
 	// Already a module?
-	if (SIsModule(szList,szModule,NULL,fCaseSensitive)) return false;
+	if (SIsModule(szList,szModule,nullptr,fCaseSensitive)) return false;
 	// New segment, add string
 	SNewSegment(szList);
 	SAppend(szModule,szList);
@@ -602,7 +609,7 @@ bool SWildcardMatchEx(const char *szString, const char *szWildcard)
 	if (!szString || !szWildcard) return false;
 	// match char-wise
 	const char *pWild = szWildcard, *pPos = szString;
-	const char *pLWild = NULL, *pLPos = NULL; // backtracking
+	const char *pLWild = nullptr, *pLPos = nullptr; // backtracking
 	while (*pWild || pLWild)
 		// string wildcard?
 		if (*pWild == '*')
@@ -622,22 +629,6 @@ bool SWildcardMatchEx(const char *szString, const char *szWildcard)
 	// match complete if both strings are fully matched
 	return !*pWild && !*pPos;
 }
-
-/* Some part of the Winapi */
-
-#ifdef NEED_FALLBACK_ATOMIC_FUNCS
-static CStdCSec SomeMutex;
-long InterlockedIncrement(long * var)
-{
-	CStdLock Lock(&SomeMutex);
-	return ++(*var);
-}
-long InterlockedDecrement(long * var)
-{
-	CStdLock Lock(&SomeMutex);
-	return --(*var);
-}
-#endif
 
 // UTF-8 conformance checking
 namespace
@@ -797,4 +788,29 @@ int GetCharacterCount(const char * s)
 		else assert(false);
 	}
 	return l;
+}
+
+std::string vstrprintf(const char *format, va_list args)
+{
+	va_list argcopy;
+	va_copy(argcopy, args);
+	int size = vsnprintf(nullptr, 0, format, argcopy);
+	if (size < 0)
+		throw std::invalid_argument("invalid argument to strprintf");
+	va_end(argcopy);
+	std::string s;
+	s.resize(size + 1);
+	size = vsnprintf(&s[0], s.size(), format, args);
+	assert(size >= 0);
+	s.resize(size);
+	return s;
+}
+
+std::string strprintf(const char *format, ...)
+{
+	va_list args;
+	va_start(args, format);
+	std::string s = vstrprintf(format, args);
+	va_end(args);
+	return s;
 }

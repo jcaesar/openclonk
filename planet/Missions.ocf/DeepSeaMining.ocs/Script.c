@@ -6,8 +6,8 @@
 */
 
 // set in Map.c
-static main_island_x, main_island_y;
-static goal_platform_x, goal_platform_y;
+// main_island_x, main_island_y;
+// goal_platform_x, goal_platform_y;
 
 static const SCEN_TEST = false;
 
@@ -33,12 +33,15 @@ protected func PostIntroInitialize()
 	}
 	
 	// Rules
-	var respawn_rule = FindObject(Find_ID(Rule_BaseRespawn));
-	if (respawn_rule)
-	{
-		respawn_rule->SetInventoryTransfer(true);
-		respawn_rule->SetFreeCrew(true);
-	}
+	GetRelaunchRule()->Set({
+		inventory_transfer = true,
+		free_crew = true,
+		relaunch_time = 36,
+		respawn_at_base = true,
+		default_relaunch_count = nil,
+		player_restart = true,
+		respawn_last_clonk = true
+	});
 	
 	// Initialize different parts of the scenario.
 	InitializeAmbience();
@@ -311,4 +314,9 @@ global func Particles_Smoke(...)
 		p.DampingX = 800;
 	}
 	return p;
+}
+
+public func OnPlayerRelaunch()
+{
+	return true;
 }

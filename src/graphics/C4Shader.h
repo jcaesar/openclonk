@@ -18,6 +18,7 @@
 #ifndef INC_C4Shader
 #define INC_C4Shader
 
+#include "C4ForbidLibraryCompilation.h"
 #include "lib/StdBuf.h"
 #include "lib/StdMeshMath.h"
 #include "graphics/C4Surface.h"
@@ -26,7 +27,11 @@
 #include "platform/C4windowswrapper.h"
 #endif
 
+#ifndef USE_CONSOLE
 #include <GL/glew.h>
+#endif
+
+#include <stack>
 
 // Shader version
 const int C4Shader_Version = 150; // GLSL 1.50 / OpenGL 3.2
@@ -57,6 +62,7 @@ const int C4Shader_Vertex_PositionPos = 80;
 class C4Shader
 {
 	friend class C4ShaderCall;
+	friend class C4ScriptUniform;
 public:
 	C4Shader();
 	~C4Shader();
@@ -76,11 +82,14 @@ private:
 	typedef std::list<ShaderSlice> ShaderSliceList;
 	ShaderSliceList VertexSlices, FragmentSlices;
 	std::vector<std::string> SourceFiles;
+	std::vector<std::string> Categories;
+	std::set<int> ScriptShaders;
 
 	int GetSourceFileId(const char *file) const;
 
 	// Last refresh check
 	C4TimeMilliseconds LastRefresh;
+	bool ScriptSlicesLoaded = false;
 
 	// Used texture coordinates
 	int iTexCoords;
@@ -144,6 +153,7 @@ public:
 	void AddFragmentSlices(const char *szWhat, const char *szText, const char *szSource = "", int iFileTime = 0);
 	bool LoadFragmentSlices(C4GroupSet *pGroupSet, const char *szFile);
 	bool LoadVertexSlices(C4GroupSet *pGroupSet, const char *szFile);
+	void SetScriptCategories(const std::vector<std::string>& categories);
 
 	// Assemble and link the shader. Should be called again after new slices are added.
 	bool Init(const char *szWhat, const char **szUniforms, const char **szAttributes);
@@ -157,6 +167,9 @@ private:
 	void AddSlices(ShaderSliceList& slices, const char *szWhat, const char *szText, const char *szSource, int iFileTime);
 	bool LoadSlices(ShaderSliceList& slices, C4GroupSet *pGroupSet, const char *szFile);
 	int ParsePosition(const char *szWhat, const char **ppPos);
+
+	void LoadScriptSlices();
+	void LoadScriptSlice(int id);
 
 	StdStrBuf Build(const ShaderSliceList &Slices, bool fDebug = false);
 
@@ -172,6 +185,7 @@ public:
 #ifndef USE_CONSOLE
 class C4ShaderCall
 {
+	friend class C4ScriptUniform;
 public:
 	C4ShaderCall(const C4Shader *pShader)
 		: fStarted(false), pShader(pShader), iUnits(0)
@@ -295,5 +309,82 @@ class C4ShaderCall {
 	C4ShaderCall(const C4Shader *) {};
 };
 #endif
+
+class C4ScriptShader
+{
+	friend class C4Shader;
+	friend class C4ShaderCall;
+
+public:
+	enum ShaderType
+	{
+		VertexShader, // Note: Reloading is currently only implemented for fragment shaders.
+		FragmentShader,
+	};
+private:
+	struct ShaderInstance
+	{
+		ShaderType type;
+		std::string source;
+	};
+
+	// Map of shader names -> ids. The indirection is there as each C4Shader
+	// may load script shaders from multiple categories.
+	std::map<std::string, std::set<int>> categories;
+	// Map of ids -> script-loaded shaders.
+	std::map<int, ShaderInstance> shaders;
+	int NextID = 0;
+	uint32_t LastUpdate = 0;
+
+protected: // Interface for C4Shader friend class
+	std::set<int> GetShaderIDs(const std::vector<std::string>& cats);
+
+public: // Interface for script
+	// Adds a shader, returns its id for removal.
+	int Add(const std::string& shaderName, ShaderType type, const std::string& source);
+	// Removes a shader, returning true on success.
+	bool Remove(int id);
+};
+
+extern C4ScriptShader ScriptShader;
+
+class C4ScriptUniform
+{
+	friend class C4Shader;
+
+	struct Uniform
+	{
+#ifndef USE_CONSOLE
+		GLenum type;
+		union
+		{
+			int intVec[4];
+			// TODO: Support for other uniform types.
+		};
+#endif
+	};
+
+	typedef std::map<std::string, Uniform> UniformMap;
+	std::stack<UniformMap> uniformStack;
+
+public:
+	class Popper
+	{
+		C4ScriptUniform* p;
+		size_t size;
+	public:
+		Popper(C4ScriptUniform* p) : p(p), size(p->uniformStack.size()) { }
+		~Popper() { assert(size == p->uniformStack.size()); p->uniformStack.pop(); }
+	};
+
+	// Remove all uniforms.
+	void Clear();
+	// Walk the proplist `proplist.Uniforms` and add uniforms. Automatically pops when the return value is destroyed.
+	std::unique_ptr<Popper> Push(C4PropList* proplist);
+	// Apply uniforms to a shader call.
+	void Apply(C4ShaderCall& call);
+
+	C4ScriptUniform() { Clear(); }
+};
 
 #endif // INC_C4Shader

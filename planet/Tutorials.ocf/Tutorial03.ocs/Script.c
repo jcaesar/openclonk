@@ -48,7 +48,8 @@ protected func OnGoalsFulfilled()
 private func InitVillageEntrance()
 {
 	// Create a signpost.
-	CreateObjectAbove(EnvPack_Guidepost, 56, 384);	
+	var post = CreateObjectAbove(EnvPack_Guidepost2, 56, 384);
+	post->SetInscription("$MsgWelcomeWipfville$");
 	
 	// Create a small forest.
 	CreateObjectAbove(Tree_Coniferous, 128, 384);
@@ -636,7 +637,7 @@ global func FxClonkRestoreStop(object target, effect, int reason, bool  temporar
 		var plr = target->GetOwner();
 		var clonk = CreateObject(Clonk, 0, 0, plr);
 		clonk->GrabObjectInfo(target);
-		Rule_BaseRespawn->TransferInventory(target, clonk);
+		Rule_Relaunch->TransferInventory(target, clonk);
 		SetCursor(plr, clonk);
 		clonk->DoEnergy(100000);
 		restorer->SetRestoreObject(clonk, nil, to_x, to_y, 0, "ClonkRestore");

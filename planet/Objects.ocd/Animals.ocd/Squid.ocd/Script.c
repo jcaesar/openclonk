@@ -71,6 +71,8 @@ public func Place(int amount, proplist rectangle, proplist settings)
 	return f; // return last created fish
 }
 
+public func IsAnimal() { return true; }
+
 public func Construction()
 {
 	current_orientation = [0, -2, 1];
@@ -101,7 +103,7 @@ public func Construction()
 	
 	_inherited(...);
 	
-	// setup of the force fields after the call to inherited()
+	// setup of the force fields after the call to inherited(...)
 	SetDefaultForceFieldMaxDistance(SQUID_VISION_MAX_RANGE);
 	SetDefaultForceFieldTTD(36 * 4);
 	SetMaxEmitterNumber(7);
@@ -297,8 +299,8 @@ private func UpdateSwim()
 	
 	// the animation to play depends on the speed of the squid
 	var is_fast = velocity >= SQUID_SWIM_MAX_SPEED/3;
-	if (is_fast && !is_in_idle_animation); // no change needed
-	else if (!is_fast && is_in_idle_animation); // ok, too
+	if (is_fast && !is_in_idle_animation) {} // no change needed
+	else if (!is_fast && is_in_idle_animation) {} // ok, too
 	else
 	{
 		var current_weight = GetAnimationWeight(movement_animation_node);
@@ -552,7 +554,8 @@ local BreatheWater = 1;
 local BorderBound = C4D_Border_Sides | C4D_Border_Top | C4D_Border_Bottom;
 local ContactCalls = true;
 
-public func Definition(def) {
-	SetProperty("PictureTransformation", Trans_Mul(Trans_Rotate(20,1,0,0),Trans_Rotate(70,0,1,0)), def);
+public func Definition(proplist def)
+{
+	def.PictureTransformation = Trans_Mul(Trans_Translate(0, -1600, 0), Trans_Rotate(20, 1, 0, 0), Trans_Rotate(70, 0, 1, 0));
 }
 

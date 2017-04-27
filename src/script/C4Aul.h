@@ -27,6 +27,18 @@
 // consts
 #define C4AUL_MAX_Identifier  100 // max length of function identifiers
 
+// warning flags
+enum class C4AulWarningId
+{
+#define DIAG(id, text, enabled) id,
+#include "C4AulWarnings.h"
+#undef DIAG
+	WarningCount
+};
+
+extern const char *C4AulWarningIDs[];
+extern const char *C4AulWarningMessages[];
+
 // generic C4Aul error class
 class C4AulError : public std::exception
 {
@@ -34,11 +46,8 @@ protected:
 	StdCopyStrBuf sMessage;
 
 public:
-	bool shown;
-	C4AulError();
 	virtual ~C4AulError() { } // destructor
 	virtual const char *what() const noexcept;
-	void show(); // present error message
 };
 
 // parse error
@@ -110,6 +119,14 @@ public:
 	int32_t GetHandle() const { return handle; }
 };
 
+class C4AulErrorHandler
+{
+public:
+	virtual ~C4AulErrorHandler();
+	virtual void OnError(const char *msg) = 0;
+	virtual void OnWarning(const char *msg) = 0;
+};
+
 // holds all C4AulScripts
 class C4AulScriptEngine: public C4PropListStaticMember
 {
@@ -124,6 +141,9 @@ protected:
 	// all open user files
 	// user files aren't saved - they are just open temporary e.g. during game saving
 	std::list<C4AulUserFile> UserFiles;
+	std::vector<C4Value> OwnedPropLists;
+
+	C4AulErrorHandler *ErrorHandler;
 
 public:
 	int warnCnt, errCnt; // number of warnings/errors
@@ -139,7 +159,7 @@ public:
 	C4ValueMapNames GlobalConstNames;
 	C4ValueMapData GlobalConsts;
 
-	C4Effect * pGlobalEffects = NULL;
+	C4Effect * pGlobalEffects = nullptr;
 
 	C4AulScriptEngine(); // constructor
 	~C4AulScriptEngine(); // destructor
@@ -153,7 +173,7 @@ public:
 	std::list<const char*> GetFunctionNames(C4PropList *);
 
 	void RegisterGlobalConstant(const char *szName, const C4Value &rValue); // creates a new constants or overwrites an old one
-	bool GetGlobalConstant(const char *szName, C4Value *pTargetValue); // check if a constant exists; assign value to pTargetValue if not NULL
+	bool GetGlobalConstant(const char *szName, C4Value *pTargetValue); // check if a constant exists; assign value to pTargetValue if not nullptr
 
 	void Denumerate(C4ValueNumbers *);
 	void UnLink(); // called when a script is being reloaded (clears string table)
@@ -165,6 +185,13 @@ public:
 	int32_t CreateUserFile(); // create new file and return handle
 	void CloseUserFile(int32_t handle); // close user file given by handle
 	C4AulUserFile *GetUserFile(int32_t handle); // get user file given by handle
+
+	void RegisterErrorHandler(C4AulErrorHandler *handler);
+	void UnregisterErrorHandler(C4AulErrorHandler *handler);
+	C4AulErrorHandler *GetErrorHandler() const
+	{
+		return ErrorHandler;
+	}
 
 	friend class C4AulFunc;
 	friend class C4AulProfiler;

@@ -20,11 +20,9 @@
 #ifndef INC_C4DefList
 #define INC_C4DefList
 
-#include "graphics/C4FontLoader.h"
-#include "lib/StdMesh.h"
-#include "lib/StdMeshLoader.h"
+#include "graphics/C4FontLoaderCustomImages.h"
 
-class C4DefList: public CStdFont::CustomImages
+class C4DefList: public CStdFontCustomImages
 {
 public:
 	C4DefList();
@@ -40,15 +38,16 @@ public:
 	void Clear();
 	int32_t Load(C4Group &hGroup,
 	             DWORD dwLoadWhat, const char *szLanguage,
-	             C4SoundSystem *pSoundSystem = NULL,
+	             C4SoundSystem *pSoundSystem = nullptr,
 	             bool fOverload = false,
 	             bool fSearchMessage = false, int32_t iMinProgress=0, int32_t iMaxProgress=0, bool fLoadSysGroups = true);
 	int32_t Load(const char *szFilename,
 	             DWORD dwLoadWhat, const char *szLanguage,
-	             C4SoundSystem *pSoundSystem = NULL,
+	             C4SoundSystem *pSoundSystem = nullptr,
 	             bool fOverload = false, int32_t iMinProgress=0, int32_t iMaxProgress=0);
 	C4Def *ID2Def(C4ID id);
 	C4Def *GetDef(int32_t Index);
+	std::vector<C4Def*> GetAllDefs(C4String *filter_property=nullptr) const;
 	C4Def *GetByPath(const char *szPath);
 	C4Def *GetByName(const StdStrBuf &);
 	int32_t GetDefCount();
@@ -59,11 +58,12 @@ public:
 	void Draw(C4ID id, C4Facet &cgo, bool fSelected, int32_t iColor);
 	void Remove(C4Def *def);
 	bool Remove(C4ID id);
-	bool Reload(C4Def *pDef, DWORD dwLoadWhat, const char *szLanguage, C4SoundSystem *pSoundSystem = NULL);
+	bool Reload(C4Def *pDef, DWORD dwLoadWhat, const char *szLanguage, C4SoundSystem *pSoundSystem = nullptr);
 	bool Add(C4Def *ndef, bool fOverload);
 	void BuildTable();
 	void ResetIncludeDependencies(); // resets all pointers into foreign definitions caused by include chains
 	void CallEveryDefinition();
+	void SortByPriority();
 	void Synchronize();
 	void AppendAndIncludeSkeletons();
 	StdMeshSkeletonLoader& GetSkeletonLoader();

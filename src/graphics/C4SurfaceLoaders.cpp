@@ -35,7 +35,7 @@ bool C4Surface::LoadAny(C4Group &hGroup, const char *szName, bool fOwnPal, bool 
 	if (!*szExt)
 	{
 		// no extension: Default to extension that is found as file in group
-		const char * const extensions[] = { "png", "bmp", "jpeg", "jpg", NULL };
+		const char * const extensions[] = { "png", "bmp", "jpeg", "jpg", nullptr };
 		int i = 0; const char *szExt;
 		while ((szExt = extensions[i++]))
 		{
@@ -58,7 +58,7 @@ bool C4Surface::LoadAny(C4GroupSet &hGroupset, const char *szName, bool fOwnPal,
 	if (!*szExt)
 	{
 		// no extension: Default to extension that is found as file in group
-		const char * const extensions[] = { "png", "bmp", "jpeg", "jpg", NULL };
+		const char * const extensions[] = { "png", "bmp", "jpeg", "jpg", nullptr };
 		int i = 0; const char *szExt;
 		while ((szExt = extensions[i++]))
 		{
@@ -228,8 +228,6 @@ bool C4Surface::SavePNG(C4Group &hGroup, const char *szFilename, bool fSaveAlpha
 
 /* JPEG loading */
 
-#ifndef USE_CONSOLE
-
 // Some distributions ship jpeglib.h with extern "C", others don't - gah.
 extern "C"
 {
@@ -359,13 +357,3 @@ bool C4Surface::ReadJPEG(CStdStream &hGroup, int iFlags)
 	// return if successful
 	return true;
 }
-
-#else // ifndef USE_CONSOLE
-
-bool C4Surface::ReadJPEG(CStdStream &, int) {
-	// Dummy surface
-	if (!Create(1, 1)) return false;
-	return true;
-}
-
-#endif // USE_CONSOLE

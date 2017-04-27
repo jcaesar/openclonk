@@ -27,20 +27,19 @@
 #include "landscape/C4Weather.h"
 #include "control/C4Record.h"
 #include "lib/StdColors.h"
+#include "graphics/C4Draw.h"
 
 static const C4Real WindDrift_Factor = itofix(1, 800);
 
 void C4PXS::Execute()
 {
-#ifdef DEBUGREC_PXS
-	if (Config.General.DebugRec)
+	if (DEBUGREC_PXS && Config.General.DebugRec)
 	{
 		C4RCExecPXS rc;
 		rc.x=x; rc.y=y; rc.iMat=Mat;
 		rc.pos = 0;
 		AddDbgRec(RCT_ExecPXS, &rc, sizeof(rc));
 	}
-#endif
 	int32_t inmat;
 
 	// Safety
@@ -55,7 +54,7 @@ void C4PXS::Execute()
 	int32_t iX = fixtoi(x), iY = fixtoi(y);
 	inmat=GBackMat(iX,iY);
 	C4MaterialReaction *pReact = ::MaterialMap.GetReactionUnsafe(Mat, inmat);
-	if (pReact && (*pReact->pFunc)(pReact, iX,iY, iX,iY, xdir,ydir, Mat,inmat, meePXSPos, NULL))
+	if (pReact && (*pReact->pFunc)(pReact, iX,iY, iX,iY, xdir,ydir, Mat,inmat, meePXSPos, nullptr))
 		{ Deactivate(); return; }
 
 	// Gravity
@@ -125,29 +124,25 @@ void C4PXS::Execute()
 
 	// No contact? Free movement
 	x=ctcox; y=ctcoy;
-#ifdef DEBUGREC_PXS
-	if (Config.General.DebugRec)
+	if (DEBUGREC_PXS && Config.General.DebugRec)
 	{
 		C4RCExecPXS rc;
 		rc.x=x; rc.y=y; rc.iMat=Mat;
 		rc.pos = 1;
 		AddDbgRec(RCT_ExecPXS, &rc, sizeof(rc));
 	}
-#endif
 	return;
 }
 
 void C4PXS::Deactivate()
 {
-#ifdef DEBUGREC_PXS
-	if (Config.General.DebugRec)
+	if (DEBUGREC_PXS && Config.General.DebugRec)
 	{
 		C4RCExecPXS rc;
 		rc.x=x; rc.y=y; rc.iMat=Mat;
 		rc.pos = 2;
 		AddDbgRec(RCT_ExecPXS, &rc, sizeof(rc));
 	}
-#endif
 	Mat=MNone;
 	::PXS.Delete(this);
 }
@@ -167,7 +162,7 @@ void C4PXSSystem::Default()
 	Count=0;
 	for (unsigned int cnt=0; cnt<PXSMaxChunk; cnt++)
 	{
-		Chunk[cnt]=NULL;
+		Chunk[cnt]=nullptr;
 		iChunkPXS[cnt]=0;
 	}
 }
@@ -177,7 +172,7 @@ void C4PXSSystem::Clear()
 	for (unsigned int cnt=0; cnt<PXSMaxChunk; cnt++)
 	{
 		if (Chunk[cnt]) delete [] Chunk[cnt];
-		Chunk[cnt]=NULL;
+		Chunk[cnt]=nullptr;
 		iChunkPXS[cnt]=0;
 	}
 }
@@ -192,7 +187,7 @@ C4PXS* C4PXSSystem::New()
 		// Create new chunk if necessary
 		if (!Chunk[cnt])
 		{
-			if (!(Chunk[cnt]=new C4PXS[PXSChunkSize])) return NULL;
+			if (!(Chunk[cnt]=new C4PXS[PXSChunkSize])) return nullptr;
 			iChunkPXS[cnt] = 0;
 		}
 		// Check this chunk for space
@@ -200,12 +195,12 @@ C4PXS* C4PXSSystem::New()
 			for (cnt2=0,pxp=Chunk[cnt]; cnt2<PXSChunkSize; cnt2++,pxp++)
 				if (pxp->Mat==MNone)
 				{
-					// count theam
+					// count them
 					iChunkPXS[cnt]++;
 					return pxp;
 				}
 	}
-	return NULL;
+	return nullptr;
 }
 
 bool C4PXSSystem::Create(int32_t mat, C4Real ix, C4Real iy, C4Real ixdir, C4Real iydir)
@@ -228,7 +223,7 @@ void C4PXSSystem::Execute()
 		{
 			// empty chunk?
 			if (!iChunkPXS[cchunk])
-				{ delete [] Chunk[cchunk]; Chunk[cchunk]=NULL; }
+				{ delete [] Chunk[cchunk]; Chunk[cchunk]=nullptr; }
 			else
 			{
 				// Execute chunk pxs, check for empty
@@ -345,8 +340,8 @@ void C4PXSSystem::Draw(C4TargetFacet &cgo)
 		}
 	}
 
-	if(!pixVtx.empty()) pDraw->PerformMultiPix(cgo.Surface, &pixVtx[0], pixVtx.size(), NULL);
-	if(!lineVtx.empty()) pDraw->PerformMultiLines(cgo.Surface, &lineVtx[0], lineVtx.size(), 1.0f, NULL);
+	if(!pixVtx.empty()) pDraw->PerformMultiPix(cgo.Surface, &pixVtx[0], pixVtx.size(), nullptr);
+	if(!lineVtx.empty()) pDraw->PerformMultiLines(cgo.Surface, &lineVtx[0], lineVtx.size(), 1.0f, nullptr);
 
 	// PXS graphics disabled?
 	if (!Config.Graphics.PXSGfx)
@@ -355,7 +350,7 @@ void C4PXSSystem::Draw(C4TargetFacet &cgo)
 	for(std::map<int, std::vector<C4BltVertex> >::const_iterator iter = bltVtx.begin(); iter != bltVtx.end(); ++iter)
 	{
 		C4Material *pMat = &::MaterialMap.Map[iter->first];
-		pDraw->PerformMultiTris(cgo.Surface, &iter->second[0], iter->second.size(), NULL, pMat->PXSFace.Surface->texture.get(), NULL, NULL, 0, NULL);
+		pDraw->PerformMultiTris(cgo.Surface, &iter->second[0], iter->second.size(), nullptr, pMat->PXSFace.Surface->texture.get(), nullptr, nullptr, 0, nullptr);
 	}
 }
 
@@ -482,7 +477,7 @@ void C4PXSSystem::SyncClearance()
 			else
 			{
 				delete [] Chunk[cnt];
-				Chunk[cnt] = NULL;
+				Chunk[cnt] = nullptr;
 			}
 		}
 	}

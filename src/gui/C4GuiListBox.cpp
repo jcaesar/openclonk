@@ -20,6 +20,7 @@
 #include "gui/C4Gui.h"
 
 #include "gui/C4MouseControl.h"
+#include "graphics/C4Draw.h"
 #include <algorithm>
 
 namespace C4GUI
@@ -30,7 +31,7 @@ namespace C4GUI
 // ListBox
 
 	ListBox::ListBox(const C4Rect &rtBounds, int32_t iMultiColItemWidth) : Control(rtBounds), iMultiColItemWidth(iMultiColItemWidth), iColCount(1)
-			, pSelectedItem(NULL), pSelectionChangeHandler(NULL), pSelectionDblClickHandler(NULL), fDrawBackground(true), fDrawBorder(false), fSelectionDisabled(false)
+			, pSelectedItem(nullptr), pSelectionChangeHandler(nullptr), pSelectionDblClickHandler(nullptr), fDrawBackground(true), fDrawBorder(false), fSelectionDisabled(false)
 	{
 		// calc client rect
 		UpdateOwnPos();
@@ -153,7 +154,7 @@ namespace C4GUI
 				{
 					// reset selection
 					Element *pPrevSelectedItem = pSelectedItem;
-					pSelectedItem = NULL;
+					pSelectedItem = nullptr;
 					// get client component the mouse is over
 					iX -= GetMarginLeft(); iY -= GetMarginTop();
 					iY += pClientWindow->GetScrollY();
@@ -479,7 +480,7 @@ namespace C4GUI
 		// clear selection var
 		if (pChild == pSelectedItem)
 		{
-			pSelectedItem = NULL;
+			pSelectedItem = nullptr;
 			SelectionChanged(false);
 		}
 		// position update in AfterElementRemoval
@@ -573,7 +574,7 @@ namespace C4GUI
 	void ListBox::SelectionChanged(bool fByUser)
 	{
 		// selections disabled?
-		if (fSelectionDisabled) { pSelectedItem = NULL; return; }
+		if (fSelectionDisabled) { pSelectedItem = nullptr; return; }
 		// any selection?
 		if (pSelectedItem)
 		{

@@ -24,31 +24,38 @@
 #include "object/C4DefList.h"
 
 /* StandaloneStubs.cpp is shared with mape, which has a real implementation of these */
-C4Def* C4DefList::GetByName(const StdStrBuf &) {return NULL;}
+C4Def* C4DefList::GetByName(const StdStrBuf &) {return nullptr;}
 C4Def * C4DefList::GetDef(int) {return 0;}
 int C4DefList::GetDefCount() {return 0;}
+void C4DefList::SortByPriority() {}
 void C4DefList::CallEveryDefinition() {}
 void C4DefList::ResetIncludeDependencies() {}
 
-void InitializeC4Script()
+static void InitializeC4Script()
 {
 	InitCoreFunctionMap(&ScriptEngine);
 
 	// Seed PRNG
-	FixedRandom(time(NULL));
+	FixedRandom(time(nullptr));
 }
 
-void RunLoadedC4Script()
-{
-	// Link script engine (resolve includes/appends, generate code)
-	ScriptEngine.Link(NULL);
-
-	GameScript.Call("Main");
+static void ClearC4Script() {
 	GameScript.Clear();
 	ScriptEngine.Clear();
 }
 
-int c4s_runfile(const char * filename)
+static C4Value RunLoadedC4Script()
+{
+	// Link script engine (resolve includes/appends, generate code)
+	ScriptEngine.Link(nullptr);
+
+	C4Value result = GameScript.Call("Main");
+
+	ClearC4Script();
+	return result;
+}
+
+static int RunFile(const char * filename, bool checkOnly)
 {
 	C4Group File;
 	if (!File.Open(GetWorkingDirectory()))
@@ -67,15 +74,26 @@ int c4s_runfile(const char * filename)
 	}
 
 	InitializeC4Script();
-	GameScript.Load(File, fn.getData(), NULL, NULL);
-	RunLoadedC4Script();
-	return 0;
+	GameScript.Load(File, fn.getData(), nullptr, nullptr);
+	if (!checkOnly)
+		RunLoadedC4Script();
+	ClearC4Script();
+	return ScriptEngine.errCnt;
 }
 
-int c4s_runstring(const char *script)
+static int RunString(const char *script, bool checkOnly)
 {
 	InitializeC4Script();
-	GameScript.LoadData("<memory>", script, NULL);
-	RunLoadedC4Script();
-	return 0;
+	GameScript.LoadData("<memory>", script, nullptr);
+	if (!checkOnly)
+		RunLoadedC4Script();
+	ClearC4Script();
+	return ScriptEngine.errCnt;
 }
+
+
+int c4s_runfile(const char *filename) { return RunFile(filename, false); }
+int c4s_runstring(const char *script) { return RunString(script, false); }
+
+int c4s_checkfile(const char *filename) { return RunFile(filename, true); }
+int c4s_checkstring(const char *script) { return RunString(script, true); }

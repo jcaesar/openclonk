@@ -44,12 +44,12 @@ private func Initialize()
 	SetAction("Fly");
 	SetPhase(Random(3));
 
-	_inherited();
+	_inherited(...);
 }
 
 private func Death()
 {
-	_inherited();
+	_inherited(...);
 	RemoveObject();
 }
 
@@ -58,7 +58,7 @@ private func MissionComplete()
 	if (enraged)
 		MoveToTarget();
 	else
-		_inherited();
+		_inherited(...);
 }
 
 private func Sleep()
@@ -74,19 +74,21 @@ private func Sleep()
 	}
 	// One last trip, then become invisible
 	MoveToTarget();
-	lib_insect_going2sleep = true;
+	// Insect might have been removed.
+	if (this)
+		lib_insect_going2sleep = true;
 }
 
 private func SleepComplete()
 {
 	SetAction("Sleep");
-	_inherited();
+	_inherited(...);
 }
 
 private func WakeUp()
 {
 	SetAction("Fly");
-	_inherited();
+	_inherited(...);
 }
 
 private func GetAttraction(proplist coordinates)

@@ -31,11 +31,22 @@
 #include "config/C4Config.h"
 #include "game/C4Game.h"
 
+template<size_t iBufferSize>
+static bool GetRelativePath(const char *strPath, const char *strRelativeTo, char(&strBuffer)[iBufferSize])
+{
+	// Specified path is relative to base path
+	// Copy relative section
+	const char *szCpy;
+	SCopy(szCpy = GetRelativePathS(strPath, strRelativeTo), strBuffer, iBufferSize);
+	// return whether it was made relative
+	return szCpy != strPath;
+}
+
 C4Language Languages;
 
 C4Language::C4Language()
 {
-	Infos = NULL;
+	Infos = nullptr;
 	PackGroupLocation[0] = 0;
 }
 
@@ -119,7 +130,7 @@ void C4Language::Clear()
 		delete Infos;
 		Infos = pNext;
 	}
-	Infos = NULL;
+	Infos = nullptr;
 }
 
 int C4Language::GetPackCount()
@@ -257,7 +268,7 @@ namespace
 		// the beginning or end of a line, respectively, and it seems
 		// like in some implementations they only match the beginning
 		// or end of the whole string. See also #1127.
-		static re::regex line_pattern("(?:\n|^)([^=]+)=(.*?)\r?(?=\n|$)", static_cast<re::regex::flag_type>(re::regex_constants::optimize | re::regex_constants::ECMAScript));
+		static std::regex line_pattern("(?:\n|^)([^=]+)=(.*?)\r?(?=\n|$)", static_cast<std::regex::flag_type>(std::regex_constants::optimize | std::regex_constants::ECMAScript));
 
 		assert(stringtbl);
 		if (!stringtbl)
@@ -269,7 +280,7 @@ namespace
 		const char *begin = stringtbl;
 		const char *end = begin + std::char_traits<char>::length(begin);
 
-		for (auto it = re::cregex_iterator(begin, end, line_pattern); it != re::cregex_iterator(); ++it)
+		for (auto it = std::cregex_iterator(begin, end, line_pattern); it != std::cregex_iterator(); ++it)
 		{
 			assert(it->size() == 3);
 			if (it->size() != 3)
@@ -339,7 +350,7 @@ C4LanguageInfo* C4Language::GetInfo(int iIndex)
 			return pInfo;
 		else
 			iIndex--;
-	return NULL;
+	return nullptr;
 }
 
 C4LanguageInfo* C4Language::FindInfo(const char *strCode)
@@ -347,7 +358,7 @@ C4LanguageInfo* C4Language::FindInfo(const char *strCode)
 	for (C4LanguageInfo *pInfo = Infos; pInfo; pInfo = pInfo->Next)
 		if (SEqualNoCase(pInfo->Code, strCode, 2))
 			return pInfo;
-	return NULL;
+	return nullptr;
 }
 
 bool C4Language::LoadLanguage(const char *strLanguages)

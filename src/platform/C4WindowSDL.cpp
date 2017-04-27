@@ -21,6 +21,8 @@
 
 #include "game/C4Application.h"
 #include "graphics/C4DrawGL.h"
+#include "editor/C4Console.h"
+#include "editor/C4ViewportWindow.h"
 #include "gui/C4Gui.h"
 #include "platform/StdFile.h"
 #include "lib/StdBuf.h"
@@ -38,7 +40,10 @@
 /* C4Window */
 
 C4Window::C4Window ():
-		Active(false), pSurface(0)
+		Active(false), pSurface(0), eKind(W_Fullscreen), window(nullptr)
+#ifdef WITH_QT_EDITOR
+, glwidget(nullptr)
+#endif
 {
 }
 
@@ -55,6 +60,17 @@ static void SetMultisamplingAttributes(int samples)
 
 C4Window * C4Window::Init(WindowKind windowKind, C4AbstractApp * pApp, const char * Title, const C4Rect * size)
 {
+	eKind = windowKind;
+#ifdef WITH_QT_EDITOR
+	if (windowKind == W_Viewport)
+	{
+		// embed into editor: Viewport widget creation handled by C4ConsoleQt
+		::Console.AddViewport(static_cast<C4ViewportWindow *>(this));
+		return this;
+	}
+#endif
+/*	    SDL_GL_MULTISAMPLEBUFFERS,
+	    SDL_GL_MULTISAMPLESAMPLES,*/
 	SDL_GL_SetAttribute(SDL_GL_RED_SIZE, 8);
 	SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE, 8);
 	SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE, 8);
@@ -67,7 +83,7 @@ C4Window * C4Window::Init(WindowKind windowKind, C4AbstractApp * pApp, const cha
 	uint32_t flags = SDL_WINDOW_OPENGL;
 	if (windowKind == W_Fullscreen && size->Wdt == -1)
 		flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
-	else if (windowKind == W_Fullscreen)
+	else if (windowKind == W_Fullscreen && !Config.Graphics.Windowed)
 		flags |= SDL_WINDOW_FULLSCREEN;
 	window = SDL_CreateWindow(Title, SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, size->Wdt, size->Hgt, flags);
 	if (!window)
@@ -91,8 +107,16 @@ bool C4Window::ReInit(C4AbstractApp* pApp)
 
 void C4Window::Clear()
 {
-	SDL_DestroyWindow(window);
-	window = 0;
+	if (window) SDL_DestroyWindow(window);
+	window = nullptr;
+
+#ifdef WITH_QT_EDITOR
+	if (eKind == W_Viewport)
+	{
+		// embed into editor: Viewport widget creation handled by C4ConsoleQt
+		::Console.RemoveViewport(static_cast<C4ViewportWindow *>(this));
+	}
+#endif
 }
 
 void C4Window::EnumerateMultiSamples(std::vector<int>& samples) const
@@ -161,7 +185,7 @@ static void SetUrgencyHint(SDL_Window *window, bool urgency_hint)
 	{
 		auto x11 = wminfo.info.x11;
 		XWMHints *wmhints = XGetWMHints(x11.display, x11.window);
-		if (wmhints == NULL)
+		if (wmhints == nullptr)
 			wmhints = XAllocWMHints();
 		// Set the window's urgency hint.
 		if (urgency_hint)
@@ -191,8 +215,12 @@ void C4Window::HandleSDLEvent(SDL_WindowEvent &e)
 	case SDL_WINDOWEVENT_FOCUS_GAINED:
 		SetUrgencyHint(window, false);
 		break;
+	case SDL_WINDOWEVENT_RESIZED:
+	case SDL_WINDOWEVENT_SIZE_CHANGED:
+		Application.OnResolutionChanged(e.data1, e.data2);
+		break;
 	default:
-		// We don't care about most events.
+		// We don't care about most events. We should care about more, though.
 		break;
 	}
 }

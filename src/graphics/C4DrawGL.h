@@ -16,7 +16,7 @@
 
 /* OpenGL implementation of NewGfx */
 
-
+#include "C4ForbidLibraryCompilation.h"
 #if !defined(INC_StdGL) && !defined(USE_CONSOLE)
 #define INC_StdGL
 
@@ -107,19 +107,19 @@ class CStdGLCtx
 {
 public:
 	CStdGLCtx();  // ctor
-	~CStdGLCtx() { Clear(); } // dtor
+	virtual ~CStdGLCtx() { Clear(); } // dtor
 
-	void Clear(bool multisample_change = false);               // clear objects
+	virtual void Clear(bool multisample_change = false);               // clear objects
 
 #ifdef USE_WGL
 	std::vector<int> EnumerateMultiSamples() const;
 #endif
-	bool Init(C4Window * pWindow, C4AbstractApp *pApp);
+	virtual bool Init(C4Window * pWindow, C4AbstractApp *pApp);
 
-	bool Select(bool verbose = false);              // select this context
-	void Deselect();              // select this context
+	virtual bool Select(bool verbose = false);              // select this context
+	virtual void Deselect();              // select this context
 
-	bool PageFlip();            // present scene
+	virtual bool PageFlip();            // present scene
 
 protected:
 	void SelectCommon();
@@ -127,8 +127,6 @@ protected:
 	C4Window * pWindow; // window to draw in
 #ifdef USE_WGL
 	HDC hDC;                    // device context handle
-#elif defined(USE_GTK)
-	/*GLXContext*/void * ctx;
 #elif defined(USE_SDL_MAINLOOP)
 	void * ctx;
 #endif
@@ -145,6 +143,26 @@ protected:
 	friend class CStdGL;
 	friend class C4Surface;
 };
+
+#ifdef WITH_QT_EDITOR
+// OpenGL context with Qt as backend. Implemented as subclass to allow co-existance with a different backend for fullscreen.
+class CStdGLCtxQt : public CStdGLCtx
+{
+public:
+	CStdGLCtxQt();
+	virtual ~CStdGLCtxQt() { Clear(); }
+
+	void Clear(bool multisample_change = false) override;               // clear objects
+	bool Init(C4Window * pWindow, C4AbstractApp *pApp) override;
+	bool Select(bool verbose = false) override;              // select this context
+	void Deselect() override;              // select this context
+	bool PageFlip() override;            // present scene
+
+private:
+	class QOpenGLContext *context = nullptr;
+	class QOffscreenSurface *surface = nullptr;
+};
+#endif
 
 // OpenGL encapsulation
 class CStdGL : public C4Draw
@@ -225,31 +243,32 @@ public:
 	bool GetVAO(unsigned int vaoid, GLuint& vao);
 
 	// General
-	void Clear();
-	void Default();
-	virtual bool OnResolutionChanged(unsigned int iXRes, unsigned int iYRes); // reinit clipper for new resolution
+	void Clear() override;
+	void Default() override ;
+	virtual bool OnResolutionChanged(unsigned int iXRes, unsigned int iYRes) override; // reinit clipper for new resolution
 	// Clipper
-	bool UpdateClipper(); // set current clipper to render target
+	bool UpdateClipper() override; // set current clipper to render target
 	const StdProjectionMatrix& GetProjectionMatrix() const { return ProjectionMatrix; }
-	virtual bool PrepareMaterial(StdMeshMatManager& mat_manager, StdMeshMaterialLoader& loader, StdMeshMaterial& mat);
+	virtual bool PrepareMaterial(StdMeshMatManager& mat_manager, StdMeshMaterialLoader& loader, StdMeshMaterial& mat) override;
 	// Surface
-	virtual bool PrepareRendering(C4Surface * sfcToSurface); // check if/make rendering possible to given surface
-	virtual bool PrepareSpriteShader(C4Shader& shader, const char* name, int ssc, C4GroupSet* pGroups, const char* const* additionalDefines, const char* const* additionalSlices);
+	virtual bool PrepareRendering(C4Surface * sfcToSurface) override; // check if/make rendering possible to given surface
+	virtual bool PrepareSpriteShader(C4Shader& shader, const char* name, int ssc, C4GroupSet* pGroups, const char* const* additionalDefines, const char* const* additionalSlices) override;
+	bool EnsureMainContextSelected() override;
 
-	virtual CStdGLCtx *CreateContext(C4Window * pWindow, C4AbstractApp *pApp);
+	virtual CStdGLCtx *CreateContext(C4Window * pWindow, C4AbstractApp *pApp) override;
 	// Blit
 	void SetupMultiBlt(C4ShaderCall& call, const C4BltTransform* pTransform, GLuint baseTex, GLuint overlayTex, GLuint normalTex, DWORD dwOverlayModClr, StdProjectionMatrix* out_modelview);
-	virtual void PerformMesh(StdMeshInstance &instance, float tx, float ty, float twdt, float thgt, DWORD dwPlayerColor, C4BltTransform* pTransform);
-	void FillBG(DWORD dwClr=0);
+	virtual void PerformMesh(StdMeshInstance &instance, float tx, float ty, float twdt, float thgt, DWORD dwPlayerColor, C4BltTransform* pTransform) override;
+	void FillBG(DWORD dwClr=0) override;
 	// Drawing
-	virtual void PerformMultiPix(C4Surface* sfcTarget, const C4BltVertex* vertices, unsigned int n_vertices, C4ShaderCall* shader_call);
-	virtual void PerformMultiLines(C4Surface* sfcTarget, const C4BltVertex* vertices, unsigned int n_vertices, float width, C4ShaderCall* shader_call);
-	virtual void PerformMultiTris(C4Surface* sfcTarget, const C4BltVertex* vertices, unsigned int n_vertices, const C4BltTransform* pTransform, C4TexRef* pTex, C4TexRef* pOverlay, C4TexRef* pNormal, DWORD dwOverlayClrMod, C4ShaderCall* shader_call);
+	virtual void PerformMultiPix(C4Surface* sfcTarget, const C4BltVertex* vertices, unsigned int n_vertices, C4ShaderCall* shader_call) override;
+	virtual void PerformMultiLines(C4Surface* sfcTarget, const C4BltVertex* vertices, unsigned int n_vertices, float width, C4ShaderCall* shader_call) override;
+	virtual void PerformMultiTris(C4Surface* sfcTarget, const C4BltVertex* vertices, unsigned int n_vertices, const C4BltTransform* pTransform, C4TexRef* pTex, C4TexRef* pOverlay, C4TexRef* pNormal, DWORD dwOverlayClrMod, C4ShaderCall* shader_call) override;
 	void PerformMultiBlt(C4Surface* sfcTarget, DrawOperation op, const C4BltVertex* vertices, unsigned int n_vertices, bool has_tex, C4ShaderCall* shader_call);
 	// device objects
-	bool RestoreDeviceObjects();    // restore device dependent objects
-	bool InvalidateDeviceObjects(); // free device dependent objects
-	bool DeviceReady() { return !!pMainCtx; }
+	bool RestoreDeviceObjects() override;    // restore device dependent objects
+	bool InvalidateDeviceObjects() override; // free device dependent objects
+	bool DeviceReady() override { return !!pMainCtx; }
 	bool InitShaders(C4GroupSet* pGroups); // load shaders from given group
 	C4Shader* GetSpriteShader(int ssc);
 	C4Shader* GetSpriteShader(bool haveBase, bool haveOverlay, bool haveNormal);
@@ -257,13 +276,14 @@ public:
 	struct
 	{
 		bool LowMaxVertexUniformCount;
+		bool ForceSoftwareTransform;
 	} Workarounds;
 	void ObjectLabel(uint32_t identifier, uint32_t name, int32_t length, const char * label);
 
 protected:
 	bool CheckGLError(const char *szAtOp);
 	const char* GLErrorString(GLenum code);
-	virtual bool Error(const char *szMsg);
+	virtual bool Error(const char *szMsg) override;
 
 	friend class C4Surface;
 	friend class C4TexRef;
@@ -274,6 +294,9 @@ protected:
 	friend class C4Window;
 	friend class C4ShaderCall;
 	friend class C4FoWRegion;
+#ifdef WITH_QT_EDITOR
+	friend class CStdGLCtxQt;
+#endif
 };
 
 // Global access pointer

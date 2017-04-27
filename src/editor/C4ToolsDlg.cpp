@@ -145,7 +145,7 @@ bool C4ToolsDlg::SetIFT(bool fIFT)
 		{
 			BYTE bg_index = ::TextureMap.DefaultBkgMatTex(index);
 			const C4TexMapEntry* entry = ::TextureMap.GetEntry(bg_index);
-			if (entry != NULL)
+			if (entry != nullptr)
 			{
 				SCopy(entry->GetMaterialName(), BackMaterial, C4M_MaxName);
 				SCopy(entry->GetTextureName(), BackTexture, C4M_MaxName);
@@ -177,9 +177,10 @@ bool C4ToolsDlg::ChangeGrade(int32_t iChange)
 	return true;
 }
 
-bool C4ToolsDlg::SetLandscapeMode(LandscapeMode mode, bool fThroughControl)
+bool C4ToolsDlg::SetLandscapeMode(LandscapeMode mode, bool flat_chunk_shapes, bool fThroughControl)
 {
 	auto last_mode = ::Landscape.GetMode();
+	auto last_flat_chunk_shapes = ::Game.C4S.Landscape.FlatChunkShapes;
 	// Exact to static: confirm data loss warning
 	if (last_mode == LandscapeMode::Exact)
 		if (mode == LandscapeMode::Static)
@@ -189,13 +190,14 @@ bool C4ToolsDlg::SetLandscapeMode(LandscapeMode mode, bool fThroughControl)
 	// send as control
 	if (!fThroughControl)
 	{
-		::Control.DoInput(CID_EMDrawTool, new C4ControlEMDrawTool(EMDT_SetMode, mode), CDT_Decide);
+		::Control.DoInput(CID_EMDrawTool, new C4ControlEMDrawTool(EMDT_SetMode, mode, flat_chunk_shapes ? 1 : 0), CDT_Decide);
 		return true;
 	}
 	// Set landscape mode
+	::Game.C4S.Landscape.FlatChunkShapes = flat_chunk_shapes;
 	::Landscape.SetMode(mode);
 	// Exact to static: redraw landscape from map
-	if (last_mode == LandscapeMode::Exact)
+	if (last_mode == LandscapeMode::Exact || (last_flat_chunk_shapes != flat_chunk_shapes))
 		if (mode == LandscapeMode::Static)
 			::Landscape.MapToLandscape();
 	// Assert valid tool
@@ -212,6 +214,7 @@ bool C4ToolsDlg::SetLandscapeMode(LandscapeMode mode, bool fThroughControl)
 
 void C4ToolsDlg::AssertValidTexture()
 {
+#ifndef WITH_QT_EDITOR // Qt Editor textures are always valid, because MatTex entries are selected directly
 	// Static map mode only
 	if (::Landscape.GetMode() != LandscapeMode::Static) return;
 	// Ignore if sky
@@ -226,6 +229,7 @@ void C4ToolsDlg::AssertValidTexture()
 			{ SelectTexture(szTexture); return; }
 	}
 	// No valid texture found
+#endif
 }
 
 void C4ToolsDlg::AssertValidBackTexture()
@@ -248,30 +252,30 @@ void C4ToolsDlg::AssertValidBackTexture()
 	// No valid texture found
 }
 
-bool C4ToolsDlg::SelectTexture(const char *szTexture)
+bool C4ToolsDlg::SelectTexture(const char *szTexture, bool by_console_gui)
 {
-	Console.ToolsDlgSelectTexture(this, szTexture);
+	if (!by_console_gui) Console.ToolsDlgSelectTexture(this, szTexture);
 	SetTexture(szTexture);
 	return true;
 }
 
-bool C4ToolsDlg::SelectMaterial(const char *szMaterial)
+bool C4ToolsDlg::SelectMaterial(const char *szMaterial, bool by_console_gui)
 {
-	Console.ToolsDlgSelectMaterial(this, szMaterial);
+	if (!by_console_gui) Console.ToolsDlgSelectMaterial(this, szMaterial);
 	SetMaterial(szMaterial);
 	return true;
 }
 
-bool C4ToolsDlg::SelectBackTexture(const char *szTexture)
+bool C4ToolsDlg::SelectBackTexture(const char *szTexture, bool by_console_gui)
 {
-	Console.ToolsDlgSelectBackTexture(this, szTexture);
+	if (!by_console_gui) Console.ToolsDlgSelectBackTexture(this, szTexture);
 	SetBackTexture(szTexture);
 	return true;
 }
 
-bool C4ToolsDlg::SelectBackMaterial(const char *szMaterial)
+bool C4ToolsDlg::SelectBackMaterial(const char *szMaterial, bool by_console_gui)
 {
-	Console.ToolsDlgSelectBackMaterial(this, szMaterial);
+	if (!by_console_gui) Console.ToolsDlgSelectBackMaterial(this, szMaterial);
 	SetBackMaterial(szMaterial);
 	return true;
 }

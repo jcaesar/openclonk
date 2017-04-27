@@ -72,9 +72,9 @@ void C4Network2UPnPP::Init()
 
 #if MINIUPNPC_API_VERSION == 10
 	// Distributed with Debian jessie.
-	if ((devlist = upnpDiscover(2000, NULL, NULL, 0, 0, &error)))
+	if ((devlist = upnpDiscover(2000, nullptr, nullptr, 0, 0, &error)))
 #else
-	if ((devlist = upnpDiscover(2000, NULL, NULL, UPNP_LOCAL_PORT_ANY, 0, 2, &error)))
+	if ((devlist = upnpDiscover(2000, nullptr, nullptr, UPNP_LOCAL_PORT_ANY, 0, 2, &error)))
 #endif
 	{
 		if ((status = UPNP_GetValidIGD(devlist, &upnp_urls, &igd_data, lanaddr, sizeof(lanaddr))))
@@ -85,6 +85,7 @@ void C4Network2UPnPP::Init()
 		else
 		{
 			ThreadLog("UPnP: No IGD found.");
+			freeUPNPDevlist(devlist);
 		}
 	}
 	else
@@ -99,8 +100,11 @@ C4Network2UPnPP::~C4Network2UPnPP()
 	ClearMappings();
 	action.wait();
 	ProcessEvents(); // necessary for logging
-	FreeUPNPUrls(&upnp_urls);
-	freeUPNPDevlist(devlist);
+	if (initialized)
+	{
+		FreeUPNPUrls(&upnp_urls);
+		freeUPNPDevlist(devlist);
+	}
 }
 
 void C4Network2UPnPP::AddMapping(C4Network2IOProtocol protocol, uint16_t intport, uint16_t extport)

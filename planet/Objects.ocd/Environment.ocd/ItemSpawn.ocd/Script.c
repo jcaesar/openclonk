@@ -5,6 +5,9 @@
 	@author Maikel, Sven2
 */ 
 
+local Name="$Name$";
+local Description="$Description$";
+
 local spawn_id; // Item to be spawned
 local team;     // If assigned, spawner can only be used by specific team
 local spawn_list; // List keeping track of collected objects to block spawning until used up
@@ -41,11 +44,11 @@ public func SetSpawnObject(id def)
 public func Reset(plr)
 {
 	if (!GetType(plr)) plr = GetPlayers(); else plr = [plr];
-		for (p in plr)
-		{
-			spawn_list[p] = nil;
-			UpdateVisibility(p);
-		}
+	for (var p in plr)
+	{
+		spawn_list[p] = nil;
+		UpdateVisibility(p);
+	}
 	return true;
 }
 
@@ -116,7 +119,6 @@ private func FxSpawnTimer(object target, proplist effect, int time)
 }
 
 
-
 /* Player/team changes */
 
 public func InitializePlayer(int plr)
@@ -130,6 +132,17 @@ public func OnTeamSwitch(int plr, int new_team, int old_team)
 {
 	// Broadcast on player team switch: Update visibility
 	return UpdateVisibility(plr);
+}
+
+
+public func OnClonkDeath(object clonk, int killed_by)
+{
+	// Reset spawn on clonk death
+	// This is odd in multi-clonk rounds with spawn points, but the alternative
+	// of not resetting it is probably worse because the spawned item will
+	// usually lie around somewhere.
+	var plr = clonk->GetOwner();
+	if (plr >= 0) Reset(plr);
 }
 
 
@@ -149,3 +162,8 @@ func SaveScenarioObject(props)
 	if (team) props->AddCall("Team", this, "SetTeam", team);
 	return true;
 }
+
+
+/* Editor props */
+
+local EditorProps = { spawn_id = { Name = "$SpawnID$", EditorHelp = "$SpawnIDHelp$", Priority = 100, Type = "def", Filter = "Collectible", Set = "SetSpawnObject" } };

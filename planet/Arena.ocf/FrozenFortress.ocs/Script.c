@@ -10,6 +10,9 @@ protected func Initialize()
 {
 	// Environment 
 	CreateObject(Rule_ObjectFade)->DoFadeTime(10 * 36);
+	
+	GetRelaunchRule()->SetLastWeaponUse(false);
+	
 	var time=CreateObject(Time);
 	time->SetTime();
 	time->SetCycleSpeed();
@@ -151,17 +154,7 @@ protected func InitializePlayer(int plr)
 	return;
 }
 
-// Gamecall from CTF goal, on respawning.
-protected func OnPlayerRelaunch(int plr)
-{
-	var clonk = GetCrew(plr);
-	var relaunch = CreateObjectAbove(RelaunchContainer, clonk->GetX(), clonk->GetY(), clonk->GetOwner());
-	relaunch->StartRelaunch(clonk);
-	relaunch->SetRelaunchTime(8, true);
-	return;
-}
-
-func RelaunchWeaponList() { return [Musket, Sword, Javelin,  FrostboltScroll, Shovel]; }
+func RelaunchWeaponList() { return [Blunderbuss, Sword, Javelin,  FrostboltScroll, Shovel]; }
 
 /*-- Chest filler effects --*/
 
@@ -174,7 +167,7 @@ global func FxFillBaseChestStart(object target, effect, int temporary, bool supp
 	if(effect.supply_type) 
 		var w_list = [Firestone, Dynamite, IronBomb, Shovel, Loam, Ropeladder];
 	else
-		var w_list = [Bow, Shield, Sword, Javelin, Musket, FrostboltScroll];
+		var w_list = [Bow, Shield, Sword, Javelin, Blunderbuss, FrostboltScroll];
 	for(var i=0; i<5; i++)
 		target->CreateChestContents(w_list[i]);
 	return 1;
@@ -190,7 +183,7 @@ global func FxFillBaseChestTimer(object target, effect)
 	}
 	else
 	{
-		var w_list = [Bow, Shield, Sword, Javelin, Musket, FrostboltScroll];
+		var w_list = [Bow, Shield, Sword, Javelin, Blunderbuss, FrostboltScroll];
 		var maxcount = [1,2,1,1,1,2];
 	}
 	
@@ -252,8 +245,8 @@ global func CreateChestContents(id obj_id)
 	var obj = CreateObjectAbove(obj_id);
 	if (obj_id == Bow)
 		obj->CreateContents(Arrow);
-	if (obj_id == Musket)
-		obj->CreateContents(LeadShot);
+	if (obj_id == Blunderbuss)
+		obj->CreateContents(LeadBullet);
 	obj->Enter(this);	
 	return;
 }

@@ -30,6 +30,7 @@ const int16_t C4NetStdPortTCP = 11112,
               C4NetStdPortUDP = 11113,
               C4NetStdPortDiscovery = 11114,
               C4NetStdPortRefServer = 11111,
+              C4NetStdPortPuncher = 11115,
               C4NetStdPortHTTP = 80;
 
 // resource retrieve wait timeout
@@ -45,7 +46,7 @@ const unsigned int C4NetChaseTargetUpdateInterval = 5; // (s)
 
 // reference
 const unsigned int C4NetReferenceUpdateInterval = 120; // (s)
-const unsigned int C4NetMinLeagueUpdateInterval = 10; // (s)
+const unsigned int C4NetMinLeagueUpdateInterval = 1; // (s)
 
 // voting
 const unsigned int C4NetVotingTimeout = 10; // (s)
@@ -192,6 +193,10 @@ protected:
 	class C4Network2HTTPClient *pStreamer;
 	unsigned int iCurrentStreamAmount, iCurrentStreamPosition;
 
+	// puncher
+	C4NetpuncherID NetpuncherGameID;
+	StdCopyStrBuf NetpuncherAddr;
+
 public:
 
 	// data access
@@ -221,7 +226,7 @@ public:
 	// initialization
 	bool InitHost(bool fLobby);
 	InitResult InitClient(const class C4Network2Reference &Ref, bool fObserver);
-	InitResult InitClient(const class C4Network2Address *pAddrs, int iAddrCount, const class C4ClientCore &HostCore, const char *szPassword = NULL);
+	InitResult InitClient(const std::vector<class C4Network2Address>& Addrs, const class C4ClientCore &HostCore, const char *szPassword = nullptr);
 	bool DoLobby();
 	bool Start();
 	bool Pause();
@@ -252,6 +257,8 @@ public:
 	void OnDisconn(C4Network2IOConnection *pConn);
 	void HandlePacket(char cStatus, const C4PacketBase *pBasePkt, C4Network2IOConnection *pConn);
 	void HandleLobbyPacket(char cStatus, const C4PacketBase *pBasePkt, C4Network2IOConnection *pConn);
+	bool HandlePuncherPacket(C4NetpuncherPacket::uptr, C4NetIO::HostAddress::AddressFamily family);
+	void OnPuncherConnect(C4NetIO::addr_t addr);
 
 	// runtime join stuff
 	void OnGameSynchronized();
@@ -264,7 +271,7 @@ public:
 	void DeactivateInactiveClients(); // host
 
 	// league
-	void LeagueGameEvaluate(const char *szRecordName = NULL, const BYTE *pRecordSHA = NULL);
+	void LeagueGameEvaluate(const char *szRecordName = nullptr, const BYTE *pRecordSHA = nullptr);
 	void LeagueSignupDisable(); // if "internet game" button is switched off in lobby: Remove from league server
 	bool LeagueSignupEnable();  // if "internet game" button is switched on in lobby: (re)Add to league server
 	void InvalidateReference(); // forces a recreation and re-send of the game reference in the next execution cycle
@@ -295,6 +302,11 @@ public:
 	bool StartStreaming(C4Record *pRecord);
 	bool FinishStreaming();
 	bool StopStreaming();
+
+	// netpuncher
+	C4NetpuncherID::value& getNetpuncherGameID(C4NetIO::HostAddress::AddressFamily family);
+	C4NetpuncherID getNetpuncherGameID() const { return NetpuncherGameID; };
+	StdStrBuf getNetpuncherAddr() const { return NetpuncherAddr; }
 
 protected:
 
@@ -344,11 +356,34 @@ protected:
 	bool LeagueStart(bool *pCancel);
 	bool LeagueUpdate();
 	bool LeagueUpdateProcessReply();
-	bool LeagueEnd(const char *szRecordName = NULL, const BYTE *pRecordSHA = NULL);
+	bool LeagueEnd(const char *szRecordName = nullptr, const BYTE *pRecordSHA = nullptr);
 
 	// streaming
 	bool StreamIn(bool fFinish);
 	bool StreamOut();
+
+	// puncher
+	void InitPuncher();
+
+	// Manages delayed initial connection attempts.
+	class InitialConnect : protected CStdTimerProc
+	{
+		static const uint32_t DELAY = 100; // ms to wait for each batch
+		static const int ADDR_PER_TRY = 4; // how many connection attempts to start each time
+
+		const std::vector<C4Network2Address>& Addrs;
+		std::vector<C4Network2Address>::const_iterator CurrentAddr;
+		const C4ClientCore& HostCore;
+		const char *Password;
+
+		void TryNext();
+		void Done();
+
+	public:
+		InitialConnect(const std::vector<C4Network2Address>& Addrs, const C4ClientCore& HostCore, const char *Password);
+		~InitialConnect();
+		virtual bool Execute(int, pollfd *) override;
+	};
 };
 
 extern C4Network2 Network;

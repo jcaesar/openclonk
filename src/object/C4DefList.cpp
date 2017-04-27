@@ -42,14 +42,14 @@ namespace
 			if (!def)
 			{
 				DebugLogF("WARNING: Looking up skeleton from definition '%s' failed, because there is no such definition with that ID", definition);
-				return NULL;
+				return nullptr;
 			}
 
 			// append animations, if the definition has a mesh
 			if (!def->Graphics.IsMesh())
 			{
 				DebugLogF("WARNING: Looking up skeleton from definition '%s' failed, because the definition has no mesh", definition);
-				return NULL;
+				return nullptr;
 			}
 			else
 			{
@@ -194,7 +194,7 @@ bool C4DefList::Add(C4Def *pDef, bool fOverload)
 bool C4DefList::Remove(C4ID id)
 {
 	C4Def *cdef,*prev;
-	for (cdef=FirstDef,prev=NULL; cdef; prev=cdef,cdef=cdef->Next)
+	for (cdef=FirstDef,prev=nullptr; cdef; prev=cdef,cdef=cdef->Next)
 		if (cdef->id==id)
 		{
 			if (prev) prev->Next=cdef->Next;
@@ -208,7 +208,7 @@ bool C4DefList::Remove(C4ID id)
 void C4DefList::Remove(C4Def *def)
 {
 	C4Def *cdef,*prev;
-	for (cdef=FirstDef,prev=NULL; cdef; prev=cdef,cdef=cdef->Next)
+	for (cdef=FirstDef,prev=nullptr; cdef; prev=cdef,cdef=cdef->Next)
 		if (cdef==def)
 		{
 			if (prev) prev->Next=cdef->Next;
@@ -226,7 +226,7 @@ void C4DefList::Clear()
 		next=cdef->Next;
 		delete cdef;
 	}
-	FirstDef=NULL;
+	FirstDef=nullptr;
 	// clear quick access table
 	table.clear();
 	// clear loaded skeletons
@@ -235,7 +235,7 @@ void C4DefList::Clear()
 
 C4Def* C4DefList::ID2Def(C4ID id)
 {
-	if (id==C4ID::None) return NULL;
+	if (id==C4ID::None) return nullptr;
 	if (table.empty())
 	{
 		// table not yet built: search list
@@ -250,7 +250,7 @@ C4Def* C4DefList::ID2Def(C4ID id)
 			return it->second;
 	}
 	// none found
-	return NULL;
+	return nullptr;
 }
 
 C4Def * C4DefList::GetByName(const StdStrBuf & name)
@@ -278,13 +278,32 @@ int32_t C4DefList::GetDefCount()
 C4Def* C4DefList::GetDef(int32_t iIndex)
 {
 	C4Def *pDef; int32_t iCurrentIndex;
-	if (iIndex<0) return NULL;
+	if (iIndex<0) return nullptr;
 	for (pDef=FirstDef,iCurrentIndex=-1; pDef; pDef=pDef->Next)
 	{
 		iCurrentIndex++;
 		if (iCurrentIndex==iIndex) return pDef;
 	}
-	return NULL;
+	return nullptr;
+}
+
+std::vector<C4Def*> C4DefList::GetAllDefs(C4String *filter_property) const
+{
+	// Collect vector of all definitions
+	// Filter for those where property evaluates to true if filter_property!=nullptr
+	std::vector<C4Def*> result;
+	result.reserve(filter_property ? 32 : table.size());
+	C4Value prop_val;
+	for (C4Def *def = FirstDef; def; def = def->Next)
+	{
+		if (filter_property)
+		{
+			if (!def->GetPropertyByS(filter_property, &prop_val)) continue;
+			if (!prop_val) continue;
+		}
+		result.push_back(def);
+	}
+	return result;
 }
 
 C4Def *C4DefList::GetByPath(const char *szPath)
@@ -304,14 +323,14 @@ C4Def *C4DefList::GetByPath(const char *szPath)
 						return pDef;
 			}
 	// not found
-	return NULL;
+	return nullptr;
 }
 
 int32_t C4DefList::RemoveTemporary()
 {
 	C4Def *cdef,*prev,*next;
 	int32_t removed=0;
-	for (cdef=FirstDef,prev=NULL; cdef; cdef=next)
+	for (cdef=FirstDef,prev=nullptr; cdef; cdef=next)
 	{
 		next=cdef->Next;
 		if (cdef->Temporary)
@@ -333,7 +352,7 @@ int32_t C4DefList::CheckEngineVersion(int32_t ver1, int32_t ver2)
 {
 	int32_t rcount=0;
 	C4Def *cdef,*prev,*next;
-	for (cdef=FirstDef,prev=NULL; cdef; cdef=next)
+	for (cdef=FirstDef,prev=nullptr; cdef; cdef=next)
 	{
 		next=cdef->Next;
 		if (CompareVersion(cdef->rC4XVer[0],cdef->rC4XVer[1],ver1,ver2) > 0)
@@ -355,7 +374,7 @@ int32_t C4DefList::CheckRequireDef()
 	do
 	{
 		rcount2 = rcount;
-		for (cdef=FirstDef,prev=NULL; cdef; cdef=next)
+		for (cdef=FirstDef,prev=nullptr; cdef; cdef=next)
 		{
 			next=cdef->Next;
 			for (int32_t i = 0; i < cdef->RequireDef.GetNumberOfIDs(); i++)
@@ -379,7 +398,7 @@ void C4DefList::Draw(C4ID id, C4Facet &cgo, bool fSelected, int32_t iColor)
 
 void C4DefList::Default()
 {
-	FirstDef=NULL;
+	FirstDef=nullptr;
 	LoadFailure=false;
 	table.clear();
 }
@@ -434,20 +453,47 @@ void C4DefList::ResetIncludeDependencies()
 		it->second->ResetIncludeDependencies();
 }
 
+void C4DefList::SortByPriority()
+{
+	// Sort all definitions by DefinitionPriority property (descending)
+	// Build vector of definitions
+	int32_t n = GetDefCount();
+	if (!n) return;
+	std::vector<C4Def *> def_vec;
+	def_vec.reserve(n);
+	for (C4Def *def = FirstDef; def; def = def->Next)
+		def_vec.push_back(def);
+	// Sort it
+	std::stable_sort(def_vec.begin(), def_vec.end(), [](C4Def *a, C4Def *b) {
+		return b->GetPropertyInt(P_DefinitionPriority) < a->GetPropertyInt(P_DefinitionPriority);
+	});
+	// Restore linked list in new definition order
+	C4Def *prev_def = nullptr;
+	for (C4Def *def : def_vec)
+	{
+		if (prev_def)
+			prev_def->Next = def;
+		else
+			FirstDef = def;
+		prev_def = def;
+	}
+	if (prev_def) prev_def->Next = nullptr;
+}
+
 void C4DefList::CallEveryDefinition()
 {
-	for (Table::iterator it = table.begin(); it != table.end(); ++it)
+	for (C4Def *def = FirstDef; def; def = def->Next)
 	{
 		if (Config.General.DebugRec)
 		{
 			// TODO: Might not be synchronous on runtime join since is run by joining
 			// client but not by host. Might need to go to Synchronize().
 			char sz[32+1];
-			strncpy(sz, it->first.ToString(), 32+1);
+			strncpy(sz, def->id.ToString(), 32+1);
 			AddDbgRec(RCT_Definition, sz, 32);
 		}
-		C4AulParSet Pars(it->second);
-		it->second->Call(PSF_Definition, &Pars);
+		C4AulParSet Pars(def);
+		def->Call(PSF_Definition, &Pars);
 	}
 }
 

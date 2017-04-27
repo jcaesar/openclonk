@@ -114,7 +114,7 @@ public func HasInteractionMenu() { return true; }
 // Show settins in interaction menu
 public func GetInteractionMenus(object clonk)
 {
-	var menus = _inherited() ?? [];
+	var menus = _inherited(clonk, ...) ?? [];
 	var cablecar_menu =
 	{
 		title = "$CableCarOptions$",
@@ -313,14 +313,14 @@ func DestinationFailed()
 }
 
 // Setup movement process
-func MoveTo(dest)
+func MoveToIndex(int dest)
 {
-	if(GetType(dest) == C4V_Int)
-	{
-		dest = FindObjects(Find_Func("IsCableCrossing"))[dest];
-		if (!dest) return;
-	}
+	var dest_obj = FindObjects(Find_Func("IsCableCrossing"))[dest];
+	if (dest_obj) return MoveTo(dest_obj);
+}
 
+public func MoveTo(object dest)
+{
 	var rail = 0;
 	for(var test_rail in FindObjects(Find_Func("IsConnectedTo", lib_ccar_rail)))
 	{

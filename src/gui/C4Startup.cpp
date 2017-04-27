@@ -16,6 +16,7 @@
 // Startup screen for non-parameterized engine start
 
 #include "C4Include.h"
+#include "C4ForbidLibraryCompilation.h"
 #include "gui/C4Startup.h"
 
 #include "graphics/C4FontLoader.h"
@@ -119,9 +120,9 @@ C4Startup::DialogID C4Startup::eLastDlgID = C4Startup::SDID_Main;
 StdCopyStrBuf C4Startup::sSubDialog = StdCopyStrBuf();
 
 // startup singleton instance
-C4Startup *C4Startup::pInstance = NULL;
+C4Startup *C4Startup::pInstance = nullptr;
 
-C4Startup::C4Startup() : fInStartup(false), pLastDlg(NULL), pCurrDlg(NULL)
+C4Startup::C4Startup() : fInStartup(false), pLastDlg(nullptr), pCurrDlg(nullptr)
 {
 	// must be single!
 	assert(!pInstance);
@@ -130,7 +131,7 @@ C4Startup::C4Startup() : fInStartup(false), pLastDlg(NULL), pCurrDlg(NULL)
 
 C4Startup::~C4Startup()
 {
-	pInstance = NULL;
+	pInstance = nullptr;
 	delete pLastDlg;
 	delete pCurrDlg;
 }
@@ -141,7 +142,7 @@ C4StartupDlg *C4Startup::SwitchDialog(DialogID eToDlg, bool fFade, const char *s
 	if (eToDlg == SDID_Back && (fLastDlgWasBack || !pLastDlg)) eToDlg = SDID_Main;
 	fLastDlgWasBack = false;
 	// create new dialog
-	C4StartupDlg *pToDlg = NULL;
+	C4StartupDlg *pToDlg = nullptr;
 	switch (eToDlg)
 	{
 	case SDID_Main:
@@ -171,7 +172,7 @@ C4StartupDlg *C4Startup::SwitchDialog(DialogID eToDlg, bool fFade, const char *s
 		break;
 	};
 	assert(pToDlg);
-	if (!pToDlg) return NULL;
+	if (!pToDlg) return nullptr;
 	if (pToDlg != pLastDlg)
 	{
 		// remember current position
@@ -190,7 +191,7 @@ C4StartupDlg *C4Startup::SwitchDialog(DialogID eToDlg, bool fFade, const char *s
 		else
 		{
 			delete pLastDlg;
-			pLastDlg = NULL;
+			pLastDlg = nullptr;
 		}
 	}
 	// Okay; now using this dialog
@@ -202,16 +203,16 @@ C4StartupDlg *C4Startup::SwitchDialog(DialogID eToDlg, bool fFade, const char *s
 	{
 		if (!pToDlg->FadeIn(::pGUI))
 		{
-			delete pToDlg; pCurrDlg=NULL;
-			return NULL;
+			delete pToDlg; pCurrDlg=nullptr;
+			return nullptr;
 		}
 	}
 	else
 	{
 		if (!pToDlg->Show(::pGUI, true))
 		{
-			delete pToDlg; pCurrDlg=NULL;
-			return NULL;
+			delete pToDlg; pCurrDlg=nullptr;
+			return nullptr;
 		}
 	}
 	return pToDlg;
@@ -228,8 +229,8 @@ void C4Startup::DoStartup()
 	::GraphicsSystem.EnableLoaderDrawing();
 
 	// clear any previous
-	if (pLastDlg) { delete pLastDlg; pLastDlg = NULL; }
-	if (pCurrDlg) { delete pCurrDlg; pCurrDlg = NULL; }
+	if (pLastDlg) { delete pLastDlg; pLastDlg = nullptr; }
+	if (pCurrDlg) { delete pCurrDlg; pCurrDlg = nullptr; }
 
 	// start with the last dlg that was shown - at first startup main dialog
 	SwitchDialog(eLastDlgID, true, sSubDialog.getData());
@@ -259,7 +260,7 @@ void C4Startup::DoStartup()
 void C4Startup::DontStartup()
 {
 	// check whether startup was aborted
-	delete pLastDlg; pLastDlg = NULL;
+	delete pLastDlg; pLastDlg = nullptr;
 	if (pCurrDlg)
 	{
 		// deinit last shown dlg
@@ -268,7 +269,7 @@ void C4Startup::DontStartup()
 			pCurrDlg->Close(true);
 		}
 		delete pCurrDlg;
-		pCurrDlg = NULL;
+		pCurrDlg = nullptr;
 	}
 
 	// now no more in startup!
@@ -294,7 +295,7 @@ C4Startup *C4Startup::EnsureLoaded()
 		Game.SetInitProgress(37.0f);
 		// load startup specific gfx
 		if (!pStartup->Graphics.Init())
-			{ LogFatal(LoadResStr("IDS_ERR_NOGFXSYS")); delete pStartup; return NULL; }
+			{ LogFatal(LoadResStr("IDS_ERR_NOGFXSYS")); delete pStartup; return nullptr; }
 	}
 	return pInstance;
 }
@@ -302,7 +303,7 @@ C4Startup *C4Startup::EnsureLoaded()
 void C4Startup::Unload()
 {
 	// make sure startup data is destroyed
-	if (pInstance) { delete pInstance; pInstance=NULL; }
+	if (pInstance) { delete pInstance; pInstance=nullptr; }
 }
 
 void C4Startup::InitStartup()

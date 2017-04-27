@@ -32,9 +32,10 @@ public:
 class C4ObjectListChangeListener
 {
 public:
-	virtual void OnObjectRemove(C4ObjectList * pList, C4ObjectLink * pLnk) = 0;
-	virtual void OnObjectAdded(C4ObjectList * pList, C4ObjectLink * pLnk) = 0;
-	virtual void OnObjectRename(C4ObjectList * pList, C4ObjectLink * pLnk) = 0;
+	virtual void OnObjectRemove(C4ObjectList * pList, C4ObjectLink * pLnk) {};
+	virtual void OnObjectAdded(C4ObjectList * pList, C4ObjectLink * pLnk) {};
+	virtual void OnObjectRename(C4ObjectList * pList, C4ObjectLink * pLnk) {};
+	virtual void OnObjectContainerChanged(C4Object *obj, C4Object *old_container, C4Object *new_container) {};
 	virtual ~C4ObjectListChangeListener() { }
 };
 
@@ -116,14 +117,13 @@ public:
 
 	typedef int SortProc(C4Object *, C4Object *);
 
-	virtual bool Add(C4Object *nObj, SortType eSort, C4ObjectList *pLstSorted = NULL);
+	virtual bool Add(C4Object *nObj, SortType eSort, C4ObjectList *pLstSorted = nullptr);
 	bool AddSortCustom(C4Object *nObj, SortProc &pSortProc);
 	virtual bool Remove(C4Object *pObj);
 
 	virtual bool AssignInfo();
 	virtual bool ValidateOwners();
 	StdStrBuf GetNameList(C4DefList &rDefs) const;
-	StdStrBuf GetDataString();
 	bool IsClear() const;
 	bool DenumeratePointers();
 	bool Write(char *szTarget);
@@ -138,8 +138,8 @@ public:
 	int ListIDCount(int32_t dwCategory) const;
 
 	C4Object* GetObject(int Index=0) const;
-	C4Object* GetFirstObject() const { return First ? First->Obj : NULL; }
-	C4Object* GetLastObject() const { return Last ? Last->Obj : NULL; }
+	C4Object* GetFirstObject() const { return First ? First->Obj : nullptr; }
+	C4Object* GetLastObject() const { return Last ? Last->Obj : nullptr; }
 	C4Object* Find(C4Def * def, int iOwner=ANY_OWNER, DWORD dwOCF=OCF_All);
 	C4Object* FindOther(C4ID id, int iOwner=ANY_OWNER);
 
@@ -196,7 +196,7 @@ private:
 	C4ObjectListIterator(const C4ObjectListIterator &rCopy); // no copy ctor
 public:
 	C4ObjectListIterator(C4ObjectList &rList) : rList(rList), pCurr(rList.end()), pCurrID(rList.begin()) {} // ctor
-	C4Object *GetNext(int32_t *piCount); // get next object; return NULL if end is reached
+	C4Object *GetNext(int32_t *piCount); // get next object; return nullptr if end is reached
 };
 
 #endif

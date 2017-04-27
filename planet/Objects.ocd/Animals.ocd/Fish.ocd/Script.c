@@ -55,6 +55,8 @@ func Place(int amount, proplist rectangle, proplist settings)
 	return f; // return last created fish
 }
 
+public func IsAnimal() { return true; }
+
 func Construction()
 {
 	// general stuff	
@@ -230,7 +232,7 @@ func UpdateVisionFor(string set, string range_set, array objects, bool is_food)
 		//CreateParticle("MagicSpark", obj->GetX() - GetX(), obj->GetY() - GetY(), 0, 0, 60, RGB(0, 255, 0));
 		//this->Message("%s@%d (me %d, it %d)", obj->GetName(), d, current_angle, angle);
 		var angle = -VisionMaxAngle;
-		if (d > 0) angle = VisionMaxRange;
+		if (d > 0) angle = VisionMaxAngle;
 		var distance = ObjectDistance(this, obj);
 		brain->Fuzzify(set, angle * distance / VisionMaxRange);
 		if (range_set != nil)
@@ -511,7 +513,7 @@ local ContactCalls = true;
 
 func IsPrey() { return true; }
 
-func Definition(def) {
-	SetProperty("PictureTransformation", Trans_Mul(Trans_Rotate(20,1,0,0),Trans_Rotate(70,0,1,0)), def);
+public func Definition(proplist def)
+{
+	def.PictureTransformation = Trans_Mul(Trans_Translate(0, 600, 0), Trans_Scale(1200), Trans_Rotate(20, 1, 0, 0), Trans_Rotate(70, 0, 1, 0));
 }
-

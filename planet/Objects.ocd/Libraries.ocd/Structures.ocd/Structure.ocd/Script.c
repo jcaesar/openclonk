@@ -25,6 +25,9 @@ protected func Construction()
 	lib_structure.repair_materials = [];
 	// Total value of the components - used to calculate the required material for repairing.
 	lib_structure.total_component_value = nil;
+	// Make a writable copy of the editor action.
+	if (this.EditorActions == GetID().EditorActions)
+		MakePropertyWritable("EditorActions");
 	return _inherited(...);
 }
 
@@ -65,7 +68,7 @@ public func Damage(int change, int cause, int cause_plr)
 private func EjectContentsOnDestruction(int cause, int by_player)
 {
 	// Exit all objects in this structure.
-	for (obj in FindObjects(Find_Container(this)))
+	for (var obj in FindObjects(Find_Container(this)))
 	{
 		// For a non-blast destruction just place the objects at the bottom of the structure.
 		var angle = Random(360);
@@ -96,6 +99,10 @@ private func EjectContentsOnDestruction(int cause, int by_player)
 public func SetBasement(object to_basement)
 {
 	lib_structure.basement = to_basement;
+	if (lib_structure.basement)
+		this.EditorActions.basement = nil;
+	else
+		this.EditorActions.basement = new GetID().EditorActions.basement {};
 	return;
 }
 
@@ -108,6 +115,14 @@ public func GetBasement()
 public func IsStructureWithoutBasement()
 {
 	return IsStructure() && !(lib_structure && lib_structure.basement);
+}
+
+public func AddBasement()
+{
+	var offset = this->~GetBasementOffset() ?? [0, 0];
+	var basement = CreateObject(Basement, offset[0], GetBottom() + 4 + offset[1]);
+	basement->SetParent(this);
+	return;
 }
 
 
@@ -270,7 +285,7 @@ public func RejectInteractionMenu(object clonk)
 // Show damage and allow a player to repair the building when damaged.
 public func GetInteractionMenus(object clonk)
 {
-	var menus = _inherited() ?? [];		
+	var menus = _inherited(clonk, ...) ?? [];		
 	var damage_menu =
 	{
 		title = "$Damage$",
@@ -420,4 +435,22 @@ public func OnRepairMenuHover(id symbol, string action, desc_menu_target, menu_i
 	}
 	
 	GuiUpdateText(text, menu_id, 1, desc_menu_target);
+}
+
+public func Flip()
+{
+	// Mirror structure
+	if (this->~NoConstructionFlip()) return false;
+	return SetDir(1-GetDir());
+}
+
+
+public func Definition(def, ...)
+{
+	if (!def.EditorProps) def.EditorProps = {};
+	if (!def.EditorActions) def.EditorActions = {};
+	def.EditorActions.basement = { Name = "$Basement$", EditorHelp = "$BasementHelp$", Command = "AddBasement()" };
+	if (!def->~NoConstructionFlip())
+		def.EditorActions.flip = { Name = "$Flip$", EditorHelp = "$FlipHelp$", Command = "Flip()" };
+	return _inherited(def, ...);
 }

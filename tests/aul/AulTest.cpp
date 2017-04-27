@@ -18,12 +18,21 @@
 #include <C4Include.h>
 
 #include "AulTest.h"
+#include "ErrorHandler.h"
 
 #include "script/C4ScriptHost.h"
 #include "lib/C4Random.h"
 #include "object/C4DefList.h"
 #include "TestLog.h"
 
+<<<<<<< HEAD
+=======
+void AulTest::SetUp()
+{
+	part_count = 0;
+}
+
+>>>>>>> master
 C4Value AulTest::RunScript(const std::string &code)
 {
 	class OnScopeExit
@@ -45,7 +54,7 @@ C4Value AulTest::RunScript(const std::string &code)
 	src += "::";
 	src += test_info->name();
 	src += "::";
-	src += std::to_string(test_info->result()->total_part_count());
+	src += std::to_string(part_count++);
 	src += ">";
 
 	GameScript.LoadData(src.c_str(), code.c_str(), NULL);
@@ -135,6 +144,50 @@ for (var i in a) {
 }
 return b;
 )"));
+
+	// Test syntax errors inside loops
+	{
+		// Syntax error in for loop initializer
+		ErrorHandler errh;
+		EXPECT_CALL(errh, OnError(::testing::_));
+		EXPECT_THROW(RunCode("for (var i = missing();;) break;"), C4AulExecError);
+	}
+	{
+		// Syntax error in for loop condition
+		ErrorHandler errh;
+		EXPECT_CALL(errh, OnError(::testing::_));
+		EXPECT_THROW(RunCode("for (; missing();) break;"), C4AulExecError);
+	}
+	{
+		// Syntax error in for loop incrementor
+		ErrorHandler errh;
+		EXPECT_CALL(errh, OnError(::testing::_));
+		EXPECT_THROW(RunCode("for (;; missing()) continue;"), C4AulExecError);
+	}
+	{
+		// Syntax error in for loop body
+		ErrorHandler errh;
+		EXPECT_CALL(errh, OnError(::testing::_));
+		EXPECT_THROW(RunCode("for (;;) missing();"), C4AulExecError);
+	}
+	{
+		// Syntax error in while loop condition
+		ErrorHandler errh;
+		EXPECT_CALL(errh, OnError(::testing::_));
+		EXPECT_THROW(RunCode("while (missing()) break;"), C4AulExecError);
+	}
+	{
+		// Syntax error in while loop body
+		ErrorHandler errh;
+		EXPECT_CALL(errh, OnError(::testing::_));
+		EXPECT_THROW(RunCode("while (1) missing();"), C4AulExecError);
+	}
+	{
+		// Syntax error in for-in loop body
+		ErrorHandler errh;
+		EXPECT_CALL(errh, OnError(::testing::_));
+		EXPECT_THROW(RunCode("for (var i in [1]) { missing(); }"), C4AulExecError);
+	}
 }
 
 TEST_F(AulTest, Locals)
@@ -164,6 +217,11 @@ static const b = new a {
 };
 func Main() { return b->c(); }
 )"));
+<<<<<<< HEAD
+=======
+
+	EXPECT_THROW(RunScript("func foo() { return { bar: func() {} }; }"), C4AulError);
+>>>>>>> master
 }
 
 TEST_F(AulTest, Eval)
@@ -177,6 +235,17 @@ TEST_F(AulTest, Vars)
 {
 	EXPECT_EQ(C4VInt(42), RunCode("var i = 21; i = i + i; return i;"));
 	EXPECT_EQ(C4VInt(42), RunCode("var i = -42; i = Abs(i); return i;"));
+}
+
+TEST_F(AulTest, GlobalVariables)
+{
+	EXPECT_EQ(C4V_PropList, RunScript("static const a = {}; func Main() { return a; }").GetType());
+	{
+		// #1850: Uncaught C4AulParseError with error in System.ocg script
+		ErrorHandler errh;
+		EXPECT_CALL(errh, OnError(::testing::_)).Times(1);
+		EXPECT_NO_THROW(RunScript("static a = {}; func Main() {}"));
+	}
 }
 
 TEST_F(AulTest, ParameterPassing)
@@ -222,6 +291,7 @@ TEST_F(AulTest, Conditionals)
 	EXPECT_EQ(C4VInt(1), RunCode("if (true) return 1; else return 2;"));
 	EXPECT_EQ(C4VInt(2), RunCode("if (false) return 1; else return 2;"));
 }
+<<<<<<< HEAD
 
 TEST_F(AulTest, Warnings)
 {
@@ -238,3 +308,5 @@ TEST_F(AulTest, NoWarnings)
 	EXPECT_CALL(log, DebugLog(testing::StartsWith("WARNING:"))).Times(0);
 	EXPECT_EQ(C4Value(), RunScript("func Main(string s, object o, array a) { var x; Sin(x); }"));
 }
+=======
+>>>>>>> master

@@ -21,8 +21,6 @@
 #define INC_STANDARD
 
 #include <type_traits>
-#pragma push_macro("new")
-#undef new
 
 // The Clear/Default functions that exist on most OpenClonk classes are A
 // BAD IDEA because the caller has no guarantee that every member has been
@@ -39,7 +37,6 @@ inline InplaceReconstruct(T *obj)
 	obj->~T();
 	new (obj) T();
 }
-#pragma pop_macro("new")
 
 #include "platform/PlatformAbstraction.h"
 
@@ -120,7 +117,7 @@ void SDelete(char *szString, int iLen, int iPosition=0);
 
 int  SCharPos(char cTarget, const char *szInStr, int iIndex=0);
 int  SCharLastPos(char cTarget, const char *szInStr);
-unsigned int  SCharCount(char cTarget, const char *szInStr, const char *cpUntil=NULL);
+unsigned int  SCharCount(char cTarget, const char *szInStr, const char *cpUntil=nullptr);
 unsigned int  SCharCountEx(const char *szString, const char *szCharList);
 
 void SReplaceChar(char *str, char fc, char tc);
@@ -132,7 +129,7 @@ const char *SAdvanceSpace(const char *szSPos);
 const char *SAdvancePast(const char *szSPos, char cPast);
 
 bool SGetModule(const char *szList, int iIndex, char *sTarget, int iSize=-1);
-bool SIsModule(const char *szList, const char *szString, int *ipIndex=NULL, bool fCaseSensitive=false);
+bool SIsModule(const char *szList, const char *szString, int *ipIndex=nullptr, bool fCaseSensitive=false);
 bool SAddModule(char *szList, const char *szModule, bool fCaseSensitive=false);
 bool SAddModules(char *szList, const char *szModules, bool fCaseSensitive=false);
 bool SRemoveModule(char *szList, const char *szModule, bool fCaseSensitive=false);
@@ -158,6 +155,10 @@ bool SWildcardMatchEx(const char *szString, const char *szWildcard);
 #include <cstdio>
 #include <cstdarg>
 
+#ifdef _WIN32
+#define vsnprintf _vsprintf_p
+#endif
+
 // old, insecure sprintf
 inline int osprintf(char *str, const char *fmt, ...) GNUC_FORMAT_ATTRIBUTE_O;
 inline int osprintf(char *str, const char *fmt, ...)
@@ -182,5 +183,9 @@ inline int ssprintf(char(&str)[N], const char *fmt, ...)
 
 // Checks a string for conformance with UTF-8
 bool IsValidUtf8(const char *string, int length = -1);
+
+
+std::string vstrprintf(const char *format, va_list args);
+std::string strprintf(const char *format, ...) GNUC_FORMAT_ATTRIBUTE;
 
 #endif // INC_STANDARD

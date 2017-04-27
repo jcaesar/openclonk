@@ -54,14 +54,14 @@ static const char *DirectorySeparators = "/";
 
 char *GetFilename(char *szPath)
 {
-	if (!szPath) return NULL;
+	if (!szPath) return nullptr;
 	char *pPos,*pFilename=szPath;
 	for (pPos=szPath; *pPos; pPos++) if (*pPos==DirectorySeparator || *pPos=='/') pFilename = pPos+1;
 	return pFilename;
 }
 const char *GetFilename(const char *szPath)
 {
-	if (!szPath) return NULL;
+	if (!szPath) return nullptr;
 	const char *pPos,*pFilename=szPath;
 	for (pPos=szPath; *pPos; pPos++) if (*pPos==DirectorySeparator || *pPos=='/') pFilename = pPos+1;
 	return pFilename;
@@ -81,7 +81,7 @@ const char* GetFilenameOnly(const char *strFilename)
 const char *GetC4Filename(const char *szPath)
 {
 	// returns path to file starting at first .c4*-directory.
-	if (!szPath) return NULL;
+	if (!szPath) return nullptr;
 	const char *pPos,*pFilename=szPath;
 	for (pPos=szPath; *pPos; pPos++)
 	{
@@ -113,14 +113,14 @@ int GetTrailingNumber(const char *strString)
 
 char *GetFilenameWeb(char *szPath)
 {
-	if (!szPath) return NULL;
+	if (!szPath) return nullptr;
 	char *pPos, *pFilename=szPath;
 	for (pPos=szPath; *pPos; pPos++) if (*pPos == '/') pFilename = pPos+1;
 	return pFilename;
 }
 const char *GetFilenameWeb(const char *szPath)
 {
-	if (!szPath) return NULL;
+	if (!szPath) return nullptr;
 	const char *pPos, *pFilename=szPath;
 	for (pPos=szPath; *pPos; pPos++) if (*pPos == '/') pFilename = pPos+1;
 	return pFilename;
@@ -158,7 +158,7 @@ void RealPath(const char *szFilename, char *pFullFilename)
 	SCopy(path.getData(), pFullFilename, _MAX_PATH);
 	free(wpath);
 #else
-	char *pSuffix = NULL;
+	char *pSuffix = nullptr;
 	char szCopy[_MAX_PATH + 1];
 	for (;;)
 	{
@@ -216,16 +216,6 @@ bool GetParentPath(const char *szFilename, StdStrBuf *outBuf)
 	if (!GetParentPath(szFilename, buf)) return false;
 	outBuf->Copy(buf);
 	return true;
-}
-
-bool GetRelativePath(const char *strPath, const char *strRelativeTo, char *strBuffer, int iBufferSize)
-{
-	// Specified path is relative to base path
-	// Copy relative section
-	const char *szCpy;
-	SCopy(szCpy=GetRelativePathS(strPath, strRelativeTo), strBuffer, iBufferSize);
-	// return whether it was made relative
-	return szCpy!=strPath;
 }
 
 const char *GetRelativePathS(const char *strPath, const char *strRelativeTo)
@@ -397,7 +387,7 @@ bool WildcardMatch(const char *szWildcard, const char *szString)
 	if (!szString || !szWildcard) return false;
 	// match char-wise
 	const char *pWild = szWildcard, *pPos = szString;
-	const char *pLWild = NULL, *pLPos = NULL; // backtracking
+	const char *pLWild = nullptr, *pLPos = nullptr; // backtracking
 	while (*pWild || pLWild)
 		// string wildcard?
 		if (*pWild == '*')
@@ -653,7 +643,7 @@ bool CreatePath(const std::string &path)
 {
 	assert(!path.empty());
 #ifdef _WIN32
-	if (CreateDirectoryW(GetWideChar(path.c_str()), NULL))
+	if (CreateDirectoryW(GetWideChar(path.c_str()), nullptr))
 	{
 		return true;
 	}
@@ -671,7 +661,7 @@ bool CreatePath(const std::string &path)
 		{
 			wchar_t * str;
 			if (FormatMessageW(FORMAT_MESSAGE_ALLOCATE_BUFFER|FORMAT_MESSAGE_FROM_SYSTEM|FORMAT_MESSAGE_IGNORE_INSERTS,
-			                  NULL, err, 0, (LPWSTR)&str, 0, NULL))
+			                  nullptr, err, 0, (LPWSTR)&str, 0, nullptr))
 			{
 				LogF("CreateDirectory failed: %s", StdStrBuf(str).getData());
 				LocalFree(str);
@@ -989,13 +979,16 @@ void DirectoryIterator::Read(const char *dirname)
 		// ...unless they're . or ..
 		if (file.cFileName[0] == '.' && (file.cFileName[1] == '\0' || (file.cFileName[1] == '.' && file.cFileName[2] == '\0')))
 			continue;
-		p->files.push_back(StdStrBuf(file.cFileName).getData());
+
+		size_t size = (file.nFileSizeHigh * (size_t(MAXDWORD) + 1)) + file.nFileSizeLow;
+
+		p->files.emplace_back(StdStrBuf(file.cFileName).getData(), size);
 	}
 	while (FindNextFileW(fh, &file));
 	FindClose(fh);
 #else
 	DIR *fh = opendir(dirname);
-	if (fh == NULL)
+	if (fh == nullptr)
 	{
 		switch (errno)
 		{
@@ -1011,19 +1004,19 @@ void DirectoryIterator::Read(const char *dirname)
 	}
 	dirent *file;
 	// Insert files into list
-	while ((file = readdir(fh)) != NULL)
+	while ((file = readdir(fh)) != nullptr)
 	{
 		// ...unless they're . or ..
 		if (file->d_name[0] == '.' && (file->d_name[1] == '\0' || (file->d_name[1] == '.' && file->d_name[2] == '\0')))
 			continue;
-		p->files.push_back(file->d_name);
+		p->files.emplace_back(file->d_name, 0);
 	}
 	closedir(fh);
 #endif
 	// Sort list
 	std::sort(p->files.begin(), p->files.end());
 	for (FileList::iterator it = p->files.begin(); it != p->files.end(); ++it)
-		it->insert(0, search_path); // prepend path to all file entries
+		it->first.insert(0, search_path); // prepend path to all file entries
 	iter = p->files.begin();
 	p->directory = dirname;
 }
@@ -1038,14 +1031,23 @@ DirectoryIterator& DirectoryIterator::operator++()
 const char * DirectoryIterator::operator*() const
 {
 	if (iter == p->files.end())
-		return NULL;
-	return iter->c_str();
+		return nullptr;
+	return iter->first.c_str();
 }
 DirectoryIterator DirectoryIterator::operator++(int)
 {
 	DirectoryIterator tmp(*this);
 	++*this;
 	return tmp;
+}
+
+size_t DirectoryIterator::GetFileSize() const
+{
+#ifdef _WIN32
+	return iter->second;
+#else
+	return FileSize(iter->first.c_str());
+#endif
 }
 
 int ForEachFile(const char *szDirName, bool (*fnCallback)(const char *))

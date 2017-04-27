@@ -59,6 +59,14 @@ protected func InitializePlayer(int plr)
 	while (crew = GetCrew(plr, index))
 	{
 		crew->SetPosition(96 + RandomX(-12, 12), LandscapeHeight() - 92);
+		var u = 0;
+		while(crew->Stuck())
+		{
+			crew->SetPosition(crew->GetX(), crew->GetY()-1);
+			++u;
+			if (u > 50) // This is bad, the clonk will most likely die
+				break;
+		}
 
 		// First clonk can construct, others can chop.
 		if (index == 0)
@@ -174,9 +182,9 @@ private func InitVegetation(int map_size, int difficulty)
 	// Place some cocont trees and cave mushrooms for wood.
 	for (var i = 0; i < 16 + Random(6); i++)
 	{
-		PlaceVegetation(Tree_Coconut, top.x, top.y, top.w, top.h, 1000 * (61 + Random(40)));
-		PlaceVegetation(Tree_Coconut, middle.x, middle.y, middle.w, middle.h, 1000 * (61 + Random(40)));
-		PlaceVegetation(Tree_Coconut, bottom.x, bottom.y, bottom.w, bottom.h, 1000 * (61 + Random(40)));
+		PlaceVegetation(Tree_Coconut, top.x, top.y, top.wdt, top.hgt, 1000 * (61 + Random(40)));
+		PlaceVegetation(Tree_Coconut, middle.x, middle.y, middle.wdt, middle.hgt, 1000 * (61 + Random(40)));
+		PlaceVegetation(Tree_Coconut, bottom.x, bottom.y, bottom.wdt, bottom.hgt, 1000 * (61 + Random(40)));
 	}
 	LargeCaveMushroom->Place(6, middle, { terraform = false });
 	LargeCaveMushroom->Place(6, bottom, { terraform = false });

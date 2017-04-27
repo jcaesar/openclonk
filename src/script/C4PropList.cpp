@@ -20,8 +20,6 @@
 
 #include "script/C4Aul.h"
 #include "object/C4GameObjects.h"
-#include "game/C4Game.h"
-#include "object/C4Object.h"
 #include "control/C4Record.h"
 
 void C4PropList::AddRef(C4Value *pRef)
@@ -185,7 +183,7 @@ void C4PropListNumbered::CompileFunc(StdCompiler *pComp, C4ValueNumbers * number
 	pComp->Value(n);
 	pComp->Separator(StdCompiler::SEP_SEP2);
 	C4PropList::CompileFunc(pComp, numbers);
-	if (pComp->isCompiler())
+	if (pComp->isDeserializer())
 	{
 		if (PropLists.Get(n))
 		{
@@ -241,7 +239,7 @@ void C4PropListScript::ClearScriptPropLists()
 
 void C4PropListStatic::RefCompileFunc(StdCompiler *pComp, C4ValueNumbers * numbers) const
 {
-	assert(!pComp->isCompiler());
+	assert(!pComp->isDeserializer());
 	if (Parent)
 	{
 		Parent->RefCompileFunc(pComp, numbers);
@@ -275,12 +273,79 @@ const char *C4PropListStatic::GetName() const
 }
 
 C4PropList::C4PropList(C4PropList * prototype):
-		FirstRef(NULL), prototype(prototype),
+		FirstRef(nullptr), prototype(prototype),
 		constant(false), Status(1)
 {
 #ifdef _DEBUG	
 	PropLists.Add(this);
 #endif
+}
+
+void C4PropList::ThawRecursively()
+{
+	//thaw self and all owned properties
+	Thaw();
+	C4PropListStatic *s = IsStatic();
+	//if (s) LogF("Thaw: %s", s->GetDataString().getData());
+	auto prop_names = GetUnsortedProperties(nullptr, ::ScriptEngine.GetPropList());
+	for (auto prop_name : prop_names)
+	{
+		C4Value child_val;
+		GetPropertyByS(prop_name, &child_val);
+		//LogF("  %s=%s", prop_name->GetCStr(), child_val.GetDataString(1).getData());
+		C4PropList *child_proplist = child_val.getPropList();
+		if (child_proplist && child_proplist->IsFrozen())
+		{
+			child_proplist->ThawRecursively();
+		}
+	}
+}
+
+C4PropListStatic *C4PropList::FreezeAndMakeStaticRecursively(std::vector<C4Value>* prop_lists, const C4PropListStatic *parent, C4String * key)
+{
+	Freeze();
+	// Already static?
+	C4PropListStatic *this_static = IsStatic();
+	if (!this_static)
+	{
+		// Make self static by creating a copy and replacing all references
+		this_static = NewStatic(GetPrototype(), parent, key);
+		this_static->Properties.Swap(&Properties); // grab properties
+		this_static->Status = Status;
+		C4Value holder = C4VPropList(this);
+		while (FirstRef && FirstRef->NextRef)
+		{
+			C4Value *ref = FirstRef;
+			if (ref == &holder) ref = ref->NextRef;
+			ref->SetPropList(this_static);
+		}
+		// store reference
+		if (prop_lists)
+		{
+			prop_lists->push_back(C4VPropList(this_static));
+		}
+		// "this" should be deleted as holder goes out of scope
+	}
+	// Iterate over sorted list of elements to make static
+	// Must iterate over sorted list because the order must be defined, just in case it's a network game
+	// and a non-static child proplist is available through different paths it should still get the same name
+	auto prop_names = this_static->GetSortedLocalProperties(false);
+	for (auto prop_name : prop_names)
+	{
+		C4Value child_val;
+		this_static->GetPropertyByS(prop_name, &child_val);
+		C4PropList *child_proplist = child_val.getPropList();
+		if (child_proplist)
+		{
+			// Avoid infinite recursion: Only freeze into unfrozen children and "true" static children
+			C4PropListStatic *child_static = child_proplist->IsStatic();
+			if (!child_static || (child_static->GetParent() == this_static && child_static->GetParentKeyName() == prop_name))
+			{
+				child_proplist->FreezeAndMakeStaticRecursively(prop_lists, this_static, prop_name);
+			}
+		}
+	}
+	return this_static;
 }
 
 void C4PropList::Denumerate(C4ValueNumbers * numbers)
@@ -303,7 +368,7 @@ C4PropList::~C4PropList()
 		FirstRef->Data = 0; FirstRef->Type = C4V_Nil;
 		C4Value *ref = FirstRef;
 		FirstRef = FirstRef->NextRef;
-		ref->NextRef = NULL;
+		ref->NextRef = nullptr;
 	}
 #ifdef _DEBUG
 	assert(PropLists.Has(this));
@@ -335,7 +400,7 @@ void C4PropList::CompileFunc(StdCompiler *pComp, C4ValueNumbers * numbers)
 	bool oldFormat = false;
 	// constant proplists are not serialized to savegames, but recreated from the game data instead
 	assert(!constant);
-	if (pComp->isCompiler() && pComp->hasNaming())
+	if (pComp->isDeserializer() && pComp->hasNaming())
 	{
 		// backwards compat to savegames and scenarios before 5.5
 		try
@@ -385,7 +450,7 @@ template<typename T>
 void C4Set<T>::CompileFunc(StdCompiler *pComp, C4ValueNumbers * numbers)
 {
 	bool fNaming = pComp->hasNaming();
-	if (pComp->isCompiler())
+	if (pComp->isDeserializer())
 	{
 		// Compiling: Empty previous
 		Clear();
@@ -438,10 +503,10 @@ void C4Set<T>::CompileFunc(StdCompiler *pComp, C4ValueNumbers * numbers)
 void C4Property::CompileFunc(StdCompiler *pComp, C4ValueNumbers * numbers)
 {
 	StdStrBuf s;
-	if (!pComp->isCompiler())
+	if (!pComp->isDeserializer())
 		s = Key->GetData();
 	pComp->Value(s);
-	if (pComp->isCompiler())
+	if (pComp->isDeserializer())
 	{
 		if (Key) Key->DecRef();
 		Key = ::Strings.RegString(s);
@@ -451,7 +516,7 @@ void C4Property::CompileFunc(StdCompiler *pComp, C4ValueNumbers * numbers)
 	pComp->Value(mkParAdapt(Value, numbers));
 }
 
-void C4PropList::AppendDataString(StdStrBuf * out, const char * delim, int depth) const
+void C4PropList::AppendDataString(StdStrBuf * out, const char * delim, int depth, bool ignore_reference_parent) const
 {
 	StdStrBuf & DataString = *out;
 	if (depth <= 0 && Properties.GetSize())
@@ -465,8 +530,97 @@ void C4PropList::AppendDataString(StdStrBuf * out, const char * delim, int depth
 		if (p != sorted_props.begin()) DataString.Append(delim);
 		DataString.Append((*p)->Key->GetData());
 		DataString.Append(" = ");
-		DataString.Append((*p)->Value.GetDataString(depth - 1));
+		DataString.Append((*p)->Value.GetDataString(depth - 1, ignore_reference_parent ? IsStatic() : nullptr));
 	}
+}
+
+StdStrBuf C4PropList::ToJSON(int depth, bool ignore_reference_parent) const
+{
+	if (depth <= 0 && Properties.GetSize())
+	{
+		throw new C4JSONSerializationError("maximum depth reached");
+	}
+	StdStrBuf DataString;
+	DataString = "{";
+	std::list<const C4Property *> sorted_props = Properties.GetSortedListOfElementPointers();
+	for (std::list<const C4Property *>::const_iterator p = sorted_props.begin(); p != sorted_props.end(); ++p)
+	{
+		if (p != sorted_props.begin()) DataString.Append(",");
+		DataString.Append(C4Value((*p)->Key).ToJSON());
+		DataString.Append(":");
+		DataString.Append((*p)->Value.ToJSON(depth - 1, ignore_reference_parent ? IsStatic() : nullptr));
+	}
+	DataString.Append("}");
+	return DataString;
+}
+
+std::vector< C4String * > C4PropList::GetSortedLocalProperties(bool add_prototype) const
+{
+	// return property list without descending into prototype
+	std::list<const C4Property *> sorted_props = Properties.GetSortedListOfElementPointers();
+	std::vector< C4String * > result;
+	result.reserve(sorted_props.size() + add_prototype);
+	if (add_prototype) result.push_back(&::Strings.P[P_Prototype]); // implicit prototype for every prop list
+	for (auto p : sorted_props) result.push_back(p->Key);
+	return result;
+}
+
+std::vector< C4String * > C4PropList::GetSortedLocalProperties(const char *prefix, const C4PropList *ignore_overridden) const
+{
+	// return property list without descending into prototype
+	// ignore properties that have been overridden by proplist given in ignore_overridden or any of its prototypes up to and excluding this
+	std::vector< C4String * > result;
+	for (const C4Property *pp = Properties.First(); pp; pp = Properties.Next(pp))
+		if (pp->Key != &::Strings.P[P_Prototype])
+			if (!prefix || pp->Key->GetData().BeginsWith(prefix))
+			{
+				// Override check
+				const C4PropList *check = ignore_overridden;
+				bool overridden = false;
+				if (check && check != this)
+				{
+					if (check->HasProperty(pp->Key)) { overridden = true; break; }
+					check = check->GetPrototype();
+				}
+				result.push_back(pp->Key);
+			}
+	// Sort
+	std::sort(result.begin(), result.end(), [](const C4String *a, const C4String *b) -> bool
+	{
+		return strcmp(a->GetCStr(), b->GetCStr()) < 0;
+	});
+	return result;
+}
+
+std::vector< C4String * > C4PropList::GetUnsortedProperties(const char *prefix, C4PropList *ignore_parent) const
+{
+	// Return property list with descending into prototype
+	// But do not include Prototype property
+	std::vector< C4String * > result;
+	const C4PropList *p = this;
+	do
+	{
+		for (const C4Property *pp = p->Properties.First(); pp; pp = p->Properties.Next(pp))
+			if (pp->Key != &::Strings.P[P_Prototype])
+				if (!prefix || pp->Key->GetData().BeginsWith(prefix))
+					result.push_back(pp->Key);
+		p = p->GetPrototype();
+		if (p == ignore_parent) break;
+	} while (p);
+	return result;
+}
+
+std::vector< C4String * > C4PropList::GetSortedProperties(const char *prefix, C4PropList *ignore_parent) const
+{
+	// Return property list with descending into prototype
+	// But do not include Prototype property
+	std::vector< C4String * > result = GetUnsortedProperties(prefix, ignore_parent);
+	// Sort
+	std::sort(result.begin(), result.end(), [](const C4String *a, const C4String *b) -> bool
+	{
+		return strcmp(a->GetCStr(), b->GetCStr()) < 0;
+	});
+	return result;
 }
 
 const char * C4PropList::GetName() const
@@ -487,8 +641,13 @@ void C4PropList::SetName(const char* NewName)
 }
 
 
-
 C4Object * C4PropList::GetObject()
+{
+	if (GetPrototype()) return GetPrototype()->GetObject();
+	return 0;
+}
+
+C4Object const * C4PropList::GetObject() const
 {
 	if (GetPrototype()) return GetPrototype()->GetObject();
 	return 0;
@@ -509,13 +668,13 @@ C4Def const * C4PropList::GetDef() const
 class C4MapScriptLayer * C4PropList::GetMapScriptLayer()
 {
 	if (GetPrototype()) return GetPrototype()->GetMapScriptLayer();
-	return NULL;
+	return nullptr;
 }
 
 class C4MapScriptMap * C4PropList::GetMapScriptMap()
 {
 	if (GetPrototype()) return GetPrototype()->GetMapScriptMap();
-	return NULL;
+	return nullptr;
 }
 
 C4PropListNumbered * C4PropList::GetPropListNumbered()
@@ -530,9 +689,8 @@ C4Effect * C4PropList::GetEffect()
 	return 0;
 }
 
-
 template<> template<>
-unsigned int C4Set<C4Property>::Hash<C4String *>(C4String * const & e)
+unsigned int C4Set<C4Property>::Hash<const C4String *>(C4String const * const & e)
 {
 	assert(e);
 	unsigned int hash = 4, tmp;
@@ -550,6 +708,18 @@ unsigned int C4Set<C4Property>::Hash<C4String *>(C4String * const & e)
 }
 
 template<> template<>
+unsigned int C4Set<C4Property>::Hash<C4String *>(C4String * const & e)
+{
+	return Hash<const C4String *>(e);
+}
+
+template<> template<>
+bool C4Set<C4Property>::Equals<const C4String *>(C4Property const & a, C4String const * const & b)
+{
+	return a.Key == b;
+}
+
+template<> template<>
 bool C4Set<C4Property>::Equals<C4String *>(C4Property const & a, C4String * const & b)
 {
 	return a.Key == b;
@@ -561,7 +731,7 @@ unsigned int C4Set<C4Property>::Hash<C4Property>(C4Property const & p)
 	return C4Set<C4Property>::Hash(p.Key);
 }
 
-bool C4PropList::GetPropertyByS(C4String * k, C4Value *pResult) const
+bool C4PropList::GetPropertyByS(const C4String * k, C4Value *pResult) const
 {
 	if (Properties.Has(k))
 	{
@@ -652,7 +822,7 @@ C4Value C4PropList::Call(const char * s, C4AulParSet *Pars, bool fPassErrors)
 			C4AulExecError err(FormatString("Undefined function: %s", s).getData());
 			if (fPassErrors)
 				throw err;
-			err.show();
+			::ScriptEngine.GetErrorHandler()->OnError(err.what());
 		}
 		return C4Value();
 	}
@@ -674,6 +844,20 @@ C4PropertyName C4PropList::GetPropertyP(C4PropertyName n) const
 		return GetPrototype()->GetPropertyP(n);
 	}
 	return P_LAST;
+}
+
+int32_t C4PropList::GetPropertyBool(C4PropertyName n, bool default_val) const
+{
+	C4String * k = &Strings.P[n];
+	if (Properties.Has(k))
+	{
+		return Properties.Get(k).Value.getBool();
+	}
+	if (GetPrototype())
+	{
+		return GetPrototype()->GetPropertyBool(n, default_val);
+	}
+	return default_val;
 }
 
 int32_t C4PropList::GetPropertyInt(C4PropertyName n, int32_t default_val) const
@@ -701,7 +885,7 @@ C4PropList *C4PropList::GetPropertyPropList(C4PropertyName n) const
 	{
 		return GetPrototype()->GetPropertyPropList(n);
 	}
-	return NULL;
+	return nullptr;
 }
 
 C4ValueArray * C4PropList::GetProperties() const

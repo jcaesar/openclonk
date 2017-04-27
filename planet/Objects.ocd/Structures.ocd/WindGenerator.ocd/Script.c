@@ -31,6 +31,8 @@ protected func Construction()
 	return;
 }
 
+public func IsHammerBuildable() { return true; }
+
 protected func Initialize()
 {
 	// First initialize the libraries (especially the flag library).
@@ -129,7 +131,7 @@ public func HasInteractionMenu() { return true; }
 // Show hint about efficiency in the interaction menu.
 public func GetInteractionMenus(object clonk)
 {
-	var menus = _inherited() ?? [];
+	var menus = _inherited(clonk, ...) ?? [];
 	var prod_menu =
 	{
 		title = "$Efficiency$",
@@ -169,6 +171,7 @@ public func GetInfoMenuEntries()
 protected func Definition(def) 
 {
 	SetProperty("PictureTransformation", Trans_Mul(Trans_Translate(2000, 0, 7000), Trans_Rotate(-20, 1, 0, 0), Trans_Rotate(30, 0, 1, 0)), def);
+	return _inherited(def, ...);
 }
 
 local Name = "$Name$";

@@ -25,7 +25,6 @@
 #include "object/C4IDList.h"
 #include "script/C4ValueMap.h"
 #include "graphics/C4Facet.h"
-#include "graphics/C4Surface.h"
 #include "c4group/C4ComponentHost.h"
 #include "script/C4PropList.h"
 
@@ -149,6 +148,7 @@ public:
 	int32_t RotatedEntrance;  // 0 entrance not rotateable, 1 entrance always, 2-360 entrance within this rotation
 	int32_t NoTransferZones;
 	int32_t AllowPictureStack; // allow stacking of multiple items in menus even if some attributes do not match. APS_*-values
+	bool HideInCreator;       // If true, the definition is not visible in the object creator of the editor
 public:
 	void DefaultDefCore();
 	bool LoadDefCore(C4Group &hGroup);
@@ -177,6 +177,7 @@ public:
 	~C4Def();
 public:
 	char Filename[_MAX_FNAME+1];
+	StdCopyStrBuf ConsoleGroupPath; // file path as used in the definition list viewer in the console. Only initialized in editor mode.
 	int32_t Creation;
 	int32_t Count; // number of instanciations
 
@@ -207,7 +208,7 @@ public:
 		DWORD dwLoadWhat, const char *szLanguage,
 		class C4SoundSystem *pSoundSystem = nullptr,
 		C4DefGraphicsPtrBackup *gfx_backup = nullptr);
-	void Draw(C4Facet &cgo, bool fSelected=false, DWORD iColor=0, C4Object *pObj=NULL, int32_t iPhaseX=0, int32_t iPhaseY=0, C4DrawTransform* trans=NULL, const char * graphicsName=NULL);
+	void Draw(C4Facet &cgo, bool fSelected=false, DWORD iColor=0, C4Object *pObj=nullptr, int32_t iPhaseX=0, int32_t iPhaseY=0, C4DrawTransform* trans=nullptr, const char * graphicsName=nullptr);
 
 	inline C4Facet &GetMainFace(C4DefGraphics *pGraphics, DWORD dwClr=0) { MainFace.Surface=pGraphics->GetBitmap(dwClr); return MainFace; }
 	int32_t GetPlane() { return GetPropertyInt(P_Plane); }

@@ -32,9 +32,17 @@
 #include "lib/C4Log.h"
 #include "c4group/C4Language.h"
 #include "graphics/C4GraphicsResource.h"
+#include "graphics/C4Draw.h"
+
+#ifdef _WIN32
+#include <shellapi.h>
+#else
+#include <unistd.h>
+#include <stdio.h>
+#endif
 
 
-C4StartupMainDlg::C4StartupMainDlg() : C4StartupDlg(NULL) // create w/o title; it is drawn in custom draw proc
+C4StartupMainDlg::C4StartupMainDlg() : C4StartupDlg(nullptr) // create w/o title; it is drawn in custom draw proc
 {
 	// ctor
 	fFirstShown = true;
@@ -59,6 +67,11 @@ C4StartupMainDlg::C4StartupMainDlg() : C4StartupDlg(NULL) // create w/o title; i
 	AddElement(btn = new C4GUI::CallbackButton<C4StartupMainDlg>(LoadResStr("IDS_DLG_OPTIONS"), caButtons.GetFromTop(iButtonHeight), &C4StartupMainDlg::OnOptionsBtn));
 	btn->SetToolTip(LoadResStr("IDS_DLGTIP_OPTIONS"));
 	btn->SetCustomGraphics(&C4Startup::Get()->Graphics.barMainButtons, &C4Startup::Get()->Graphics.barMainButtonsDown);
+#ifdef WITH_QT_EDITOR
+	AddElement(btn = new C4GUI::CallbackButton<C4StartupMainDlg>(LoadResStr("IDS_DLG_EDITOR"), caButtons.GetFromTop(iButtonHeight), &C4StartupMainDlg::OnEditorBtn));
+	btn->SetToolTip(LoadResStr("IDS_DLGTIP_EDITOR"));
+	btn->SetCustomGraphics(&C4Startup::Get()->Graphics.barMainButtons, &C4Startup::Get()->Graphics.barMainButtonsDown);
+#endif
 	AddElement(btn = new C4GUI::CallbackButton<C4StartupMainDlg>(LoadResStr("IDS_DLG_ABOUT"), caButtons.GetFromTop(iButtonHeight), &C4StartupMainDlg::OnAboutBtn));
 	btn->SetToolTip(LoadResStr("IDS_DLGTIP_ABOUT"));
 	btn->SetCustomGraphics(&C4Startup::Get()->Graphics.barMainButtons, &C4Startup::Get()->Graphics.barMainButtonsDown);
@@ -119,8 +132,8 @@ C4GUI::ContextMenu *C4StartupMainDlg::OnPlayerSelContext(C4GUI::Element *pBtn, i
 {
 	// preliminary player selection via simple context menu
 	C4GUI::ContextMenu *pCtx = new C4GUI::ContextMenu();
-	pCtx->AddItem("Add", "Add participant", C4GUI::Ico_None, NULL, new C4GUI::CBContextHandler<C4StartupMainDlg>(this, &C4StartupMainDlg::OnPlayerSelContextAdd));
-	pCtx->AddItem("Remove", "Remove participant", C4GUI::Ico_None, NULL, new C4GUI::CBContextHandler<C4StartupMainDlg>(this, &C4StartupMainDlg::OnPlayerSelContextRemove));
+	pCtx->AddItem("Add", "Add participant", C4GUI::Ico_None, nullptr, new C4GUI::CBContextHandler<C4StartupMainDlg>(this, &C4StartupMainDlg::OnPlayerSelContextAdd));
+	pCtx->AddItem("Remove", "Remove participant", C4GUI::Ico_None, nullptr, new C4GUI::CBContextHandler<C4StartupMainDlg>(this, &C4StartupMainDlg::OnPlayerSelContextRemove));
 	return pCtx;
 }
 
@@ -135,9 +148,9 @@ C4GUI::ContextMenu *C4StartupMainDlg::OnPlayerSelContextAdd(C4GUI::Element *pBtn
 		szFn = Config.AtRelativePath(szFn);
 		if (*GetFilename(szFn) == '.') continue;
 		if (!WildcardMatch(C4CFN_PlayerFiles, GetFilename(szFn))) continue;
-		if (!SIsModule(Config.General.Participants, szFn, NULL, false))
+		if (!SIsModule(Config.General.Participants, szFn, nullptr, false))
 			pCtx->AddItem(GetFilenameOnly(szFn), "Let this player join in next game", C4GUI::Ico_Player,
-			              new C4GUI::CBMenuHandlerEx<C4StartupMainDlg, StdCopyStrBuf>(this, &C4StartupMainDlg::OnPlayerSelContextAddPlr, StdCopyStrBuf(szFn)), NULL);
+			              new C4GUI::CBMenuHandlerEx<C4StartupMainDlg, StdCopyStrBuf>(this, &C4StartupMainDlg::OnPlayerSelContextAddPlr, StdCopyStrBuf(szFn)), nullptr);
 	}
 	return pCtx;
 }
@@ -148,7 +161,7 @@ C4GUI::ContextMenu *C4StartupMainDlg::OnPlayerSelContextRemove(C4GUI::Element *p
 	char szPlayer[1024+1];
 	for (int i = 0; SCopySegment(Config.General.Participants, i, szPlayer, ';', 1024, true); i++)
 		if (*szPlayer)
-			pCtx->AddItem(GetFilenameOnly(szPlayer), "Remove this player from participation list", C4GUI::Ico_Player, new C4GUI::CBMenuHandlerEx<C4StartupMainDlg, int>(this, &C4StartupMainDlg::OnPlayerSelContextRemovePlr, i), NULL);
+			pCtx->AddItem(GetFilenameOnly(szPlayer), "Remove this player from participation list", C4GUI::Ico_Player, new C4GUI::CBMenuHandlerEx<C4StartupMainDlg, int>(this, &C4StartupMainDlg::OnPlayerSelContextRemovePlr, i), nullptr);
 	return pCtx;
 }
 
@@ -245,6 +258,14 @@ void C4StartupMainDlg::OnOptionsBtn(C4GUI::Control *btn)
 	C4Startup::Get()->SwitchDialog(C4Startup::SDID_Options);
 }
 
+void C4StartupMainDlg::OnEditorBtn(C4GUI::Control *btn)
+{
+	if (!RestartApplication({"--editor"}))
+	{
+		C4GUI::TheScreen.ShowErrorMessage(LoadResStr("IDS_ERR_STARTEDITOR"));
+	}
+}
+
 void C4StartupMainDlg::OnAboutBtn(C4GUI::Control *btn)
 {
 	// advance to about screen
@@ -278,10 +299,10 @@ void C4StartupMainDlg::OnShown()
 {
 #ifdef WITH_AUTOMATIC_UPDATE
 	// Incoming update
-	if (Application.IncomingUpdate)
+	if (!Application.IncomingUpdate.empty())
 	{
-		C4UpdateDlg::ApplyUpdate(Application.IncomingUpdate.getData(), false, GetScreen());
-		Application.IncomingUpdate.Clear();
+		C4UpdateDlg::ApplyUpdate(Application.IncomingUpdate.c_str(), false, GetScreen());
+		Application.IncomingUpdate.clear();
 	}
 	// Manual update by command line or url
 	if (Application.CheckForUpdates)
@@ -319,7 +340,7 @@ void C4StartupMainDlg::OnShown()
 	{
 		// no player created yet: Create one
 		C4GUI::Dialog *pDlg;
-		GetScreen()->ShowModalDlg(pDlg=new C4StartupPlrPropertiesDlg(NULL, NULL), true);
+		GetScreen()->ShowModalDlg(pDlg=new C4StartupPlrPropertiesDlg(nullptr, nullptr), true);
 	}
 	// make sure participants are updated after switching back from player selection
 	UpdateParticipants();

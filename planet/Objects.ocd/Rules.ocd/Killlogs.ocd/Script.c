@@ -35,23 +35,14 @@ func OnClonkDeathEx(object clonk, int plr, int killed_by)
 	var which_one = Random(3) + 1;
 	var log="";
 	if (!GetPlayerName(killed_by))
- 		 log=Format(Translate(Format("KilledByGaya%d", which_one)), GetTaggedPlayerName(plr), name);
+ 		 log=Format(Translate(Format("KilledByGaia%d", which_one)), GetTaggedPlayerName(plr), name);
  	else if (plr == killed_by)
 		log=Format(Translate(Format("Selfkill%d", which_one)), GetTaggedPlayerName(plr), name);
  	else if (!Hostile(plr,killed_by))
   		log=Format(Translate(Format("Teamkill%d", which_one)), GetTaggedPlayerName(plr), name, GetTaggedPlayerName(killed_by));
 	else log=Format(Translate(Format("KilledByPlayer%d", which_one)), GetTaggedPlayerName(plr), name, GetTaggedPlayerName(killed_by));
 	
-	// okay, why is GetRelaunchCount not a global function..?
-	// and why are the relaunches not stored in a static variable or a singleton that can be accessed somehow..
-	var relaunches=nil;
-	for(var goal in FindObjects(Find_Or(Find_Category(C4D_Goal), Find_Category(C4D_Rule))))
-	{
-		relaunches = goal->~GetRelaunchCount(plr);
-		if(relaunches != nil) break;
-	}
-	if(relaunches == nil) relaunches=GameCall("GetRelaunchCount", plr);
-
+	var relaunches = GetRelaunchCount(plr);
 	if(relaunches != nil)
 	{
 		var msg="";
@@ -95,3 +86,5 @@ func OnClonkDeathEx(object clonk, int plr, int killed_by)
 
 local Name = "$Name$";
 local Description = "$Description$";
+local Visibility = VIS_Editor;
+local EditorPlacementLimit = 1; // Rules are to be placed only once

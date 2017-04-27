@@ -34,7 +34,7 @@
 	
 	Most objects which can be stacked might want to set different pictures
 	and ingame graphics for different counts of objects. This can be done
-	by overloading UpdatePicture(), but remember to write _inherited() then.
+	by overloading UpdatePicture(), but remember to write _inherited(...) then.
 --*/
 
 
@@ -425,4 +425,29 @@ func GetInteractionMenuAmount()
 	if (object_amount > 1 && this->IsInfiniteStackCount())
 		object_amount = 1;
 	return Min(object_amount, Stackable_Max_Display_Count);
+}
+
+
+/**
+ * Offers editor properties for stack count and inifnite setting
+ */
+public func Definition(def, ...)
+{
+	_inherited(def, ...);
+	if (!def.EditorProps) def.EditorProps = {};
+	def.EditorProps.count = { Name="$Count$", Type="enum", AsyncGet="GetEditorStackCount", Set="SetEditorStackCount", Options=[
+		{ Name=Format("$DefaultStack$", def->InitialStackCount()), Value=def->InitialStackCount() },
+		{ Name="$CustomStack$", Type=C4V_Int, Value=def->InitialStackCount(), Delegate={ Type="int", Min=1/*, Max=def->MaxStackCount()*/ } }, // there's no reason to restrict the max stack in editor
+		{ Name="$Infinite$", Value="infinite" }
+		]};
+}
+
+private func GetEditorStackCount()
+{
+	if (count_is_infinite) return "infinite"; else return count;
+}
+
+private func SetEditorStackCount(to_val)
+{
+	if (to_val == "infinite") SetInfiniteStackCount(); else SetStackCount(to_val);
 }

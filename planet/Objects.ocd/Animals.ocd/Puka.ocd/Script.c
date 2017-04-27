@@ -57,6 +57,8 @@ public func Place(int amount, proplist rectangle, proplist settings)
 	return animal;
 }
 
+public func IsAnimal() { return true; }
+
 public func Construction()
 {
 	turn_angle = 0;
@@ -70,8 +72,6 @@ public func Construction()
 	SetComDir(COMD_Stop);
 	if (Random(2)) SetDir(DIR_Left);
 	else SetDir(DIR_Right);
-	
-	SetCreatureControlled();
 	
 	// Two spot layouts are available.
 	if (!Random(2))
@@ -348,7 +348,7 @@ private func UpdateEnemy()
 	
 	var x = GetX();
 	var y = GetY();
-	for (var obj in FindObjects(Find_Distance(100), Find_OCF(OCF_Alive), Find_Hostile(GetOwner()), Sort_Distance()))
+	for (var obj in FindObjects(Find_Distance(100), Find_OCF(OCF_Alive), Find_AnimalHostile(GetOwner()), Sort_Distance()))
 	{
 		if (!PathFree(x, y, obj->GetX(), obj->GetY())) continue;
 		enemy = obj;
@@ -377,7 +377,7 @@ private func DoElectroCircle()
 	};
 	
 	// Punish all close enemies (not allied animals, though).
-	for (var obj in FindObjects(Find_Distance(30), Find_OCF(OCF_Alive), Find_Hostile(GetOwner()), Find_Exclude(this)))
+	for (var obj in FindObjects(Find_Distance(30), Find_OCF(OCF_Alive), Find_AnimalHostile(GetOwner()), Find_Exclude(this)))
 	{
 		var delta_x = 3 * (obj->GetX() - GetX());
 		var delta_y = 3 * (obj->GetY() - GetY());
@@ -645,7 +645,7 @@ private func EndShockWater()
 	if (GetDir() == DIR_Right) x *= -1;
 	var y = 15;
 	
-	for (var obj in FindObjects(Find_Distance(120), Find_OCF(OCF_Alive), Find_Hostile(this->GetOwner())))
+	for (var obj in FindObjects(Find_Distance(120), Find_OCF(OCF_Alive), Find_AnimalHostile(this->GetOwner())))
 	{
 		if (!obj->GBackLiquid()) continue;
 		var angle = Angle(GetX(), GetY(), obj->GetX(), obj->GetY());
@@ -756,6 +756,10 @@ local NoBurnDecay = 1;
 local BorderBound = C4D_Border_Sides;
 local ContactCalls = true;
 
+public func Definition(proplist def)
+{
+	def.PictureTransformation = Trans_Mul(Trans_Translate(5500, 1000, 0), Trans_Scale(1600), Trans_Rotate(-5, 1, 0, 0), Trans_Rotate(60, 0, 1, 0));
+}
 
 local ActMap = {
 Walk = {

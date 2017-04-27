@@ -38,6 +38,10 @@
 
 #define C4AUL_Include       "#include"
 #define C4AUL_Append        "#appendto"
+#define C4AUL_Warning       "#warning"
+
+#define C4Aul_Warning_enable "enable"
+#define C4Aul_Warning_disable "disable"
 
 #define C4AUL_Func          "func"
 
@@ -110,11 +114,11 @@ C4AulParse::C4AulParse(C4ScriptHost *a) :
 	Fn(0), Host(a), pOrgScript(a), Engine(a->Engine),
 	SPos(a->Script.getData()), TokenSPos(SPos),
 	TokenType(ATT_INVALID),
-	ContextToExecIn(NULL)
+	ContextToExecIn(nullptr)
 { }
 
 C4AulParse::C4AulParse(C4AulScriptFunc * Fn, C4AulScriptContext* context, C4AulScriptEngine *Engine) :
-	Fn(Fn), Host(NULL), pOrgScript(NULL), Engine(Engine),
+	Fn(Fn), Host(nullptr), pOrgScript(nullptr), Engine(Engine),
 	SPos(Fn->Script), TokenSPos(SPos),
 	TokenType(ATT_INVALID),
 	ContextToExecIn(context)
@@ -128,26 +132,22 @@ C4AulParse::~C4AulParse()
 void C4ScriptHost::Warn(const char *pMsg, ...)
 {
 	va_list args; va_start(args, pMsg);
-	StdStrBuf Buf;
-	Buf.Ref("WARNING: ");
-	Buf.AppendFormatV(pMsg, args);
+	StdStrBuf Buf = FormatStringV(pMsg, args);
 	Buf.AppendFormat(" (%s)", ScriptName.getData());
-	DebugLog(Buf.getData());
-	// count warnings
-	++Engine->warnCnt;
+	Engine->GetErrorHandler()->OnWarning(Buf.getData());
+	va_end(args);
 }
 
-void C4AulParse::Warn(const char *pMsg, ...)
+void C4AulParse::Warn(C4AulWarningId warning, ...)
 {
-	va_list args; va_start(args, pMsg);
-	StdStrBuf Buf;
-	Buf.Ref("WARNING: ");
-	Buf.AppendFormatV(pMsg, args);
+	if (!pOrgScript->IsWarningEnabled(TokenSPos, warning))
+		return;
+	va_list args; va_start(args, warning);
+	StdStrBuf Buf = FormatStringV(C4AulWarningMessages[static_cast<size_t>(warning)], args);
 	AppendPosition(Buf);
-	DebugLog(Buf.getData());
-
-	// count warnings
-	++Engine->warnCnt;
+	Buf.AppendFormat(" [%s]", C4AulWarningIDs[static_cast<size_t>(warning)]);
+	Engine->GetErrorHandler()->OnWarning(Buf.getData());
+	va_end(args);
 }
 
 void C4AulParse::Error(const char *pMsg, ...)
@@ -189,19 +189,16 @@ void C4AulParse::AppendPosition(StdStrBuf & Buf)
 }
 
 C4AulParseError::C4AulParseError(C4AulParse * state, const char *pMsg)
-		: C4AulError()
 {
 	// compose error string
-	sMessage.Ref("ERROR: ");
-	sMessage.Append(pMsg);
+	sMessage.Copy(pMsg);
 	state->AppendPosition(sMessage);
 }
 
 C4AulParseError::C4AulParseError(C4ScriptHost *pScript, const char *pMsg)
 {
 	// compose error string
-	sMessage.Ref("ERROR: ");
-	sMessage.Append(pMsg);
+	sMessage.Copy(pMsg);
 	if (pScript)
 	{
 		// Script name
@@ -211,11 +208,9 @@ C4AulParseError::C4AulParseError(C4ScriptHost *pScript, const char *pMsg)
 }
 
 C4AulParseError::C4AulParseError(C4AulScriptFunc * Fn, const char *SPos, const char *pMsg)
-		: C4AulError()
 {
 	// compose error string
-	sMessage.Ref("ERROR: ");
-	sMessage.Append(pMsg);
+	sMessage.Copy(pMsg);
 	if (!Fn) return;
 	sMessage.Append(" (");
 	// Show function name
@@ -322,7 +317,7 @@ const C4ScriptOpDef C4ScriptOpMap[] =
 	{ 2, "|=",  AB_BitOr,            1, 1, 0, C4V_Int,  C4V_Int,    C4V_Int},
 	{ 2, "^=",  AB_BitXOr,           1, 1, 0, C4V_Int,  C4V_Int,    C4V_Int},
 
-	{ 0, NULL,  AB_ERR,              0, 0, 0, C4V_Nil,  C4V_Nil,    C4V_Nil}
+	{ 0, nullptr,  AB_ERR,              0, 0, 0, C4V_Nil,  C4V_Nil,    C4V_Nil}
 };
 
 int C4AulParse::GetOperator(const char* pScript)
@@ -393,6 +388,16 @@ C4AulTokenType C4AulParse::GetNextToken()
 			C = *(++SPos);
 		}
 
+		// Special case for #warning because we don't want to give it to the parser
+		if (dir && SEqual2(TokenSPos, C4AUL_Warning))
+		{
+			// Look for end of line or end of file
+			while (*SPos != '\n' && *SPos != '\0') ++SPos;
+			Parse_WarningPragma();
+			// And actually return the next token.
+			return GetNextToken();
+		}
+
 		Len = std::min(Len, C4AUL_MAX_Identifier);
 		SCopy(TokenSPos, Idtf, Len);
 		return dir ? ATT_DIR : ATT_IDTF;
@@ -453,7 +458,7 @@ C4AulTokenType C4AulParse::GetNextToken()
 					// First char must be a hexdigit
 					if (!std::isxdigit(*SPos))
 					{
-						Warn("\\x used with no following hex digits");
+						Warn(C4AulWarningId::invalid_hex_escape);
 						strbuf.push_back('\\'); strbuf.push_back('x');
 					}
 					else
@@ -478,10 +483,10 @@ C4AulTokenType C4AulParse::GetNextToken()
 				{
 					// Octal escape: \142
 					char ch = 0;
-					while (SPos[1] >= '0' && SPos[1] <= '7')
+					while (SPos[0] >= '0' && SPos[0] <= '7')
 					{
 						ch *= 8;
-						ch += *++SPos -'0';
+						ch += *SPos++ -'0';
 					}
 					strbuf.push_back(ch);
 					break;
@@ -491,7 +496,7 @@ C4AulTokenType C4AulParse::GetNextToken()
 					// just insert "\"
 					strbuf.push_back('\\');
 					// show warning
-					Warn("unknown escape \"%c\"", *(SPos + 1));
+					Warn(C4AulWarningId::invalid_escape_sequence, *(SPos + 1));
 				}
 				}
 			else if (C == 0 || C == 10 || C == 13) // line break / feed
@@ -632,7 +637,7 @@ void C4AulScriptFunc::DumpByteCode()
 				const StdStrBuf &s = bcc.Par.s->GetData();
 				std::string es;
 				std::for_each(s.getData(), s.getData() + s.getLength(), [&es](char c) {
-					if (std::isprint((unsigned char)c))
+					if (std::isgraph((unsigned char)c))
 					{
 						es += c;
 					}
@@ -694,6 +699,13 @@ bool C4ScriptHost::Preparse()
 
 	// Add any engine functions specific to this script
 	AddEngineFunctions();
+
+	// Insert default warnings
+	assert(enabledWarnings.empty());
+	auto &warnings = enabledWarnings[Script.getData()];
+#define DIAG(id, text, enabled) warnings.set(static_cast<size_t>(C4AulWarningId::id), enabled);
+#include "C4AulWarnings.h"
+#undef DIAG
 
 	C4AulParse parser(this);
 	ast = parser.Parse_Script(this);
@@ -759,25 +771,102 @@ void C4AulParse::UnexpectedToken(const char * Expected)
 	throw C4AulParseError(this, FormatString("%s expected, but found %s", Expected, GetTokenName(TokenType)).getData());
 }
 
-void C4AulScriptFunc::ParseFn(C4AulScriptEngine *Engine, C4AulScriptContext* context)
+void C4AulParse::Parse_WarningPragma()
+{
+	assert(SEqual2(TokenSPos, C4AUL_Warning));
+	assert(std::isspace(TokenSPos[sizeof(C4AUL_Warning) - 1]));
+
+
+	// Read parameters in to string buffer. The sizeof() includes the terminating \0, but
+	// that's okay because we need to skip (at least) one whitespace character anyway.
+	std::string line(TokenSPos + sizeof(C4AUL_Warning), SPos);
+	auto end = line.end();
+	auto cursor = std::find_if_not(begin(line), end, IsWhiteSpace);
+
+	if (cursor == end)
+		throw C4AulParseError(this, "'" C4Aul_Warning_enable "' or '" C4Aul_Warning_disable "' expected, but found end of line");
+
+	// Split directive on whitespace
+	auto start = cursor;
+	cursor = std::find_if(start, end, IsWhiteSpace);
+	bool enable_warning = false;
+	if (std::equal(start, cursor, C4Aul_Warning_enable))
+	{
+		enable_warning = true;
+	}
+	else if (std::equal(start, cursor, C4Aul_Warning_disable))
+	{
+		enable_warning = false;
+	}
+	else
+	{
+		throw C4AulParseError(this, FormatString("'" C4Aul_Warning_enable "' or '" C4Aul_Warning_disable "' expected, but found '%s'", std::string(start, cursor).c_str()).getData());
+	}
+
+	cursor = std::find_if_not(cursor, end, IsWhiteSpace);
+	if (cursor == end)
+	{
+		// enable or disable all warnings
+#define DIAG(id, text, enabled) pOrgScript->EnableWarning(TokenSPos, C4AulWarningId::id, enable_warning);
+#include "C4AulWarnings.h"
+#undef DIAG
+		return;
+	}
+
+	// enable or disable specific warnings
+	static const std::map<std::string, C4AulWarningId> warnings{
+#define DIAG(id, text, enabled) std::make_pair(#id, C4AulWarningId::id),
+#include "C4AulWarnings.h"
+#undef DIAG
+	};
+	while (cursor != end)
+	{
+		start = std::find_if_not(cursor, end, IsWhiteSpace);
+		cursor = std::find_if(start, end, IsWhiteSpace);
+		auto entry = warnings.find(std::string(start, cursor));
+		if (entry != warnings.end())
+		{
+			pOrgScript->EnableWarning(TokenSPos, entry->second, enable_warning);
+		}
+	}
+}
+
+void C4AulScriptFunc::ParseDirectExecFunc(C4AulScriptEngine *Engine, C4AulScriptContext* context)
 {
 	ClearCode();
 	// parse
 	C4AulParse state(this, context, Engine);
-	auto func = state.Parse_DirectExec(Script);
+	auto func = state.Parse_DirectExec(Script, true);
 	C4AulCompiler::Compile(this, func.get());
 }
 
-std::unique_ptr<::aul::ast::FunctionDecl> C4AulParse::Parse_DirectExec(const char *code)
+void C4AulScriptFunc::ParseDirectExecStatement(C4AulScriptEngine *Engine, C4AulScriptContext* context)
+{
+	ClearCode();
+	// parse
+	C4AulParse state(this, context, Engine);
+	auto func = state.Parse_DirectExec(Script, false);
+	C4AulCompiler::Compile(this, func.get());
+}
+
+std::unique_ptr<::aul::ast::FunctionDecl> C4AulParse::Parse_DirectExec(const char *code, bool whole_function)
 {
 	// get first token
 	Shift();
-	auto expr = Parse_Expression();
-	Match(ATT_EOF);
 	// Synthesize a wrapping function which we can call
-	auto func = std::make_unique<::aul::ast::FunctionDecl>("$internal$eval");
-	func->body = std::make_unique<::aul::ast::Block>();
-	func->body->children.push_back(std::make_unique<::aul::ast::Return>(std::move(expr)));
+	std::unique_ptr<::aul::ast::FunctionDecl> func;
+	if (whole_function)
+	{
+		func = Parse_ToplevelFunctionDecl();
+	}
+	else
+	{
+		auto expr = Parse_Expression();
+		func = std::make_unique<::aul::ast::FunctionDecl>("$internal$eval");
+		func->body = std::make_unique<::aul::ast::Block>();
+		func->body->children.push_back(std::make_unique<::aul::ast::Return>(std::move(expr)));
+	}
+	Match(ATT_EOF);
 	return func;
 }
 
@@ -786,7 +875,7 @@ std::unique_ptr<::aul::ast::Script> C4AulParse::Parse_Script(C4ScriptHost * scri
 	pOrgScript = scripthost;
 	SPos = pOrgScript->Script.getData();
 	const char * SPos0 = SPos;
-	bool all_ok = true;
+	bool first_error = true;
 	auto script = ::aul::ast::Script::New(SPos0);
 	while (true) try
 	{
@@ -854,19 +943,16 @@ std::unique_ptr<::aul::ast::Script> C4AulParse::Parse_Script(C4ScriptHost * scri
 		default:
 			UnexpectedToken("declaration");
 		}
-		all_ok = true;
+		first_error = true;
 	}
 	catch (C4AulError &err)
 	{
-		// damn! something went wrong, print it out
-		// but only one error per function
-		if (all_ok)
+		if (first_error)
 		{
-			err.show();
-			// and count (visible only ;) )
 			++Engine->errCnt;
+			::ScriptEngine.ErrorHandler->OnError(err.what());
 		}
-		all_ok = false;
+		first_error = false;
 	}
 }
 
@@ -932,8 +1018,7 @@ void C4AulParse::Parse_Function(::aul::ast::Function *func)
 		if (TokenType == ATT_BCLOSE || TokenType == ATT_COMMA)
 		{
 			par_name = Idtf;
-			if (Config.Developer.ExtraWarnings)
-				Warn("'%s' used as parameter name", Idtf);
+			Warn(C4AulWarningId::type_name_used_as_par_name, Idtf);
 		}
 		else
 		{
@@ -1093,8 +1178,7 @@ void C4AulParse::Parse_CallParams(::aul::ast::CallExpr *call)
 	{
 	case ATT_COMMA:
 		// got no parameter before a ","
-		if (Config.Developer.ExtraWarnings)
-			Warn(FormatString("parameter %d of call to %s is empty", call->args.size(), call->callee.c_str()).getData(), NULL);
+		Warn(C4AulWarningId::empty_parameter_in_call, (unsigned)call->args.size(), call->callee.c_str());
 		call->args.push_back(::aul::ast::NilLit::New(TokenSPos));
 		Shift();
 		break;
@@ -1127,8 +1211,7 @@ std::unique_ptr<::aul::ast::ArrayLit> C4AulParse::Parse_Array()
 		// got no parameter before a ","? then push nil
 		if (TokenType == ATT_COMMA)
 		{
-			if (Config.Developer.ExtraWarnings)
-				Warn(FormatString("array entry %d is empty", arr->values.size()).getData(), NULL);
+			Warn(C4AulWarningId::empty_parameter_in_array, (unsigned)arr->values.size());
 			arr->values.emplace_back(::aul::ast::NilLit::New(TokenSPos));
 		}
 		else
@@ -1139,8 +1222,7 @@ std::unique_ptr<::aul::ast::ArrayLit> C4AulParse::Parse_Array()
 		// [] -> size 0, [*,] -> size 2, [*,*,] -> size 3
 		if (TokenType == ATT_BCLOSE2)
 		{
-			if (Config.Developer.ExtraWarnings)
-				Warn(FormatString("array entry %d is empty", arr->values.size()).getData(), NULL);
+			Warn(C4AulWarningId::empty_parameter_in_array, (unsigned)arr->values.size());
 			arr->values.emplace_back(::aul::ast::NilLit::New(TokenSPos));
 		}
 	}
@@ -1298,7 +1380,6 @@ std::unique_ptr<::aul::ast::Expr> C4AulParse::Parse_Expression(int iParentPrio)
 {
 	const char *NodeStart = TokenSPos;
 	std::unique_ptr<::aul::ast::Expr> expr;
-	int ndx;
 	const C4ScriptOpDef * op;
 	C4AulFunc *FoundFn = 0;
 	C4Value val;
@@ -1641,7 +1722,7 @@ void C4ScriptHost::CopyPropList(C4Set<C4Property> & from, C4PropListStatic * to)
 				if (prop->Key != &::Strings.P[P_Prototype])
 					if (!p || p->GetParent() != to)
 					{
-						p = C4PropList::NewStatic(NULL, to, prop->Key);
+						p = C4PropList::NewStatic(nullptr, to, prop->Key);
 						CopyPropList(prop->Value._getPropList()->Properties, p);
 					}
 				to->SetPropertyByS(prop->Key, C4VPropList(p));
@@ -1690,6 +1771,38 @@ bool C4ScriptHost::Parse()
 	State = ASS_PARSED;
 
 	return true;
+}
+
+void C4ScriptHost::EnableWarning(const char *pos, C4AulWarningId warning, bool enable)
+{
+	auto entry = enabledWarnings.emplace(pos, decltype(enabledWarnings)::mapped_type{});
+	if (entry.second)
+	{
+		// If there was no earlier entry for this position, copy the previous
+		// warning state
+		assert(entry.first != enabledWarnings.begin());
+		auto previous = entry.first;
+		--previous;
+		entry.first->second = previous->second;
+	}
+	entry.first->second.set(static_cast<size_t>(warning), enable);
+}
+
+bool C4ScriptHost::IsWarningEnabled(const char *pos, C4AulWarningId warning) const
+{
+	assert(!enabledWarnings.empty());
+	if (enabledWarnings.empty())
+		return false;
+	
+	// find nearest set of warnings at or before the current position
+	auto entry = enabledWarnings.upper_bound(pos);
+	assert(entry != enabledWarnings.begin());
+	if (entry != enabledWarnings.begin())
+	{
+		--entry;
+	}
+
+	return entry->second.test(static_cast<size_t>(warning));
 }
 
 void C4AulParse::PushParsePos()

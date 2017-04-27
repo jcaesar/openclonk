@@ -59,7 +59,7 @@ protected:
 	void Changed();
 public:
 
-	StdSchedulerProc(): scheduler(NULL) {}
+	StdSchedulerProc(): scheduler(nullptr) {}
 	virtual ~StdSchedulerProc() { }
 
 	// Do whatever the process wishes to do. Should not block longer than the timeout value.
@@ -263,6 +263,7 @@ public:
 	// needs to be called on thread tasks for this scheduler are meant to be run on
 	void StartOnCurrentThread();
 
+	C4TimeMilliseconds GetNextTick(C4TimeMilliseconds tNow);
 	bool ScheduleProcs(int iTimeout = 1000/36);
 	void UnBlock();
 

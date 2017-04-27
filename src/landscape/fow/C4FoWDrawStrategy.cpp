@@ -14,6 +14,7 @@
  */
 
 #include "C4Include.h"
+#include "C4ForbidLibraryCompilation.h"
 
 #ifndef USE_CONSOLE
 
@@ -109,25 +110,33 @@ void C4FoWDrawTriangulator::Reset()
 }
 
 C4FoWDrawLightTextureStrategy::C4FoWDrawLightTextureStrategy(const C4FoWLight* light)
- : light(light), region(NULL), vbo_size(0), ibo_size(0)
+ : light(light), region(nullptr), vbo_size(0), ibo_size(0)
 {
-	glGenBuffers(2, bo);
-	vaoids[0] = pGL->GenVAOID();
-	vaoids[1] = pGL->GenVAOID();
-	vaoids[2] = pGL->GenVAOID();
+	bo[0] = bo[1] = 0u;
 }
 
 C4FoWDrawLightTextureStrategy::~C4FoWDrawLightTextureStrategy()
 {
-	glDeleteBuffers(2, bo);
-	pGL->FreeVAOID(vaoids[2]);
-	pGL->FreeVAOID(vaoids[1]);
-	pGL->FreeVAOID(vaoids[0]);
+	if (bo[0])
+	{
+		glDeleteBuffers(2, bo);
+		pGL->FreeVAOID(vaoids[2]);
+		pGL->FreeVAOID(vaoids[1]);
+		pGL->FreeVAOID(vaoids[0]);
+	}
 }
 
 void C4FoWDrawLightTextureStrategy::Begin(const C4FoWRegion* regionPar)
 {
 	region = regionPar;
+	if (!bo[0])
+	{
+		// lazy-init buffer objects
+		glGenBuffers(2, bo);
+		vaoids[0] = pGL->GenVAOID();
+		vaoids[1] = pGL->GenVAOID();
+		vaoids[2] = pGL->GenVAOID();
+	}
 }
 
 void C4FoWDrawLightTextureStrategy::End(C4ShaderCall& call)

@@ -30,6 +30,7 @@
 #include "control/C4RoundResults.h"
 #include "landscape/C4TextureShape.h"
 #include "landscape/C4Sky.h"
+#include "graphics/C4Draw.h"
 
 /* This file implements stubs for the parts of the engine that are not used
  * by mape. */
@@ -37,7 +38,7 @@
 C4Landscape Landscape;
 C4PXSSystem PXS;
 
-class C4SoundInstance *StartSoundEffectAt(const char *, int32_t, int32_t, int32_t, int32_t, int32_t, class C4SoundModifier *) { return NULL; }
+class C4SoundInstance *StartSoundEffectAt(const char *, int32_t, int32_t, int32_t, int32_t, int32_t, class C4SoundModifier *) { return nullptr; }
 
 C4Facet::C4Facet() {}
 void C4Facet::Set(C4Surface*, float, float, float, float) {}
@@ -72,6 +73,7 @@ C4IDListChunk::~C4IDListChunk() {}
 C4DefGraphics::C4DefGraphics(C4Def*) {}
 void C4DefGraphics::Clear() {}
 
+void C4DefList::SortByPriority() {}
 void C4DefList::CallEveryDefinition() {}
 void C4DefList::ResetIncludeDependencies() {}
 bool C4DefList::DrawFontImage(const char* szImageTag, C4Facet& rTarget, C4DrawTransform* pTransform) { return false; }

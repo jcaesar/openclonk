@@ -31,7 +31,7 @@ C4MapCreator::C4MapCreator()
 
 void C4MapCreator::Reset()
 {
-	MapBuf=NULL;
+	MapBuf=nullptr;
 	Exclusive=-1;
 }
 
@@ -77,7 +77,7 @@ BYTE C4MapCreator::GetPix(int32_t x, int32_t y)
 
 void C4MapCreator::Create(CSurface8 *sfcMap,
                           C4SLandscape &rLScape, C4TextureMap &rTexMap,
-                          bool fLayers, int32_t iPlayerNum)
+                          int32_t iPlayerNum)
 {
 	double fullperiod= 20.0 * M_PI;
 	BYTE ccol;
@@ -95,7 +95,7 @@ void C4MapCreator::Create(CSurface8 *sfcMap,
 	MapBuf->ClearBox8Only(0,0,MapBuf->Wdt, MapBuf->Hgt);
 
 	// Surface
-	ccol=rTexMap.GetIndexMatTex(rLScape.Material);
+	ccol=rTexMap.GetIndexMatTex(rLScape.Material.c_str());
 	float amplitude= (float) rLScape.Amplitude.Evaluate();
 	float phase=     (float) rLScape.Phase.Evaluate();
 	float period=    (float) rLScape.Period.Evaluate();
@@ -136,7 +136,7 @@ void C4MapCreator::Create(CSurface8 *sfcMap,
 			SetPix(cx,cy,ccol);
 	// Raise liquid level
 	Exclusive=0;
-	ccol=rTexMap.GetIndexMatTex(rLScape.Liquid);
+	ccol=rTexMap.GetIndexMatTex(rLScape.Liquid.c_str());
 	int32_t wtr_level=rLScape.LiquidLevel.Evaluate();
 	for (cx=0; cx<MapWdt; cx++)
 		for (cy=MapHgt*(100-wtr_level)/100; cy<MapHgt; cy++)
@@ -144,37 +144,31 @@ void C4MapCreator::Create(CSurface8 *sfcMap,
 	Exclusive=-1;
 
 	// Layers
-	if (fLayers)
-	{
+	// Base material
+	Exclusive=rTexMap.GetIndexMatTex(rLScape.Material.c_str());
 
-		// Base material
-		Exclusive=rTexMap.GetIndexMatTex(rLScape.Material);
+	int32_t cnt,clayer,layer_num,sptx,spty;
 
-		int32_t cnt,clayer,layer_num,sptx,spty;
-
-		// Process layer name list
-		for (clayer=0; clayer<C4MaxNameList; clayer++)
-			if (rLScape.Layers.Name[clayer][0])
+	// Process layer name list
+	for (clayer=0; clayer<C4MaxNameList; clayer++)
+		if (rLScape.Layers.Name[clayer][0])
+		{
+			// Draw layers
+			ccol=rTexMap.GetIndexMatTex(rLScape.Layers.Name[clayer]);
+			layer_num=rLScape.Layers.Count[clayer];
+			layer_num=layer_num*MapWdt*MapHgt/15000;
+			for (cnt=0; cnt<layer_num; cnt++)
 			{
-				// Draw layers
-				ccol=rTexMap.GetIndexMatTex(rLScape.Layers.Name[clayer]);
-				layer_num=rLScape.Layers.Count[clayer];
-				layer_num=layer_num*MapWdt*MapHgt/15000;
-				for (cnt=0; cnt<layer_num; cnt++)
-				{
-					// Place layer
-					sptx=Random(MapWdt);
-					for (spty=0; (spty<MapHgt) && (GetPix(sptx,spty)!=Exclusive); spty++) {}
-					spty+=5+Random((MapHgt-spty)-10);
-					DrawLayer(sptx,spty,Random(15),ccol);
+				// Place layer
+				sptx=Random(MapWdt);
+				for (spty=0; (spty<MapHgt) && (GetPix(sptx,spty)!=Exclusive); spty++) {}
+				spty+=5+Random((MapHgt-spty)-10);
+				DrawLayer(sptx,spty,Random(15),ccol);
 
-				}
 			}
+		}
 
-		Exclusive=-1;
-
-	}
-
+	Exclusive=-1;
 }
 
 void C4MapCreator::ValidateTextureIndices(C4TextureMap &rTextureMap)

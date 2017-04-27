@@ -38,6 +38,15 @@ void C4SVal::Set(int32_t std, int32_t rnd, int32_t min, int32_t max)
 	Std=std; Rnd=rnd; Min=min; Max=max;
 }
 
+void C4SVal::SetConstant(int32_t val)
+{
+	// Set to constant value and ensure limits allow it
+	Std = val;
+	Rnd = 0;
+	Min = std::min<int32_t>(Min, val);
+	Max = std::max<int32_t>(Max, val);
+}
+
 int32_t C4SVal::Evaluate()
 {
 	return Clamp<int32_t>(Std+Random(2*Rnd+1)-Rnd,Min,Max);
@@ -151,7 +160,11 @@ void C4SHead::Default()
 {
 	Origin.Clear();
 	Icon=18;
-	*Title = *Loader = *Font = *Engine = *MissionAccess = '\0';
+	Title.clear();
+	Loader.clear();
+	Font.clear();
+	Engine.clear();
+	MissionAccess.clear();
 	Secret = false;
 	C4XVer[0] = C4XVer[1] = 0;
 	Difficulty = RandomSeed = 0;
@@ -161,7 +174,7 @@ void C4SHead::Default()
 
 	MaxPlayer=MaxPlayerLeague=C4S_MaxPlayerDefault;
 	MinPlayer=0; // auto-determine by mode
-	SCopy("Default Title",Title,C4MaxTitle);
+	Title = "Default Title";
 }
 
 void C4SHead::CompileFunc(StdCompiler *pComp, bool fSection)
@@ -169,9 +182,9 @@ void C4SHead::CompileFunc(StdCompiler *pComp, bool fSection)
 	if (!fSection)
 	{
 		pComp->Value(mkNamingAdapt(Icon,                      "Icon",                 18));
-		pComp->Value(mkNamingAdapt(mkStringAdaptMA(Title),    "Title",                "Default Title"));
-		pComp->Value(mkNamingAdapt(mkStringAdaptMA(Loader),   "Loader",               ""));
-		pComp->Value(mkNamingAdapt(mkStringAdaptMA(Font),     "Font",                 ""));
+		pComp->Value(mkNamingAdapt(Title,                     "Title",                "Default Title"));
+		pComp->Value(mkNamingAdapt(Loader,                    "Loader",               ""));
+		pComp->Value(mkNamingAdapt(Font,                      "Font",                 ""));
 		pComp->Value(mkNamingAdapt(mkArrayAdaptDM(C4XVer,0),  "Version"               ));
 		pComp->Value(mkNamingAdapt(Difficulty,                "Difficulty",           0));
 		pComp->Value(mkNamingAdapt(MaxPlayer,                 "MaxPlayer",            C4S_MaxPlayerDefault));
@@ -185,14 +198,17 @@ void C4SHead::CompileFunc(StdCompiler *pComp, bool fSection)
 	pComp->Value(mkNamingAdapt(RandomSeed,                "RandomSeed",           0));
 	if (!fSection)
 	{
-		pComp->Value(mkNamingAdapt(mkStringAdaptMA(Engine),   "Engine",               ""));
-		pComp->Value(mkNamingAdapt(mkStringAdaptMA(MissionAccess), "MissionAccess", ""));
+		pComp->Value(mkNamingAdapt(Engine,                    "Engine",               ""));
+		pComp->Value(mkNamingAdapt(MissionAccess,             "MissionAccess", ""));
 		pComp->Value(mkNamingAdapt(Secret,                    "Secret",               false));
 		pComp->Value(mkNamingAdapt(NetworkGame,               "NetworkGame",          false));
 		pComp->Value(mkNamingAdapt(NetworkRuntimeJoin,        "NetworkRuntimeJoin",   false));
 		pComp->Value(mkNamingAdapt(mkStrValAdapt(mkParAdapt(Origin, StdCompiler::RCT_All), C4InVal::VAL_SubPathFilename),  "Origin",  StdCopyStrBuf()));
 		// windows needs backslashes in Origin; other systems use forward slashes
-		if (pComp->isCompiler()) Origin.ReplaceChar(AltDirectorySeparator, DirectorySeparator);
+		if (pComp->isDeserializer())
+		{
+			Origin.ReplaceChar(AltDirectorySeparator, DirectorySeparator);
+		}
 	}
 }
 
@@ -286,8 +302,8 @@ void C4SLandscape::Default()
 	LiquidLevel.Default();
 	MapPlayerExtend=0;
 	Layers.Clear();
-	SCopy("Earth",Material,C4M_MaxName);
-	SCopy("Water",Liquid,C4M_MaxName);
+	Material = "Earth";
+	Liquid = "Water";
 	ExactLandscape=0;
 	Gravity.Set(100,0,10,200);
 	NoScan=0;
@@ -295,6 +311,7 @@ void C4SLandscape::Default()
 	SkyScrollMode=0;
 	MaterialZoom=4;
 	FlatChunkShapes=false;
+	Secret=false;
 }
 
 void C4SLandscape::GetMapSize(int32_t &rWdt, int32_t &rHgt, int32_t iPlayerNum)
@@ -313,7 +330,7 @@ void C4SLandscape::CompileFunc(StdCompiler *pComp)
 	pComp->Value(mkNamingAdapt(VegLevel,                "VegetationLevel",       C4SVal(50,30,0,100), true));
 	pComp->Value(mkNamingAdapt(InEarth,                 "InEarth",               C4IDList()));
 	pComp->Value(mkNamingAdapt(InEarthLevel,            "InEarthLevel",          C4SVal(50,0,0,100), true));
-	pComp->Value(mkNamingAdapt(mkStringAdaptMA(SkyDef), "Sky",                   ""));
+	pComp->Value(mkNamingAdapt(SkyDef,                  "Sky",                   ""));
 	pComp->Value(mkNamingAdapt(mkArrayAdaptDM(SkyDefFade,0),"SkyFade"            ));
 	pComp->Value(mkNamingAdapt(BottomOpen,              "BottomOpen",            0));
 	pComp->Value(mkNamingAdapt(TopOpen,                 "TopOpen",               1));
@@ -327,8 +344,8 @@ void C4SLandscape::CompileFunc(StdCompiler *pComp)
 	pComp->Value(mkNamingAdapt(Phase,                   "Phase",                 C4SVal(50)));
 	pComp->Value(mkNamingAdapt(Period,                  "Period",                C4SVal(15)));
 	pComp->Value(mkNamingAdapt(Random,                  "Random",                C4SVal(0)));
-	pComp->Value(mkNamingAdapt(mkStringAdaptMA(Material),"Material",             "Earth"));
-	pComp->Value(mkNamingAdapt(mkStringAdaptMA(Liquid), "Liquid",                "Water"));
+	pComp->Value(mkNamingAdapt(Material,                "Material",             "Earth"));
+	pComp->Value(mkNamingAdapt(Liquid,                  "Liquid",                "Water"));
 	pComp->Value(mkNamingAdapt(LiquidLevel,             "LiquidLevel",           C4SVal()));
 	pComp->Value(mkNamingAdapt(MapPlayerExtend,         "MapPlayerExtend",       0));
 	pComp->Value(mkNamingAdapt(Layers,                  "Layers",                C4NameList()));
@@ -338,6 +355,7 @@ void C4SLandscape::CompileFunc(StdCompiler *pComp)
 	pComp->Value(mkNamingAdapt(SkyScrollMode,           "SkyScrollMode",         0));
 	pComp->Value(mkNamingAdapt(MaterialZoom,            "MaterialZoom",          4));
 	pComp->Value(mkNamingAdapt(FlatChunkShapes,         "FlatChunkShapes",       false));
+	pComp->Value(mkNamingAdapt(Secret,                  "Secret",                false));
 }
 
 void C4SWeather::Default()
@@ -421,6 +439,23 @@ bool C4SDefinitions::GetModules(StdStrBuf *psOutModules) const
 		}
 	// Done
 	return true;
+}
+
+std::list<const char *> C4SDefinitions::GetModulesAsList() const
+{
+	// get definitions as string pointers into this structure
+	std::list<const char *> result;
+	if (!LocalOnly)
+	{
+		for (const char *def : Definition)
+		{
+			if (*def)
+			{
+				result.push_back(def);
+			}
+		}
+	}
+	return result;
 }
 
 

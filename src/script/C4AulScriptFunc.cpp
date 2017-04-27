@@ -23,7 +23,7 @@
 
 C4AulScriptFunc::C4AulScriptFunc(C4PropListStatic * Parent, C4ScriptHost *pOrgScript, const char *pName, const char *Script):
 		C4AulFunc(Parent, pName),
-		OwnerOverloaded(NULL),
+		OwnerOverloaded(nullptr),
 		llvmFunc(nullptr),
 		ParCount(0),
 		Script(Script),
@@ -36,7 +36,7 @@ C4AulScriptFunc::C4AulScriptFunc(C4PropListStatic * Parent, C4ScriptHost *pOrgSc
 
 C4AulScriptFunc::C4AulScriptFunc(C4PropListStatic * Parent, const C4AulScriptFunc &FromFunc):
 		C4AulFunc(Parent, FromFunc.GetName()),
-		OwnerOverloaded(NULL),
+		OwnerOverloaded(nullptr),
 		llvmFunc(nullptr),
 		ParCount(FromFunc.ParCount),
 		Script(FromFunc.Script),

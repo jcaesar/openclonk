@@ -59,7 +59,7 @@ public:
 	C4Property & operator = (void * p)
 	{ assert(!p); if (Key) Key->DecRef(); Key = 0; Value.Set0(); return *this; }
 	bool operator < (const C4Property &cmp) const { return strcmp(GetSafeKey(), cmp.GetSafeKey())<0; }
-	const char *GetSafeKey() const { if (Key && Key->GetCStr()) return Key->GetCStr(); return ""; } // get key as C string; return "" if undefined. never return NULL
+	const char *GetSafeKey() const { if (Key && Key->GetCStr()) return Key->GetCStr(); return ""; } // get key as C string; return "" if undefined. never return nullptr
 };
 class C4PropListNumbered;
 class C4PropList
@@ -74,6 +74,7 @@ public:
 	virtual C4Def const * GetDef() const;
 	virtual C4Def * GetDef();
 	virtual C4Object * GetObject();
+	virtual C4Object const * GetObject() const;
 	virtual C4Effect * GetEffect();
 	virtual C4PropListNumbered * GetPropListNumbered();
 	virtual class C4MapScriptLayer * GetMapScriptLayer();
@@ -83,7 +84,7 @@ public:
 	void RemoveCyclicPrototypes();
 
 	// saved as a reference to a global constant?
-	virtual class C4PropListStatic * IsStatic() { return NULL; }
+	virtual class C4PropListStatic * IsStatic() { return nullptr; }
 	const class C4PropListStatic * IsStatic() const { return const_cast<C4PropList*>(this)->IsStatic(); }
 	// saved as a reference to separately saved objects?
 	virtual bool IsNumbered() const { return false; }
@@ -92,7 +93,7 @@ public:
 
 	// These four operate on properties as seen by script, which can be dynamic
 	// or reflect C++ variables
-	virtual bool GetPropertyByS(C4String *k, C4Value *pResult) const;
+	virtual bool GetPropertyByS(const C4String *k, C4Value *pResult) const;
 	virtual C4ValueArray * GetProperties() const;
 	// not allowed on frozen proplists
 	virtual void SetPropertyByS(C4String * k, const C4Value & to);
@@ -113,6 +114,7 @@ public:
 	C4Value Call(C4String * k, C4AulParSet *pPars=0, bool fPassErrors=false);
 	C4Value Call(const char * k, C4AulParSet *pPars=0, bool fPassErrors=false);
 	C4PropertyName GetPropertyP(C4PropertyName k) const;
+	int32_t GetPropertyBool(C4PropertyName n, bool default_val = false) const;
 	int32_t GetPropertyInt(C4PropertyName k, int32_t default_val = 0) const;
 	C4PropList *GetPropertyPropList(C4PropertyName k) const;
 	bool HasProperty(C4String * k) const { return Properties.Has(k); }
@@ -127,13 +129,24 @@ public:
 	// FIXME: Only C4PropListStatic get frozen. Optimize accordingly.
 	void Freeze() { constant = true; }
 	void Thaw() { constant = false; }
+	void ThawRecursively();
 	bool IsFrozen() const { return constant; }
+
+	// Freeze this and all proplist in properties and ensure they are static proplists
+	// If a proplist is not static, replace it with a static proplist and replace all instances
+	// Place references to all proplists made static in the given value array
+	C4PropListStatic *FreezeAndMakeStaticRecursively(std::vector<C4Value>* prop_lists, const C4PropListStatic *parent = nullptr, C4String * key = nullptr);
 
 	virtual void Denumerate(C4ValueNumbers *);
 	virtual ~C4PropList();
 
 	void CompileFunc(StdCompiler *pComp, C4ValueNumbers *);
-	void AppendDataString(StdStrBuf * out, const char * delim, int depth = 3) const;
+	void AppendDataString(StdStrBuf * out, const char * delim, int depth = 3, bool ignore_reference_parent = false) const;
+	StdStrBuf ToJSON(int depth = 10, bool ignore_reference_parent = false) const;
+	std::vector< C4String * > GetSortedLocalProperties(bool add_prototype=true) const;
+	std::vector< C4String * > GetSortedLocalProperties(const char *prefix, const C4PropList *ignore_overridden) const;
+	std::vector< C4String * > GetUnsortedProperties(const char *prefix, C4PropList *ignore_parent = nullptr) const;
+	std::vector< C4String * > GetSortedProperties(const char *prefix, C4PropList *ignore_parent = nullptr) const;
 
 	bool operator==(const C4PropList &b) const;
 #ifdef _DEBUG

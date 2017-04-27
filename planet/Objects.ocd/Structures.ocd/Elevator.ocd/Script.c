@@ -78,6 +78,8 @@ private func Construction()
 	return _inherited(...);
 }
 
+public func IsHammerBuildable() { return true; }
+
 private func Initialize()
 {
 	SetCategory(C4D_StaticBack);
@@ -94,7 +96,7 @@ private func Initialize()
 		else
 			partner = nil;
 	}
-	return _inherited();
+	return _inherited(...);
 }
 
 private func CreateCase()
@@ -225,11 +227,19 @@ public func ConstructionPreview(object previewer, int overlay, int dir)
 }
 
 // Sticking to other elevators
-public func ConstructionCombineWith() { return "IsElevator"; }
-public func ConstructionCombineDirection() { return CONSTRUCTION_STICK_Left | CONSTRUCTION_STICK_Right; }
+public func ConstructionCombineWith() { return "CanCombineElevator"; }
+public func ConstructionCombineDirection(object other)
+{
+	if (!other) return CONSTRUCTION_STICK_Left | CONSTRUCTION_STICK_Right;
+
+	// Only combine when facing correctly
+	if (other->GetDir() == DIR_Left)
+		return CONSTRUCTION_STICK_Right;
+	return CONSTRUCTION_STICK_Left;
+}
 
 // Called to determine if sticking is possible
-public func IsElevator(object previewer)
+public func CanCombineElevator(object previewer)
 {
 	if (!previewer) return true;
 
@@ -321,6 +331,7 @@ local ActMap = {
 
 private func Definition(def) {
 	SetProperty("PictureTransformation", Trans_Mul(Trans_Rotate(-20,1,0), Trans_Rotate(-20, 0, 1, 0)));
+	return _inherited(def, ...);
 }
 local Name = "$Name$";
 local Description = "$Description$";

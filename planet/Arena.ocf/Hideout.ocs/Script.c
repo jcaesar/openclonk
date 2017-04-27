@@ -18,10 +18,15 @@ protected func Initialize()
 	goal->SetFlagBase(2, LandscapeWidth() - 120, 502);
 	
 	// Rules
-	CreateObject(Rule_Restart);
+	GetRelaunchRule()
+		->SetDefaultRelaunchCount(nil)
+		->AllowPlayerRestart();
 	CreateObject(Rule_ObjectFade)->DoFadeTime(5 * 36);
 	CreateObject(Rule_KillLogs);
 	CreateObject(Rule_Gravestones);
+	GetRelaunchRule()->SetDefaultRelaunchCount(nil);
+	GetRelaunchRule()->SetRespawnDelay(8);
+	GetRelaunchRule()->SetLastWeaponUse(false);
 	
 	var lwidth = LandscapeWidth();
 	
@@ -100,16 +105,6 @@ protected func InitializePlayer(int plr)
 	return;
 }
 
-// Gamecall from CTF goal, on respawning.
-protected func OnPlayerRelaunch(int plr)
-{
-	var clonk = GetCrew(plr);
-	var relaunch = CreateObjectAbove(RelaunchContainer, clonk->GetX(), clonk->GetY(), clonk->GetOwner());
-	relaunch->StartRelaunch(clonk);
-	relaunch->SetRelaunchTime(8, true);
-	return;
-}
-
 // Game call from RelaunchContainer when a Clonk has left the respawn.
 public func OnClonkLeftRelaunch(object clonk)
 {
@@ -175,7 +170,7 @@ global func FxFillBaseChestTimer(object target, effect)
 	}
 	else
 	{
-		var w_list = [Sword, Javelin, Musket, ShieldGem, PyreGem];
+		var w_list = [Sword, Javelin, Blunderbuss, ShieldGem, PyreGem];
 		var maxcount = [1,2,1,1,1];
 	}
 	
@@ -254,8 +249,8 @@ global func CreateChestContents(id obj_id)
 		
 	if (obj_id == Bow)
 		obj->CreateContents(Arrow);
-	if (obj_id == Musket)
-		obj->CreateContents(LeadShot);
+	if (obj_id == Blunderbuss)
+		obj->CreateContents(LeadBullet);
 	if (obj_id == GrappleBow)
 		AddEffect("NotTooLong",obj,100,36);
 	

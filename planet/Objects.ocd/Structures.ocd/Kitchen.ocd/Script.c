@@ -15,6 +15,8 @@ func Construction(object creator)
 	return _inherited(creator, ...);
 }
 
+public func IsHammerBuildable() { return true; }
+
 /*-- Production --*/
 
 func IsProduct(id product_id)
@@ -22,7 +24,7 @@ func IsProduct(id product_id)
 	return product_id->~IsKitchenProduct();
 }
 
-private func ProductionTime(id toProduce) { return 500; }
+private func ProductionTime(id product) { return _inherited(product, ...) ?? 500; }
 public func PowerNeed() { return 0; }
 
 public func OnProductionStart(id product)

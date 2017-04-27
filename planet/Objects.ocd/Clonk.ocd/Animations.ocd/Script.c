@@ -219,7 +219,7 @@ public func ReplaceAction(string action, byaction)
 			if(old[0] == byaction[0] && old[1] == byaction[1])
 			{
 				var i = 0;
-				for (test in ActualReplace)
+				for (var test in ActualReplace)
 				{
 					if(test && test[0] == action)
 						break;
@@ -594,6 +594,16 @@ func CheckScaleTop()
 	return true;
 }
 
+func CheckScaleTopHelper()
+{
+	// Check if the clonk has passed the material with its leg vertices
+	// and if COMD_Up is used to climb in which case corner scale would fail
+
+	if (GBackSolid(-3+6*GetDir(), 6)) return false;
+	if (GetComDir() != COMD_Up) return false;
+	return true;
+}
+
 func FxIntScaleStart(target, effect, tmp)
 {
 	if(tmp) return;
@@ -623,7 +633,23 @@ func FxIntScaleTimer(target, number, time)
 		SetAnimationPosition(number.animation_id, Anim_Const(GetAnimationLength("ScaleTop")*dist/800));
 		// The animation's graphics has to be shifet a bit to adjust to the clonk movement
 		var pos = GetAnimationPosition(number.animation_id);
-		SetScaleRotation(0, 0, 0, 0, 0, 1);
+		SetScaleRotation(0, 0, 0, 0, 0, true);
+		// Check if corner scale help is needed
+		if (CheckScaleTopHelper())
+		{
+			if (GetDir() == DIR_Left)
+				SetComDir(COMD_UpLeft);
+			else
+				SetComDir(COMD_UpRight);
+			number.corner_scale_helper = true;
+		}
+		else if (number.corner_scale_helper)
+			number.corner_scale_helper = false;
+	}
+	else if (number.corner_scale_helper)
+	{
+		// This will delay everything for 1 frame just for cleanup, hopefully it's not too bad
+		number.corner_scale_helper = false;
 	}
 	else if(!GBackSolid(-10+20*GetDir(), 8))
 	{
@@ -679,12 +705,12 @@ func FxIntScaleRotTimer(target, eff, time)
 	SetMeshTransformation(Trans_Mul(Trans_Translate(eff.oldX-turnx, eff.oldY-turny), Trans_Rotate(eff.oldR,0,0,1), Trans_Translate(turnx, turny)), 1);
 }
 
-func SetScaleRotation (int r, int xoff, int yoff, int rotZ, int turny, int instant) {
+func SetScaleRotation (int r, int xoff, int yoff, int rotZ, int turny, bool instant) {
 	if(r < -180) r += 360;
 	if(r > 180) r -= 360;
 	// set matrix values
 	var turnx = -1000;
-	var turny = 10000;
+	turny += 10000; // rotation relative to clonk center
 	if(instant)
 	{
 		RemoveEffect("IntScaleRot", this);
@@ -708,9 +734,13 @@ func FxIntScaleStop(target, number, reason, tmp)
 /*	if(number.animation_mode == 1) PlayAnimation(Clonk_WalkStand, CLONK_ANIM_SLOT_Movement, GetWalkAnimationPosition(Clonk_WalkStand), Anim_Const(1000));
 	// Finally stop if the user has scheduled a stop
 	if(number.ScheduleStop) SetComDir(COMD_Stop);*/
-	// and reset the transform
+
+	// Reset the transform
 	SetScaleRotation(0);
-//	SetObjDrawTransform(1000, 0, 0, 0, 1000, 0);
+	// Remove the corner scale helper com dir
+	if (number.corner_scale_helper)
+		if (GetComDir() == COMD_UpLeft || GetComDir() == COMD_UpRight)
+			Schedule(this, "SetComDir(COMD_Up)", 2);
 }
 
 /*--
@@ -770,6 +800,8 @@ func FxFallEffect(string new_name, object target)
 
 func FxFallTimer(object target, effect, int timer)
 {
+	if(GetAction() != "Jump")
+	return -1;
 	//falling off ledges without jumping results in fall animation
 	if(timer == 2 && GetYDir() > 1)
 	{
@@ -785,8 +817,6 @@ func FxFallTimer(object target, effect, int timer)
 		PlayAnimation("FallLong", CLONK_ANIM_SLOT_Movement, Anim_Linear(0, 0, GetAnimationLength("FallLong"), 8*3, ANIM_Hold), Anim_Linear(0, 0, 1000, 5, ANIM_Remove));
 		return -1;
 	}
-	if(GetAction() != "Jump")
-		return -1;
 }
 
 /*--

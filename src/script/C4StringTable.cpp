@@ -122,8 +122,15 @@ C4StringTable::C4StringTable()
 	P[P_y] = "y";
 	P[P_Wdt] = "Wdt";
 	P[P_Hgt] = "Hgt";
+	P[P_wdt] = "wdt";
+	P[P_hgt] = "hgt";
+	P[P_Vertices] = "Vertices";
+	P[P_Edges] = "Edges";
+	P[P_LineWidth] = "LineWidth";
 	P[P_OffX] = "OffX";
 	P[P_OffY] = "OffY";
+	P[P_Proplist] = "Proplist";
+	P[P_proplist] = "proplist";
 	P[P_FacetBase] = "FacetBase";
 	P[P_FacetTopFace] = "FacetTopFace";
 	P[P_FacetTargetStretch] = "FacetTargetStretch";
@@ -263,6 +270,57 @@ C4StringTable::C4StringTable()
 	P[P_MusicBreakChance] = "MusicBreakChance";
 	P[P_MusicMaxPositionMemory] = "MusicMaxPositionMemory";
 	P[P_InflameLandscape] = "InflameLandscape";
+	P[P_OptionKey] = "OptionKey";
+	P[P_ValueKey] = "ValueKey";
+	P[P_Value] = "Value";
+	P[P_DefaultValueFunction] = "DefaultValueFunction";
+	P[P_Delegate] = "Delegate";
+	P[P_VertexDelegate] = "VertexDelegate";
+	P[P_EdgeDelegate] = "EdgeDelegate";
+	P[P_HorizontalFix] = "HorizontalFix";
+	P[P_VerticalFix] = "VerticalFix";
+	P[P_StructureFix] = "StructureFix";
+	P[P_OnUpdate] = "OnUpdate";
+	P[P_EditorPropertyChanged] = "EditorPropertyChanged";
+	P[P_Min] = "Min";
+	P[P_Max] = "Max";
+	P[P_Set] = "Set";
+	P[P_SetGlobal] = "SetGlobal";
+	P[P_SetRoot] = "SetRoot";
+	P[P_Options] = "Options";
+	P[P_Key] = "Key";
+	P[P_AsyncGet] = "AsyncGet";
+	P[P_Get] = "Get";
+	P[P_Relative] = "Relative";
+	P[P_CanMoveCenter] = "CanMoveCenter";
+	P[P_StartFromObject] = "StartFromObject";
+	P[P_Storage] = "Storage";
+	P[P_Elements] = "Elements";
+	P[P_EditOnSelection] = "EditOnSelection";
+	P[P_EditorProps] = "EditorProps";
+	P[P_DefaultEditorProp] = "DefaultEditorProp";
+	P[P_EditorActions] = "EditorActions";
+	P[P_CopyDefault] = "CopyDefault";
+	P[P_Display] = "Display";
+	P[P_DefaultValue] = "DefaultValue";
+	P[P_DefinitionPriority] = "DefinitionPriority";
+	P[P_Group] = "Group";
+	P[P_Command] = "Command";
+	P[P_Select] = "Select";
+	P[P_DescendPath] = "DescendPath";
+	P[P_EmptyName] = "EmptyName";
+	P[P_ShortName] = "ShortName";
+	P[P_EditorHelp] = "EditorHelp";
+	P[P_Description] = "Description";
+	P[P_AllowEditing] = "AllowEditing";
+	P[P_EditorInitialize] = "EditorInitialize";
+	P[P_EditorPlacementLimit] = "EditorPlacementLimit";
+	P[P_EditorCollection] = "EditorCollection";
+	P[P_Sorted] = "Sorted";
+	P[P_Uniforms] = "Uniforms";
+	P[P_ForceSerialization] = "ForceSerialization";
+	P[P_DrawArrows] = "DrawArrows";
+	P[P_SCENPAR] = "SCENPAR";
 	P[DFA_WALK] = "WALK";
 	P[DFA_FLIGHT] = "FLIGHT";
 	P[DFA_KNEEL] = "KNEEL";
@@ -279,7 +337,11 @@ C4StringTable::C4StringTable()
 	P[DFA_CONNECT] = "CONNECT";
 	P[DFA_PULL] = "PULL";
 	// Prevent the individual strings from being deleted, they are not created with new
-	for (unsigned int i = 0; i < P_LAST; ++i) P[i].IncRef();
+	for (unsigned int i = 0; i < P_LAST; ++i)
+	{
+		assert(P[i].GetCStr()); // all strings should be assigned
+		P[i].IncRef();
+	}
 }
 
 C4StringTable::~C4StringTable()

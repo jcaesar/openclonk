@@ -32,6 +32,7 @@ bool C4ValueToMatrix(const C4ValueArray& array, StdMeshMatrix* matrix);
 /* Engine-Calls */
 
 #define PSF_Initialize          "~Initialize"
+#define PSF_InitializePlayers   "~InitializePlayers"
 #define PSF_InitializeAmbience  "~InitializeAmbience"
 #define PSF_Construction        "~Construction"
 #define PSF_Destruction         "~Destruction"
@@ -97,9 +98,11 @@ bool C4ValueToMatrix(const C4ValueArray& array, StdMeshMatrix* matrix);
 #define PSF_EditCursorMoved     "~EditCursorMoved" // int old_x, int old_y
 #define PSF_DigOutObject        "~DigOutObject" // C4Object *obj
 #define PSF_OnDugOut            "~DugOut" //C4Object *by_obj
-#define PSF_SaveScenarioObjects "~SaveScenarioObjects" // int file_handle
+#define PSF_SaveScenarioObjects "~SaveScenarioObjects" // int file_handle, [array duplication_list]
 #define PSF_CommandFailure      "~CommandFailure" // string command, pTarget, iTx, iTy, pTarget2, iData
 #define PSF_OnCompletionChange  "~OnCompletionChange" // int old_con, int new_con
+
+#define PSF_CollectStatistics   "CollectStatistics"
 
 // Effect callbacks
 

@@ -22,6 +22,7 @@
 #include "game/C4Application.h"
 #include "gui/C4MouseControl.h"
 #include "graphics/C4GraphicsResource.h"
+#include "graphics/C4Draw.h"
 
 namespace C4GUI
 {
@@ -199,7 +200,7 @@ namespace C4GUI
 		{
 			int32_t w, h; char strMask[2] = { cPasswordMask, 0 };
 			pFont->GetTextExtent(strMask, w, h, false);
-			return Clamp<int32_t>((iControlXPos + w/2) / w, 0, SLen(Text));
+			return Clamp<int32_t>((iControlXPos + w/2) / std::max<int32_t>(1, w), 0, SLen(Text));
 		}
 		int32_t i = 0;
 		for (int32_t iLastW = 0, w,h; Text[i]; ++i)
@@ -290,11 +291,10 @@ namespace C4GUI
 		// get selected range
 		int32_t iSelBegin = std::min(iSelectionStart, iSelectionEnd), iSelEnd = std::max(iSelectionStart, iSelectionEnd);
 		if (iSelBegin == iSelEnd) return false;
-		StdStrBuf buf;
 		// allocate a global memory object for the text.
-		buf.Append(Text+iSelBegin, iSelEnd-iSelBegin);
+		std::string buf(Text+iSelBegin, iSelEnd-iSelBegin);
 		if (cPasswordMask)
-			memset(buf.getMData(), cPasswordMask, buf.getLength());
+			buf.assign(buf.size(), cPasswordMask);
 
 		return Application.Copy(buf);
 	}
@@ -314,7 +314,7 @@ namespace C4GUI
 		bool fSuccess = false;
 		// check clipboard contents
 		if(!Application.IsClipboardFull()) return false;
-		StdStrBuf text(Application.Paste());
+		StdCopyStrBuf text(Application.Paste().c_str());
 		char * szText = text.getMData();
 		if (text)
 		{
@@ -524,7 +524,7 @@ namespace C4GUI
 			iCursorPos = iSelectionStart;
 #ifndef _WIN32
 			// Insert primary selection
-			InsertText(Application.Paste(false).getData(), true);
+			InsertText(Application.Paste(false).c_str(), true);
 #endif
 			break;
 		};
@@ -650,7 +650,7 @@ namespace C4GUI
 	ContextMenu *Edit::OnContext(C4GUI::Element *pListItem, int32_t iX, int32_t iY)
 	{
 		// safety: no text?
-		if (!Text) return NULL;
+		if (!Text) return nullptr;
 		// create context menu
 		ContextMenu *pCtx = new ContextMenu();
 		// fill with any valid items
@@ -704,7 +704,7 @@ namespace C4GUI
 			pPrevFocusCtrl = pDlg->GetFocus();
 			pDlg->SetFocus(this, false);
 		}
-		else pPrevFocusCtrl=NULL;
+		else pPrevFocusCtrl=nullptr;
 		// key binding for rename abort
 		C4CustomKey::CodeList keys;
 		keys.push_back(C4KeyCodeEx(K_ESCAPE));

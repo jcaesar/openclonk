@@ -71,10 +71,22 @@ class C4RefCntPointer
 public:
 	C4RefCntPointer(T* p): p(p) { IncRef(); }
 	C4RefCntPointer(): p(0) { }
+	C4RefCntPointer(const C4RefCntPointer<T> & r) : p(r.p) { IncRef(); }
 	template <class U> C4RefCntPointer(const C4RefCntPointer<U> & r): p(r.p) { IncRef(); }
 	// Move constructor
+	C4RefCntPointer(C4RefCntPointer<T> &&r) : p(r.p) { r.p = 0; }
 	template <class U> C4RefCntPointer(C4RefCntPointer<U> &&r): p(r.p) { r.p = 0; }
 	// Move assignment
+	C4RefCntPointer& operator = (C4RefCntPointer<T> &&r)
+	{
+		if (p != r.p)
+		{
+			DecRef();
+			p = r.p;
+			r.p = 0;
+		}
+		return *this;
+	}
 	template <class U> C4RefCntPointer& operator = (C4RefCntPointer<U> &&r)
 	{
 		if (p != r.p)
@@ -96,6 +108,10 @@ public:
 		}
 		return *this;
 	}
+	C4RefCntPointer& operator = (const C4RefCntPointer<T>& r)
+	{
+		return *this = r.p;
+	}
 	template <class U> C4RefCntPointer& operator = (const C4RefCntPointer<U>& r)
 	{
 		return *this = r.p;
@@ -106,6 +122,7 @@ public:
 	const T* operator -> () const { return p; }
 	operator T * () { return p; }
 	operator const T * () const { return p; }
+	T *Get() const { return p; }
 private:
 	void IncRef() { if (p) p->IncRef(); }
 	void DecRef() { if (p) p->DecRef(); }
@@ -187,7 +204,7 @@ public:
 			Table[i] = b.Table[i];
 		return *this;
 	}
-	void CompileFunc(StdCompiler *pComp, C4ValueNumbers *);
+	void CompileFunc(class StdCompiler *pComp, class C4ValueNumbers *);
 	void Clear()
 	{
 		ClearTable();
@@ -270,14 +287,14 @@ public:
 	}
 	static bool SortFunc(const T *p1, const T*p2)
 	{
-		// elements are guarantueed to be non-NULL
+		// elements are guarantueed to be non-nullptr
 		return *p1<*p2;
 	}
 	std::list<const T *> GetSortedListOfElementPointers() const
 	{
 		// return a list of pointers to all elements in this set sorted by the standard less-than operation
 		// of the elements
-		// elements of resulting lists are guarantueed to be non-NULL
+		// elements of resulting lists are guarantueed to be non-nullptr
 		// list remains valid as long as this set is not changed
 		std::list<const T *> result;
 		for (const T *p = First(); p; p = Next(p)) result.push_back(p);
@@ -339,8 +356,15 @@ enum C4PropertyName
 	P_y,
 	P_Wdt,
 	P_Hgt,
+	P_wdt,
+	P_hgt,
+	P_Vertices,
+	P_Edges,
+	P_LineWidth,
 	P_OffX,
 	P_OffY,
+	P_proplist,
+	P_Proplist,
 	P_FacetBase,
 	P_FacetTopFace,
 	P_FacetTargetStretch,
@@ -474,6 +498,57 @@ enum C4PropertyName
 	P_MusicBreakChance,
 	P_MusicMaxPositionMemory,
 	P_InflameLandscape,
+	P_OptionKey,
+	P_ValueKey,
+	P_Value,
+	P_DefaultValueFunction,
+	P_Delegate,
+	P_VertexDelegate,
+	P_EdgeDelegate,
+	P_HorizontalFix,
+	P_VerticalFix,
+	P_StructureFix,
+	P_OnUpdate,
+	P_EditorPropertyChanged,
+	P_Min,
+	P_Max,
+	P_Set,
+	P_SetGlobal,
+	P_SetRoot,
+	P_Options,
+	P_Key,
+	P_AsyncGet,
+	P_Get,
+	P_Relative,
+	P_CanMoveCenter,
+	P_StartFromObject,
+	P_Storage,
+	P_Elements,
+	P_EditOnSelection,
+	P_EditorProps,
+	P_DefaultEditorProp,
+	P_EditorActions,
+	P_CopyDefault,
+	P_Display,
+	P_DefaultValue,
+	P_DefinitionPriority,
+	P_Group,
+	P_Command,
+	P_Select,
+	P_DescendPath,
+	P_EmptyName,
+	P_ShortName,
+	P_EditorHelp,
+	P_Description,
+	P_AllowEditing,
+	P_EditorInitialize,
+	P_EditorPlacementLimit,
+	P_EditorCollection,
+	P_Sorted,
+	P_Uniforms,
+	P_ForceSerialization,
+	P_DrawArrows,
+	P_SCENPAR,
 // Default Action Procedures
 	DFA_WALK,
 	DFA_FLIGHT,

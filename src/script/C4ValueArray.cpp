@@ -19,21 +19,20 @@
 
 #include "script/C4Aul.h"
 #include "object/C4FindObject.h"
-#include "object/C4Object.h"
 
 C4ValueArray::C4ValueArray()
-		: pData(NULL), iSize(0), iCapacity(0), constant(false)
+		: pData(nullptr), iSize(0), iCapacity(0), constant(false)
 {
 }
 
 C4ValueArray::C4ValueArray(int32_t inSize)
-		: pData(NULL), iSize(0), iCapacity(0), constant(false)
+		: pData(nullptr), iSize(0), iCapacity(0), constant(false)
 {
 	SetSize(inSize);
 }
 
 C4ValueArray::C4ValueArray(const C4ValueArray &ValueArray2)
-		: pData(NULL), iSize(0), iCapacity(0), constant(false)
+		: pData(nullptr), iSize(0), iCapacity(0), constant(false)
 {
 	SetSize(ValueArray2.GetSize());
 	for (int32_t i = 0; i < iSize; i++)
@@ -42,7 +41,7 @@ C4ValueArray::C4ValueArray(const C4ValueArray &ValueArray2)
 
 C4ValueArray::~C4ValueArray()
 {
-	delete[] pData; pData = NULL;
+	delete[] pData; pData = nullptr;
 	iSize = iCapacity = 0;
 }
 
@@ -90,7 +89,7 @@ void C4ValueArray::Sort(class C4SortObject &rSort)
 			pPos[i] = reinterpret_cast<intptr_t>(pData[pPos[i]]._getObj());
 		// Set the values
 		for (i = 0; i < iSize; i++)
-			pData[i].SetPropList(reinterpret_cast<C4Object *>(pPos[i]));
+			pData[i].SetPropList(reinterpret_cast<C4PropList *>(pPos[i]));
 		delete [] pPos;
 	}
 	else
@@ -261,7 +260,7 @@ bool C4ValueArray::operator==(const C4ValueArray& IntList2) const
 
 void C4ValueArray::Reset()
 {
-	delete[] pData; pData = NULL;
+	delete[] pData; pData = nullptr;
 	iSize = iCapacity = 0;
 }
 
@@ -282,7 +281,7 @@ void C4ValueArray::CompileFunc(class StdCompiler *pComp, C4ValueNumbers * number
 	// Separator
 	pComp->Separator(StdCompiler::SEP_SEP2);
 	// Allocate
-	if (pComp->isCompiler()) this->SetSize(inSize);
+	if (pComp->isDeserializer()) this->SetSize(inSize);
 	// Values
 	pComp->Value(mkArrayAdaptMap(pData, iSize, C4Value(), mkParAdaptMaker(numbers)));
 }

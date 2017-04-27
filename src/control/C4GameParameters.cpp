@@ -21,13 +21,14 @@
 #include "object/C4Def.h"
 #include "object/C4DefList.h"
 #include "game/C4Game.h"
+#include "game/C4Application.h"
 #include "network/C4Network2.h"
 
 // *** C4GameRes
 
 
 C4GameRes::C4GameRes()
-		: eType(NRT_Null), pResCore(NULL), pNetRes(NULL)
+		: eType(NRT_Null), pResCore(nullptr), pNetRes(nullptr)
 {
 
 }
@@ -63,8 +64,8 @@ void C4GameRes::Clear()
 	File.Clear();
 	if (pResCore && !pNetRes)
 		delete pResCore;
-	pResCore = NULL;
-	pNetRes = NULL;
+	pResCore = nullptr;
+	pNetRes = nullptr;
 }
 
 void C4GameRes::SetFile(C4Network2ResType enType, const char *sznFile)
@@ -92,15 +93,15 @@ void C4GameRes::SetNetRes(C4Network2Res::Ref pnNetRes)
 
 void C4GameRes::CompileFunc(StdCompiler *pComp)
 {
-	bool fCompiler = pComp->isCompiler();
+	bool deserializing = pComp->isDeserializer();
 	// Clear previous data for compiling
-	if (fCompiler) Clear();
+	if (deserializing) Clear();
 	// Core is needed to decompile something meaningful
-	if (!fCompiler) assert(pResCore);
+	if (!deserializing) assert(pResCore);
 	// De-/Compile core
 	pComp->Value(mkPtrAdaptNoNull(const_cast<C4Network2ResCore * &>(pResCore)));
 	// Compile: Set type accordingly
-	if (fCompiler)
+	if (deserializing)
 		eType = pResCore->getType();
 }
 
@@ -113,7 +114,7 @@ bool C4GameRes::Publish(C4Network2ResList *pNetResList)
 	bool fAllowUnloadable = false;
 	if (eType == NRT_Definitions) fAllowUnloadable = true;
 	// Add to network resource list
-	C4Network2Res::Ref pNetRes = pNetResList->AddByFile(File.getData(), false, eType, -1, NULL, fAllowUnloadable);
+	C4Network2Res::Ref pNetRes = pNetResList->AddByFile(File.getData(), false, eType, -1, nullptr, fAllowUnloadable);
 	if (!pNetRes) return false;
 	// Set resource
 	SetNetRes(pNetRes);
@@ -199,8 +200,8 @@ C4GameRes *C4GameResList::iterRes(C4GameRes *pLast, C4Network2ResType eType)
 				return pResList[i];
 		}
 		else if (pLast == pResList[i])
-			pLast = NULL;
-	return NULL;
+			pLast = nullptr;
+	return nullptr;
 }
 
 void C4GameResList::Clear()
@@ -209,7 +210,7 @@ void C4GameResList::Clear()
 	for (int32_t i = 0; i < iResCount; i++)
 		delete pResList[i];
 	delete [] pResList;
-	pResList = NULL;
+	pResList = nullptr;
 	iResCount = iResCapacity = 0;
 }
 
@@ -271,7 +272,7 @@ bool C4GameResList::Load(C4Group &hGroup, C4Scenario *pScenario, const char * sz
 	// add System.ocg
 	CreateByFile(NRT_System, C4CFN_System);
 	// add all instances of Material.ocg, except those inside the scenario file
-	C4Group *pMatParentGrp = NULL;
+	C4Group *pMatParentGrp = nullptr;
 	while ((pMatParentGrp = Game.GroupSet.FindGroup(C4GSCnt_Material, pMatParentGrp)))
 		if (pMatParentGrp != &Game.ScenarioFile)
 		{
@@ -350,13 +351,13 @@ void C4GameResList::Add(C4GameRes *pRes)
 
 void C4GameResList::CompileFunc(StdCompiler *pComp)
 {
-	bool fCompiler = pComp->isCompiler();
+	bool deserializing = pComp->isDeserializer();
 	// Clear previous data
-	if (fCompiler) Clear();
+	if (deserializing) Clear();
 	// Compile resource count
 	pComp->Value(mkNamingCountAdapt(iResCount, "Resource"));
 	// Create list
-	if (fCompiler)
+	if (deserializing)
 	{
 		pResList = new C4GameRes *[iResCapacity = iResCount];
 		ZeroMem(pResList, sizeof(*pResList) * iResCount);
@@ -517,6 +518,7 @@ void C4GameParameters::CompileFunc(StdCompiler *pComp, C4Scenario *pScenario)
 	pComp->Value(mkNamingAdapt(MaxPlayers,        "MaxPlayers",       !pScenario ? 0 : pScenario->Head.MaxPlayer));
 	pComp->Value(mkNamingAdapt(AllowDebug,        "AllowDebug",       true));
 	pComp->Value(mkNamingAdapt(IsNetworkGame,     "IsNetworkGame",    false));
+	pComp->Value(mkNamingAdapt(IsEditor,          "IsEditor",         !!::Application.isEditor));
 	pComp->Value(mkNamingAdapt(ControlRate,       "ControlRate",      -1));
 	pComp->Value(mkNamingAdapt(AutoFrameSkip,     "AutoFrameSkip",    false));
 	pComp->Value(mkNamingAdapt(Rules,             "Rules",            !pScenario ? C4IDList() : pScenario->Game.Rules));

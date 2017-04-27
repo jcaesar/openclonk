@@ -13,6 +13,9 @@ local Plane = -300;
 static const CLOUD_ModeIdle = 0;
 static const CLOUD_ModeRaining = 1;
 static const CLOUD_ModeCondensing = 2;
+
+static const CLOUD_RainFallOffDistance = 1000;
+
 local mode;
 // The time a cloud is in this mode.
 local mode_time;
@@ -21,12 +24,15 @@ local lightning_chance; // chance of lightning strikes 0-100.
 local evap_x; // x coordinate for evaporation
 
 local rain; // Number of liquid pixels the cloud holds.
-local rain_mat; // Precipitation type from scenario or other. Material name of nil for no rain.
+local rain_mat; // Precipitation type from scenario or other. Material name or nil for no rain.
+local rain_inserts_mat; // Should the rain insert actual material pixels on impact?
 local rain_amount; // Precipitation amount from scenario or other.
 local rain_max; // Max rain the cloud can hold.
 local rain_mat_freeze_temp; // Freezing temperature of current rain material.
 local rain_mat_frozen; // Material currently frozen to.
 local rain_visual_strength; // Amount of rain particles
+
+local rain_sound_dummy; // Helper object that emits the sound
 
 local cloud_shade; // Cloud shade.
 local cloud_alpha; // Cloud alpha.
@@ -45,6 +51,10 @@ protected func Initialize()
 	rain = 0;
 	rain_max = 960;
 	rain_visual_strength = 10;
+	rain_inserts_mat = true;
+	
+	rain_sound_dummy = CreateObject(Dummy, 0, 0, NO_OWNER);
+	rain_sound_dummy.Visibility = VIS_All;
 	
 	// Cloud defaults
 	lightning_chance = 0;
@@ -72,6 +82,15 @@ protected func Initialize()
 	// Add effect to process all cloud features.
 	AddEffect("ProcessCloud", this, 100, 5, this);
 	return;
+}
+
+protected func Destruction()
+{
+	if (rain_sound_dummy)
+	{
+		rain_sound_dummy->RemoveObject();
+	}
+	_inherited(...);
 }
 
 /*-- Definition call interface --*/
@@ -180,6 +199,26 @@ public func SetCloudRGB(r, g, b)
 }
 
 
+// Changes the behavior of this cloud:
+// if the parameter is true, the cloud will create particles effects and insert material on impact.
+// if the parameter is false, the could will create particle effects, but not insert material 
+// Also an id call: Changes all clouds to this settings.
+public func SetInsertMaterial(bool should_insert)
+{
+	// Called to proplist: change all clouds.
+	if (this == Cloud)
+	{
+		for (var cloud in FindObjects(Find_ID(Cloud)))
+			cloud->SetInsertMaterial(should_insert);
+	}
+	else // Otherwise change the clouds precipitation.
+	{
+		rain_inserts_mat = should_insert;
+	}
+	return;
+}
+
+
 /*-- Cloud processing --*/
 
 protected func FxProcessCloudStart(object target, proplist effect, int temporary)
@@ -202,17 +241,16 @@ protected func FxProcessCloudTimer()
 		mode = (mode + 1) % 3;
 		mode_time = 480 + RandomX(-90, 90);
 
-		// Start or stop the rain sound.
-		// TODO: Sound should play where the rain hits the ground, not where the cloud is.
+		// Start or stop the rain sound. The object where the sound appears updates position in DropHit()
 		if (mode == CLOUD_ModeRaining)
 		{
 			var mat = RainMat();
-			if (mat == "Water" || mat == "Acid")
-				Sound("Liquids::StereoRain", false, 80, nil, +1, 1000);
+			if (rain_sound_dummy && (mat == "Water" || mat == "Acid"))
+				rain_sound_dummy->Sound("Liquids::StereoRain", false, 80, nil, +1, CLOUD_RainFallOffDistance);
 		}
 		else
 		{
-			Sound("Liquids::StereoRain",,,, -1);
+			if (rain_sound_dummy) rain_sound_dummy->Sound("Liquids::StereoRain",,,, -1);
 		}
 	}
 	// Process modes.
@@ -264,6 +302,11 @@ private func MoveCloud()
 		SetYDir(0);
 	while (Stuck()) 
 		SetPosition(GetX(), GetY() - 5);
+		
+	if (rain_sound_dummy)
+	{
+		rain_sound_dummy->SetPosition(GetX(), GetY());
+	}
 	return;
 }
 
@@ -274,7 +317,7 @@ private func Precipitation()
 	// Precipitaion: water or snow.
 	if (rain > 0)
 	{
-		if (RainDrop());
+		if (RainDrop())
 			rain--;	
 	}	
 	// If out of liquids, skip mode.
@@ -339,7 +382,7 @@ private func RainDrop()
 		if(mat == "Snow")
 		{
 			CreateParticle("RaindropSnow", x, y, xdir, 10, PV_Random(2000, 3000), particle_cache.snow, 0);
-			if (!i)
+			if (!i && rain_inserts_mat)
 				CastPXS(mat, 1, 0, x, y);
 			continue;
 		}		
@@ -356,7 +399,7 @@ private func RainDrop()
 			var x_final = hit[0], y_final = hit[1], time_passed = hit[4];
 			if (time_passed > 0)
 			{
-					ScheduleCall(this, "DropHit", time_passed, 0, mat, color, x_final, y_final);
+					ScheduleCall(this, this.DropHit, time_passed, 0, mat, color, x_final, y_final);
 			}
 		}
 	}
@@ -376,7 +419,17 @@ private func DropHit(string material_name, int color, int x_orig, int y_orig)
 	var x = AbsX(x_orig), y = AbsY(y_orig);
 	while (GBackSemiSolid(x, y - 1)) y--;
 
-	InsertMaterial(Material(material_name), x, y - 1);
+	// Add material at impact
+	if (rain_inserts_mat)
+	{
+		InsertMaterial(Material(material_name), x, y - 1);
+	}
+	
+	// Sound?
+	if (rain_sound_dummy && Distance(x_orig, y_orig, rain_sound_dummy->GetX(), rain_sound_dummy->GetY()) > CLOUD_RainFallOffDistance)
+	{
+		rain_sound_dummy->SetPosition(x_orig, y_orig);
+	}
 
 	// Some materials cast smoke when hitting water.
 	if (GetMaterial(x,y) == Material("Water") && SmokeyMaterial(material_name))
@@ -469,7 +522,12 @@ protected func Evaporation()
 	// Try to extract the specified material.
 	if (GetMaterial(evap_x, y) == Material(rain_mat))
 	{
-		ExtractMaterialAmount(evap_x, y, Material("Water"), 3);
+		// No idea why the value was originally increased by +3 regardless
+		// of the return value of ExtractMaterialAmount; just left it that way
+		if (rain_inserts_mat)
+		{
+			ExtractMaterialAmount(evap_x, y, Material("Water"), 3);
+		}
 		rain += 3;
 	}
 	
@@ -512,7 +570,7 @@ func SaveScenarioObject(props)
 	if (GetComDir() == COMD_None) props->Remove("ComDir");
 	props->Remove("Con");
 	props->Remove("ClrModulation");
-	if (rain_mat != nil) props->AddCall("Precipitation", this, "SetPrecipitation", Format("%v", MaterialName(rain_mat)), rain_amount);
+	if (rain_mat != nil) props->AddCall("Precipitation", this, "SetPrecipitation", Format("%v", rain_mat), rain_amount);
 	if (lightning_chance) props->AddCall("Lightning", this, "SetLightning", lightning_chance);
 	if (rain) props->AddCall("Rain", this, "SetRain", rain);
 	return true;

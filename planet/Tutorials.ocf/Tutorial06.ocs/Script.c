@@ -73,7 +73,7 @@ private func InitMiddleIsland()
 	// A catapult to get to the bottom island.
 	var catapult = CreateObjectAbove(Catapult, 760, 408);
 	catapult->MakeInvincible();
-	catapult->SetDir(DIR_Left);
+	catapult->TurnLeft();
 	
 	var chemical_lab = CreateObjectAbove(ChemicalLab, 850, 368);
 	chemical_lab->MakeInvincible();
@@ -414,7 +414,7 @@ global func FxClonkRestoreStop(object target, effect, int reason, bool  temporar
 		var plr = target->GetOwner();
 		var clonk = CreateObject(Clonk, 0, 0, plr);
 		clonk->GrabObjectInfo(target);
-		Rule_BaseRespawn->TransferInventory(target, clonk);
+		Rule_Relaunch->TransferInventory(target, clonk);
 		SetCursor(plr, clonk);
 		clonk->DoEnergy(100000);
 		restorer->SetRestoreObject(clonk, nil, to_x, to_y, 0, "ClonkRestore");

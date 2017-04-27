@@ -25,11 +25,28 @@
 #include "landscape/C4Landscape.h"
 #include "player/C4PlayerList.h"
 
-#ifdef USE_GTK
-#include <gtk/gtk.h>
+
+#ifdef WITH_QT_EDITOR
+#include "editor/C4ConsoleQtViewport.h"
 #endif
 
-#ifdef USE_WIN32_WINDOWS
+#ifdef WITH_QT_EDITOR
+bool C4Viewport::ScrollBarsByViewPosition()
+{
+	if (PlayerLock) return false;
+	scrollarea->ScrollBarsByViewPosition();
+	return true;
+}
+
+bool C4Viewport::TogglePlayerLock()
+{
+	PlayerLock = !PlayerLock;
+	scrollarea->setScrollBarVisibility(!PlayerLock);
+	ScrollBarsByViewPosition();
+	return true;
+}
+
+#elif defined(USE_WIN32_WINDOWS)
 
 void UpdateWindowLayout(HWND hwnd)
 {
@@ -97,78 +114,20 @@ bool C4Viewport::ScrollBarsByViewPosition()
 	return true;
 }
 
-#elif defined(USE_GTK)
-bool C4Viewport::TogglePlayerLock()
-{
-	if (PlayerLock)
-	{
-		PlayerLock = false;
-		gtk_widget_show(pWindow->h_scrollbar);
-		gtk_widget_show(pWindow->v_scrollbar);
-		ScrollBarsByViewPosition();
-	}
-	else
-	{
-		PlayerLock = true;
-		gtk_widget_hide(pWindow->h_scrollbar);
-		gtk_widget_hide(pWindow->v_scrollbar);
-	}
-
-	return true;
-}
-
-bool C4Viewport::ScrollBarsByViewPosition()
-{
-	if (PlayerLock) return false;
-	
-	GtkAllocation allocation;
-	gtk_widget_get_allocation(GTK_WIDGET(pWindow->render_widget), &allocation);
-
-	GtkAdjustment* adjustment = gtk_range_get_adjustment(GTK_RANGE(pWindow->h_scrollbar));
-
-	gtk_adjustment_configure(adjustment,
-	                         GetViewX(), // value
-	                         0, // lower
-	                         ::Landscape.GetWidth(), // upper
-	                         ViewportScrollSpeed, // step_increment
-	                         allocation.width / Zoom, // page_increment
-	                         allocation.width / Zoom // page_size
-	                         );
-
-	adjustment = gtk_range_get_adjustment(GTK_RANGE(pWindow->v_scrollbar));
-	gtk_adjustment_configure(adjustment,
-	                         GetViewY(), // value
-	                         0, // lower
-	                         ::Landscape.GetHeight(), // upper
-	                         ViewportScrollSpeed, // step_increment
-	                         allocation.height / Zoom, // page_increment
-	                         allocation.height / Zoom // page_size
-	                         );
-	return true;
-}
-
-bool C4Viewport::ViewPositionByScrollBars()
-{
-	if (PlayerLock) return false;
-
-	GtkAdjustment* adjustment = gtk_range_get_adjustment(GTK_RANGE(pWindow->h_scrollbar));
-	SetViewX(gtk_adjustment_get_value(adjustment));
-
-	adjustment = gtk_range_get_adjustment(GTK_RANGE(pWindow->v_scrollbar));
-	SetViewY(gtk_adjustment_get_value(adjustment));
-
-	return true;
-}
-
-#endif // USE_GTK
+#endif
 
 void C4ViewportWindow::PerformUpdate()
 {
+#ifdef WITH_QT_EDITOR
+	if (viewport_widget)
+		viewport_widget->update();
+#else
 	if (cvp)
 	{
 		cvp->UpdateOutputSize();
 		cvp->Execute();
 	}
+#endif
 }
 
 C4Window * C4ViewportWindow::Init(int32_t Player)
@@ -181,8 +140,10 @@ C4Window * C4ViewportWindow::Init(int32_t Player)
 	if (!result) return result;
 
 	pSurface = new C4Surface(&Application, this);
+#ifndef WITH_QT_EDITOR
 	// Position and size
 	RestorePosition(FormatString("Viewport%i", Player+1).getData(), Config.GetSubkeyPath("Console"));
+#endif
 	return result;
 }
 
@@ -192,5 +153,5 @@ void C4ViewportWindow::Close()
 }
 void C4ViewportWindow::EditCursorMove(int X, int Y, uint32_t state)
 {
-	Console.EditCursor.Move(cvp->GetViewX() + X / cvp->Zoom, cvp->GetViewY() + Y / cvp->Zoom, state);
+	Console.EditCursor.Move(cvp->WindowToGameX(X), cvp->WindowToGameY(Y), cvp->GetZoom(), state);
 }

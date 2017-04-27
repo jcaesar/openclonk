@@ -61,37 +61,45 @@ union C4V_Data
 	C4V_Data &operator = (void *p) { assert(!p); Ptr = p; return *this; }
 };
 
+class C4JSONSerializationError : public std::exception
+{
+	std::string msg;
+public:
+	C4JSONSerializationError(const std::string& msg) : msg(msg) {}
+	virtual const char* what() const noexcept override { return msg.c_str(); }
+};
+
 class C4Value
 {
 public:
 
-	C4Value() : NextRef(NULL), Type(C4V_Nil) { Data = 0; }
+	C4Value() : NextRef(nullptr), Type(C4V_Nil) { Data = 0; }
 
-	C4Value(const C4Value &nValue) : Data(nValue.Data), NextRef(NULL), Type(nValue.Type)
+	C4Value(const C4Value &nValue) : Data(nValue.Data), NextRef(nullptr), Type(nValue.Type)
 	{ AddDataRef(); }
 	C4Value(C4Value && nValue) noexcept;
 
-	explicit C4Value(bool data): NextRef(NULL), Type(C4V_Bool)
+	explicit C4Value(bool data): NextRef(nullptr), Type(C4V_Bool)
 	{ Data.Int = data; }
-	explicit C4Value(int data):  NextRef(NULL), Type(C4V_Int)
+	explicit C4Value(int data):  NextRef(nullptr), Type(C4V_Int)
 	{ Data.Int = data; }
-	explicit C4Value(long data): NextRef(NULL), Type(C4V_Int)
+	explicit C4Value(long data): NextRef(nullptr), Type(C4V_Int)
 	{ Data.Int = int32_t(data); }
 	explicit C4Value(C4PropListStatic *p);
 	explicit C4Value(C4Def *p);
 	explicit C4Value(C4Object *pObj);
 	explicit C4Value(C4Effect *p);
-	explicit C4Value(C4String *pStr): NextRef(NULL), Type(pStr ? C4V_String : C4V_Nil)
+	explicit C4Value(C4String *pStr): NextRef(nullptr), Type(pStr ? C4V_String : C4V_Nil)
 	{ Data.Str = pStr; AddDataRef(); }
-	explicit C4Value(const char * s): NextRef(NULL), Type(s ? C4V_String : C4V_Nil)
-	{ Data.Str = s ? ::Strings.RegString(s) : NULL; AddDataRef(); }
-	explicit C4Value(const StdStrBuf & s): NextRef(NULL), Type(s.isNull() ? C4V_Nil : C4V_String)
-	{ Data.Str = s.isNull() ? NULL: ::Strings.RegString(s); AddDataRef(); }
-	explicit C4Value(C4ValueArray *pArray): NextRef(NULL), Type(pArray ? C4V_Array : C4V_Nil)
+	explicit C4Value(const char * s): NextRef(nullptr), Type(s ? C4V_String : C4V_Nil)
+	{ Data.Str = s ? ::Strings.RegString(s) : nullptr; AddDataRef(); }
+	explicit C4Value(const StdStrBuf & s): NextRef(nullptr), Type(s.isNull() ? C4V_Nil : C4V_String)
+	{ Data.Str = s.isNull() ? nullptr: ::Strings.RegString(s); AddDataRef(); }
+	explicit C4Value(C4ValueArray *pArray): NextRef(nullptr), Type(pArray ? C4V_Array : C4V_Nil)
 	{ Data.Array = pArray; AddDataRef(); }
-	explicit C4Value(C4AulFunc * pFn): NextRef(NULL), Type(pFn ? C4V_Function : C4V_Nil)
+	explicit C4Value(C4AulFunc * pFn): NextRef(nullptr), Type(pFn ? C4V_Function : C4V_Nil)
 	{ Data.Fn = pFn; AddDataRef(); }
-	explicit C4Value(C4PropList *p): NextRef(NULL), Type(p ? C4V_PropList : C4V_Nil)
+	explicit C4Value(C4PropList *p): NextRef(nullptr), Type(p ? C4V_PropList : C4V_Nil)
 	{ Data.PropList = p; AddDataRef(); }
 	C4Value(C4ObjectPtr p): C4Value(p.operator C4Object *()) {}
 	template<typename T> C4Value(Nillable<T> v): C4Value(v.IsNil() ? C4Value() : C4Value(v.operator T())) {}
@@ -105,10 +113,10 @@ public:
 	bool getBool() const { return CheckConversion(C4V_Bool) ? !! Data : 0; }
 	C4Object * getObj() const;
 	C4Def * getDef() const;
-	C4PropList * getPropList() const { return CheckConversion(C4V_PropList) ? Data.PropList : NULL; }
-	C4String * getStr() const { return CheckConversion(C4V_String) ? Data.Str : NULL; }
-	C4ValueArray * getArray() const { return CheckConversion(C4V_Array) ? Data.Array : NULL; }
-	C4AulFunc * getFunction() const { return CheckConversion(C4V_Function) ? Data.Fn : NULL; }
+	C4PropList * getPropList() const { return CheckConversion(C4V_PropList) ? Data.PropList : nullptr; }
+	C4String * getStr() const { return CheckConversion(C4V_String) ? Data.Str : nullptr; }
+	C4ValueArray * getArray() const { return CheckConversion(C4V_Array) ? Data.Array : nullptr; }
+	C4AulFunc * getFunction() const { return CheckConversion(C4V_Function) ? Data.Fn : nullptr; }
 
 	// Unchecked getters
 	int32_t _getInt() const { return Data.Int; }
@@ -151,12 +159,14 @@ public:
 	// getters
 	C4V_Data GetData()    const { return Data; }
 	C4V_Type GetType()    const { return Type; }
+	C4V_Type GetTypeEx()  const; // Return type including types derived from prop list types (such as C4V_Def)
 
 	const char *GetTypeName() const { return GetC4VName(GetType()); }
 
 	void Denumerate(C4ValueNumbers *);
 
-	StdStrBuf GetDataString(int depth = 1) const;
+	StdStrBuf GetDataString(int depth = 10, const class C4PropListStatic *ignore_reference_parent = nullptr) const;
+	StdStrBuf ToJSON(int depth = 10, const class C4PropListStatic *ignore_reference_parent = nullptr) const;
 
 	ALWAYS_INLINE bool CheckParConversion(C4V_Type vtToType) const // convert to dest type
 	{
@@ -339,14 +349,14 @@ ALWAYS_INLINE void C4Value::Set0()
 }
 
 ALWAYS_INLINE C4Value::C4Value(C4Value && nValue) noexcept:
-		Data(nValue.Data), NextRef(NULL), Type(nValue.Type)
+		Data(nValue.Data), NextRef(nullptr), Type(nValue.Type)
 {
 	if (Type == C4V_PropList)
 	{
 		Data.PropList->AddRef(this);
 		Data.PropList->DelRef(&nValue, nValue.NextRef);
 	}
-	nValue.Type = C4V_Nil; nValue.Data = 0; nValue.NextRef = NULL;
+	nValue.Type = C4V_Nil; nValue.Data = 0; nValue.NextRef = nullptr;
 }
 
 #endif

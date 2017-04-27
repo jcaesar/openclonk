@@ -63,14 +63,18 @@ public:
 	void Clear() {}
 };
 
-C4Window* C4ConsoleGUI::CreateConsoleWindow(C4AbstractApp *application)
+bool C4ConsoleGUI::CreateConsoleWindow(C4AbstractApp *application)
 {
 	C4WindowController* controller = [C4EditorWindowController new];
 	setObjectiveCObject(controller);
 	[NSBundle loadNibNamed:@"Editor" owner:controller];
 	[controller setStdWindow:this];
 	this->Active = true;
-	return this;
+	return true;
+}
+
+void C4ConsoleGUI::DeleteConsoleWindow()
+{
 }
 
 void C4ConsoleGUI::Out(const char* message)
@@ -172,7 +176,7 @@ void C4ConsoleGUI::PropertyDlgClose()
 	[ctrler(this).objectsPanel orderOut:nil];
 }
 
-void C4ConsoleGUI::PropertyDlgUpdate(C4ObjectList &rSelection, bool force_function_update)
+void C4ConsoleGUI::PropertyDlgUpdate(C4EditCursorSelection &rSelection, bool force_function_update)
 {	
 	if (![ctrler(this).objectsPanel isVisible])
 		return;
@@ -415,7 +419,7 @@ void C4ConsoleGUI::ClearPlayerMenu()
 {
 }
 
-void C4ConsoleGUI::AddNetMenuItemForPlayer(int32_t index, StdStrBuf &text)
+void C4ConsoleGUI::AddNetMenuItemForPlayer(int32_t index, StdStrBuf &text, C4ConsoleGUI::ClientOperation op)
 {
 	NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:[NSString stringWithCString:text.getData() encoding:NSUTF8StringEncoding] action:@selector(kickPlayer:) keyEquivalent:[NSString string]];
 	[item setTarget:ctrler(this)];

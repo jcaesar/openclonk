@@ -13,6 +13,7 @@
  * for the above references.
  */
 
+#include <GL/glew.h> // Somehow, C4Include manages to include gltypes.h on the autobuild hosts, which makes glew.h choke if not included first. I don't understand it, and I don't want to.
 #include "C4Include.h"
 #include "game/C4GraphicsSystem.h"
 #include "gui/C4MouseControl.h"
@@ -229,7 +230,7 @@ int32_t mouseButtonFromEvent(NSEvent* event, DWORD* modifierFlags)
 		switch (button)
 		{
 		case C4MC_Button_LeftDown:
-			Console.EditCursor.Move(viewport->GetViewX()+x/viewport->GetZoom(), viewport->GetViewY()+y/viewport->GetZoom(), flags);
+			Console.EditCursor.Move(viewport->GetViewX()+x/viewport->GetZoom(), viewport->GetViewY()+y/viewport->GetZoom(), viewport->GetZoom(), flags);
 			Console.EditCursor.LeftButtonDown(flags);
 			break;
 		case C4MC_Button_LeftUp:
@@ -242,7 +243,7 @@ int32_t mouseButtonFromEvent(NSEvent* event, DWORD* modifierFlags)
 			Console.EditCursor.RightButtonUp(flags);
 			break;
 		case C4MC_Button_None:
-			Console.EditCursor.Move(viewport->GetViewX()+x/viewport->GetZoom(),viewport->GetViewY()+y/viewport->GetZoom(), flags);
+			Console.EditCursor.Move(viewport->GetViewX()+x/viewport->GetZoom(),viewport->GetViewY()+y/viewport->GetZoom(), viewport->GetZoom(), flags);
 			break;
 		}
 	}

@@ -23,6 +23,7 @@
 #include "object/C4Def.h"
 #include "object/C4DefList.h"
 #include "lib/C4Random.h"
+#include "lib/C4Markup.h"
 #include "player/C4RankSystem.h"
 #include "c4group/C4Group.h"
 #include "c4group/C4Components.h"
@@ -59,7 +60,6 @@ void C4PlayerInfoCore::Default(C4RankSystem *pRanks)
 	PrefColorDw=0xff;
 	PrefColor2Dw=0;
 	OldPrefControl=0;
-	PrefPosition=0;
 	PrefMouse=1;
 	OldPrefControlStyle = 0;
 	OldPrefAutoContextMenu = 0;
@@ -149,7 +149,7 @@ void C4PlayerInfoCore::CompileFunc(StdCompiler *pComp)
 	pComp->Value(mkNamingAdapt(TotalPlayingTime,  "TotalPlayingTime",     0));
 	pComp->Value(mkNamingAdapt(mkParAdapt(ExtraData, &numbers), "ExtraData", C4ValueMapData()));
 	pComp->Value(mkNamingAdapt(numbers,           "ExtraDataValues"));
-	if (pComp->isCompiler())
+	if (pComp->isDeserializer())
 	{
 		numbers.Denumerate();
 		ExtraData.Denumerate(&numbers);
@@ -161,7 +161,6 @@ void C4PlayerInfoCore::CompileFunc(StdCompiler *pComp)
 	pComp->Value(mkNamingAdapt(PrefColor,                "Color",            0));
 	pComp->Value(mkNamingAdapt(PrefColorDw,              "ColorDw",          0xffu));
 	pComp->Value(mkNamingAdapt(PrefColor2Dw,             "AlternateColorDw", 0u));
-	pComp->Value(mkNamingAdapt(PrefPosition,             "Position",         0));
 	pComp->Value(mkNamingAdapt(PrefMouse,                "Mouse",            1));
 	pComp->Value(mkNamingAdapt(OldPrefControl,           "Control",          1));
 	pComp->Value(mkNamingAdapt(OldPrefControlStyle,      "AutoStopControl",  0));
@@ -188,7 +187,7 @@ void C4ObjectInfoCore::Default(C4ID n_id,
 {
 
 	// Def
-	C4Def *pDef=NULL;
+	C4Def *pDef=nullptr;
 	if (pDefs) pDef = pDefs->ID2Def(n_id);
 
 	// Defaults
@@ -330,7 +329,7 @@ void C4ObjectInfoCore::CompileFunc(StdCompiler *pComp)
 	pComp->Value(mkNamingAdapt(Age,                     "Age",              0));
 	pComp->Value(mkNamingAdapt(mkParAdapt(ExtraData, &numbers), "ExtraData", C4ValueMapData()));
 	pComp->Value(mkNamingAdapt(numbers,                 "ExtraDataValues"));
-	if (pComp->isCompiler())
+	if (pComp->isDeserializer())
 	{
 		numbers.Denumerate();
 		ExtraData.Denumerate(&numbers);
@@ -356,7 +355,7 @@ bool C4ObjectInfoCore::Decompile(char **ppOutput, size_t *ipSize)
 	      &Buf,
 	      "ObjectInfo"))
 	{
-		if (ppOutput) *ppOutput = NULL;
+		if (ppOutput) *ppOutput = nullptr;
 		if (ipSize) *ipSize = 0;
 		return false;
 	}

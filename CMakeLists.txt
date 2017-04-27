@@ -17,6 +17,12 @@ cmake_minimum_required (VERSION 3.0.2)
 # Use one of RelWithDebInfo or MinSizeRel instead.
 set(CMAKE_CONFIGURATION_TYPES Debug RelWithDebInfo MinSizeRel CACHE STRING "List of supported configuration types." FORCE)
 
+# Set a default build type as the empty build type is without either debug
+# symbols or optimizations and thus completely useless.
+if(NOT CMAKE_BUILD_TYPE)
+  set(CMAKE_BUILD_TYPE RelWithDebInfo)
+endif()
+
 project (openclonk CXX C)
 
 # CMP0054: Only interpret if() arguments as variables or keywords when unquoted
@@ -39,9 +45,9 @@ include(CMakeDependentOption)
 option(PROJECT_FOLDERS "Put source files into subfolders in project file" ON)
 CMAKE_DEPENDENT_OPTION(USE_COCOA         "Use Apple Cocoa widgets." ON "APPLE" OFF)
 CMAKE_DEPENDENT_OPTION(USE_WIN32_WINDOWS "Use Microsoft Desktop App User Interface widgets." ON "WIN32" OFF)
-CMAKE_DEPENDENT_OPTION(USE_GTK           "Use GTK+ widgets." ON "NOT USE_COCOA AND NOT USE_WIN32_WINDOWS" OFF)
-CMAKE_DEPENDENT_OPTION(USE_SDL_MAINLOOP  "Use SDL to create windows etc. No editor." ON "NOT USE_COCOA AND NOT USE_WIN32_WINDOWS AND NOT USE_GTK" OFF)
+CMAKE_DEPENDENT_OPTION(USE_SDL_MAINLOOP  "Use SDL to create windows etc. Qt editor." ON "NOT USE_COCOA AND NOT USE_WIN32_WINDOWS AND NOT HEADLESS_ONLY" OFF)
 option(WITH_AUTOMATIC_UPDATE "Automatic updates are downloaded from the project website." OFF)
+option(HEADLESS_ONLY "Only build headless parts. Somewhat reduces dependencies. (still needs libpng because that one's small and hard to remove.) Only tested with make/gcc/linux." OFF)
 
 set_property(GLOBAL PROPERTY USE_FOLDERS ${PROJECT_FOLDERS})
 
@@ -49,6 +55,9 @@ set_property(GLOBAL PROPERTY USE_FOLDERS ${PROJECT_FOLDERS})
 # Assemble compiler flags
 ############################################################################
 include(CheckCXXCompilerFlag)
+
+# Required for CMake >= 3.1.0 and Qt >= 5.7
+set(CMAKE_CXX_STANDARD 14)
 
 CHECK_CXX_COMPILER_FLAG("-std=gnu++14" USE_GCC_STD_14)
 if(USE_GCC_STD_14)
@@ -115,8 +124,16 @@ if(USE_GCC_STYLE_LTCG)
 endif()
 
 if(MSVC)
-	# Disable non-standard conversion from string literal to (nonconst) char*
-	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /Zc:strictStrings")
+	if(CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
+		# Set up some additional flags only if we're using the MS compiler,
+		# and not the clang-based toolchain
+
+		# Disable non-standard conversion from string literal to (nonconst) char*
+		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /Zc:strictStrings")
+
+		# Activate edit-and-continue
+		set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /ZI /Gy")
+	endif()
 
 	# Enable multi-core builds
 	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /MP")
@@ -125,9 +142,6 @@ if(MSVC)
 	set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} /Ob2 /GL")
 	set(CMAKE_CXX_FLAGS_MINSIZEREL "${CMAKE_CXX_FLAGS_MINSIZEREL} /Ob2 /GL")
 	add_linker_flags(optimized MODULES exe shared static FLAGS "/LTCG:incremental")
-
-	# Activate edit-and-continue
-	set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /ZI /Gy")
 
 	# do not link the release CRT in debug builds
 	set(CMAKE_EXE_LINKER_FLAGS_DEBUG "${CMAKE_EXE_LINKER_FLAGS_DEBUG} /NODEFAULTLIB:MSVCRT")
@@ -157,7 +171,7 @@ if(UNIX)
 endif()
 
 if(APPLE)
-	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fobjc-arc")
+	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fobjc-arc -headerpad_max_install_names")
 endif()
 
 ############################################################################
@@ -180,7 +194,6 @@ REQUIRE_CXX_SOURCE_COMPILES("template<class... T> class C; int main() { return 0
 # time, so the test below works.
 REQUIRE_CXX_SOURCE_COMPILES("#include <regex>\nint main() { std::cregex_iterator ri; }" HAVE_WORKING_REGEX " If you are using gcc, please update to gcc 4.9.")
 check_cxx_symbol_exists(vasprintf stdio.h HAVE_VASPRINTF)
-check_cxx_symbol_exists(__mingw_vasprintf stdio.h HAVE___MINGW_VASPRINTF)
 
 ############################################################################
 # Check for required system headers
@@ -210,32 +223,21 @@ CHECK_CXX_SOURCE_COMPILES("#include <getopt.h>\nint main(int argc, char * argv[]
 ############################################################################
 # Locate libraries
 ############################################################################
-# Find win32 SDK, since a lot of users don't have the include path in their environment
-if(MSVC)
-	get_filename_component(WINSDK_ROOT "[HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Microsoft SDKs\\Windows;CurrentInstallFolder]" ABSOLUTE CACHE)
-	mark_as_advanced(WINSDK_ROOT)
-	list(APPEND CMAKE_INCLUDE_PATH "${WINSDK_ROOT}/Include")
-	include_directories(SYSTEM ${WINSDK_ROOT}/Include)
-	if(CMAKE_SIZEOF_VOID_P EQUAL 8)
-		list(APPEND CMAKE_LIBRARY_PATH ${WINSDK_ROOT}/Lib/x64)
-	else()
-		list(APPEND CMAKE_LIBRARY_PATH ${WINSDK_ROOT}/Lib)
-	endif()
-endif()
-
 SET(JPEG_NAMES ${JPEG_NAMES} libjpeg jpeg-static)
+if(NOT HEADLESS_ONLY)
+	find_package(Freetype REQUIRED)
+	include_directories(
+		${FREETYPE_INCLUDE_DIRS})
+	link_directories(
+		${FREETYPE_LIBRARY_DIRS})
+endif()
 find_package(JPEG REQUIRED)
 find_package(PNG REQUIRED)
 find_package(ZLIB REQUIRED)
-find_package(Freetype REQUIRED)
 include_directories(
 	${JPEG_INCLUDE_DIR}
 	${PNG_INCLUDE_DIR}
-	${ZLIB_INCLUDE_DIR}
-	${FREETYPE_INCLUDE_DIRS})
-link_directories(
-	${FREETYPE_LIBRARY_DIRS})
-
+	${ZLIB_INCLUDE_DIR})
 if(CMAKE_SYSTEM MATCHES "Windows")
 	message(STATUS "Using Win32 threading.")
 else()
@@ -277,19 +279,26 @@ endif()
 
 include_directories(SYSTEM ${TinyXML_INCLUDE_DIRS})
 
-find_package(OpenGL)
-find_package(GLEW REQUIRED)
-include_directories(${GLEW_INCLUDE_DIRS})
-add_definitions(${GLEW_DEFINITIONS})
+if(NOT HEADLESS_ONLY)
+	find_package(OpenGL)
+	find_package(GLEW REQUIRED)
+	include_directories(${GLEW_INCLUDE_DIRS})
+	add_definitions(${GLEW_DEFINITIONS})
 # On some platforms, GLEW declares the userParam parameter of
 # GLDEBUGPROCARB as const void *, and on other platforms, it's void *.
 # Test which one works here.
-set(CMAKE_REQUIRED_INCLUDES "${GLEW_INCLUDE_DIRS}")
-CHECK_CXX_SOURCE_COMPILES("#include <GL/glew.h>\nvoid GLAPIENTRY OpenGLDebugProc(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const char* message, const void* userParam) {}\nint main() { GLDEBUGPROCARB proc = &OpenGLDebugProc; }" GLDEBUGPROCARB_USERPARAM_IS_CONST)
+	set(CMAKE_REQUIRED_INCLUDES "${GLEW_INCLUDE_DIRS}")
+	CHECK_CXX_SOURCE_COMPILES("#include <GL/glew.h>\nvoid GLAPIENTRY OpenGLDebugProc(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const char* message, const void* userParam) {}\nint main() { GLDEBUGPROCARB proc = &OpenGLDebugProc; }" GLDEBUGPROCARB_USERPARAM_IS_CONST)
+endif()
 
-if(USE_GTK AND UNIX)
+if(UNIX AND NOT APPLE)
 	FINDLIB(X11_LIBRARIES X11)
-	FINDLIB(XRANDR_LIBRARIES Xrandr)
+
+	set(Backward_DIR thirdparty/backward-cpp)
+	find_package(Backward)
+	if(Backward_FOUND)
+		set(HAVE_BACKWARD 1)
+	endif()
 endif()
 
 if (WIN32)
@@ -312,13 +321,6 @@ endif()
 SET(HAVE_LIBREADLINE ${READLINE_FOUND} CACHE INTERNAL "libreadline available")
 
 find_package(GTK3 COMPONENTS gthread gio gobject glib OPTIONAL_COMPONENTS gtksourceview)
-if(USE_GTK)
-	SET(WITH_GLIB ${GTK3_FOUND})
-	include_directories(SYSTEM ${GTK3_INCLUDE_DIRS})
-	# Set GTK link directory. This needs to be done before add_executable,
-	# otherwise the path is not used for linking clonk
-	link_directories(${GTK3_LIBRARY_DIRS})
-endif()
 
 # Select an audio library
 find_package("Audio")
@@ -374,6 +376,20 @@ llvm_map_components_to_libnames(LLVM_LIBRARIES_OC
 include_directories(SYSTEM ${LLVM_INCLUDE_DIRS})
 link_directories(${LLVM_LIBRARY_DIRS})
 
+# Qt5 for editor
+find_path(Qt5DIR qt.pro PATHS ${CMAKE_ADDITIONAL_DEPS_PATH}/qt-5.5.0)
+find_package(Qt5Widgets 5.4 PATHS ${Qt5DIR}/qtbase/lib/cmake/Qt5Widgets)
+if(Qt5Widgets_FOUND)
+	SET(WITH_QT_EDITOR ${Qt5Widgets_FOUND} "Qt editor dialogues available")
+	set(CMAKE_AUTOMOC ON)
+	set(CMAKE_AUTOUIC ON)
+	# As moc files are generated in the binary dir, tell CMake
+	# to always look for includes there:
+	set(CMAKE_INCLUDE_CURRENT_DIR ON)
+else()
+	message("Qt5Widgets not found. Building openclonk without editor.")		
+	UNSET(WITH_QT_EDITOR)
+endif()
 
 ############################################################################
 # generated source files
@@ -394,31 +410,6 @@ add_custom_command(
 		${CMAKE_CURRENT_SOURCE_DIR}/src/res/ocg.ico
 		${CMAKE_CURRENT_SOURCE_DIR}/src/res/ocm.ico
 		${CMAKE_CURRENT_SOURCE_DIR}/src/res/ocs.ico
-	VERBATIM
-)
-
-add_custom_command(
-	OUTPUT engine-resource.c
-	COMMAND
-		${GLIB_COMPILE_RESOURCES} "--internal" "--generate"
-		"--target" "engine-resource.c"
-		"--sourcedir" ${CMAKE_CURRENT_SOURCE_DIR}/src/res
-		"${CMAKE_CURRENT_SOURCE_DIR}/src/res/engine.xml"
-	MAIN_DEPENDENCY src/res/engine.xml
-	DEPENDS
-		${CMAKE_CURRENT_SOURCE_DIR}/src/res/Brush_Trans.png
-		${CMAKE_CURRENT_SOURCE_DIR}/src/res/Halt_Trans.png
-		${CMAKE_CURRENT_SOURCE_DIR}/src/res/Picker_Trans.png
-		${CMAKE_CURRENT_SOURCE_DIR}/src/res/Cursor_Trans.png
-		${CMAKE_CURRENT_SOURCE_DIR}/src/res/Play_Trans.png
-		${CMAKE_CURRENT_SOURCE_DIR}/src/res/Dynamic_Trans.png
-		${CMAKE_CURRENT_SOURCE_DIR}/src/res/Line_Trans.png
-		${CMAKE_CURRENT_SOURCE_DIR}/src/res/Rect_Trans.png
-		${CMAKE_CURRENT_SOURCE_DIR}/src/res/Exact_Trans.png
-		${CMAKE_CURRENT_SOURCE_DIR}/src/res/Mouse_Trans.png
-		${CMAKE_CURRENT_SOURCE_DIR}/src/res/Static_Trans.png
-		${CMAKE_CURRENT_SOURCE_DIR}/src/res/Fill_Trans.png
-		${CMAKE_CURRENT_SOURCE_DIR}/src/res/oc.ico
 	VERBATIM
 )
 
@@ -481,8 +472,6 @@ endif()
 set(OC_CLONK_SOURCES
 	src/C4Globals.cpp
 	src/c4group/C4Components.h
-	src/c4group/C4Extra.cpp
-	src/c4group/C4Extra.h
 	src/c4group/C4Language.cpp
 	src/c4group/C4Language.h
 	src/C4Include.cpp
@@ -504,7 +493,6 @@ set(OC_CLONK_SOURCES
 	src/control/C4GameSave.h
 	src/control/C4PlayerControl.cpp
 	src/control/C4PlayerControl.h
-	src/control/C4PlayerInfoConflicts.cpp
 	src/control/C4PlayerInfo.cpp
 	src/control/C4PlayerInfo.h
 	src/control/C4Record.cpp
@@ -539,8 +527,6 @@ set(OC_CLONK_SOURCES
 	src/game/C4Physics.h
 	src/game/C4Viewport.cpp
 	src/game/C4Viewport.h
-	src/graphics/Bitmap256.cpp
-	src/graphics/Bitmap256.h
 	src/graphics/C4Draw.cpp
 	src/graphics/C4DrawGL.cpp
 	src/graphics/C4DrawGLCtx.cpp
@@ -562,18 +548,12 @@ set(OC_CLONK_SOURCES
 	src/graphics/C4Surface.cpp
 	src/graphics/C4Surface.h
 	src/graphics/C4SurfaceLoaders.cpp
-	src/graphics/CSurface8.cpp
-	src/graphics/CSurface8.h
-	src/graphics/StdPNG.cpp
-	src/graphics/StdPNG.h
 	src/gui/C4ChatDlg.cpp
 	src/gui/C4ChatDlg.h
 	src/gui/C4DownloadDlg.cpp
 	src/gui/C4DownloadDlg.h
 	src/gui/C4FileSelDlg.cpp
 	src/gui/C4FileSelDlg.h
-	src/gui/C4Folder.cpp
-	src/gui/C4Folder.h
 	src/gui/C4GameDialogs.cpp
 	src/gui/C4GameDialogs.h
 	src/gui/C4GameLobby.cpp
@@ -659,45 +639,27 @@ set(OC_CLONK_SOURCES
 	src/landscape/C4MapCreatorS2.h
 	src/landscape/C4Map.h
 	src/landscape/C4MapScript.cpp
-	src/landscape/C4MapScriptAlgo.cpp
 	src/landscape/C4MapScript.h
-	src/landscape/C4MassMover.cpp
-	src/landscape/C4MassMover.h
 	src/landscape/C4Material.cpp
 	src/landscape/C4Material.h
-	src/landscape/C4MaterialList.cpp
-	src/landscape/C4MaterialList.h
 	src/landscape/C4Particles.cpp
 	src/landscape/C4Particles.h
 	src/landscape/C4PathFinder.cpp
 	src/landscape/C4PathFinder.h
 	src/landscape/C4PXS.cpp
 	src/landscape/C4PXS.h
-	src/landscape/C4Scenario.cpp
-	src/landscape/C4ScenarioSection.cpp
-	src/landscape/C4Scenario.h
 	src/landscape/C4Sky.cpp
 	src/landscape/C4Sky.h
 	src/landscape/C4SolidMask.cpp
 	src/landscape/C4SolidMask.h
 	src/landscape/C4Texture.cpp
 	src/landscape/C4Texture.h
-	src/landscape/C4TextureShape.cpp
-	src/landscape/C4TextureShape.h
 	src/landscape/C4TransferZone.cpp
 	src/landscape/C4TransferZone.h
 	src/landscape/C4Weather.cpp
 	src/landscape/C4Weather.h
-	src/lib/C4LogBuf.cpp
-	src/lib/C4LogBuf.h
-	src/lib/C4Log.cpp
-	src/lib/C4Log.h
-	src/lib/C4NameList.cpp
-	src/lib/C4NameList.h
 	src/lib/C4Rect.cpp
 	src/lib/C4Rect.h
-	src/lib/C4Stat.cpp
-	src/lib/C4Stat.h
 	src/lib/StdAdaptors.h
 	src/lib/StdColors.h
 	src/lib/StdMesh.cpp
@@ -711,8 +673,6 @@ set(OC_CLONK_SOURCES
 	src/lib/StdMeshLoaderXml.cpp
 	src/lib/StdMeshMaterial.cpp
 	src/lib/StdMeshMaterial.h
-	src/lib/StdMeshMath.cpp
-	src/lib/StdMeshMath.h
 	src/lib/StdMeshUpdate.cpp
 	src/lib/StdMeshUpdate.h
 	src/network/C4Client.cpp
@@ -728,8 +688,6 @@ set(OC_CLONK_SOURCES
 	src/network/C4Network2.cpp
 	src/network/C4Network2Dialogs.cpp
 	src/network/C4Network2Dialogs.h
-	src/network/C4Network2Discover.cpp
-	src/network/C4Network2Discover.h
 	src/network/C4Network2.h
 	src/network/C4Network2IO.cpp
 	src/network/C4Network2IO.h
@@ -747,7 +705,6 @@ set(OC_CLONK_SOURCES
 	src/network/C4Network2UPnP.h
 	src/network/C4Packet2.cpp
 	src/network/C4PacketBase.h
-	src/object/C4Action.cpp
 	src/object/C4Command.cpp
 	src/object/C4Command.h
 	src/object/C4Def.cpp
@@ -756,19 +713,14 @@ set(OC_CLONK_SOURCES
 	src/object/C4Def.h
 	src/object/C4DefList.cpp
 	src/object/C4DefList.h
-	src/object/C4FindObject.cpp
-	src/object/C4FindObject.h
 	src/object/C4GameObjects.cpp
 	src/object/C4GameObjects.h
-	src/object/C4Id.cpp
-	src/object/C4Id.h
 	src/object/C4IDList.cpp
 	src/object/C4IDList.h
-	src/object/C4InfoCore.cpp
-	src/object/C4InfoCore.h
 	src/object/C4MeshAnimation.cpp
 	src/object/C4MeshAnimation.h
-	src/object/C4Movement.cpp
+	src/object/C4MeshDenumerator.cpp
+	src/object/C4MeshDenumerator.h
 	src/object/C4ObjectCom.cpp
 	src/object/C4ObjectCom.h
 	src/object/C4Object.cpp
@@ -781,13 +733,7 @@ set(OC_CLONK_SOURCES
 	src/object/C4ObjectList.h
 	src/object/C4ObjectMenu.cpp
 	src/object/C4ObjectMenu.h
-	src/object/C4ObjectPtr.cpp
-	src/object/C4ObjectPtr.h
 	src/object/C4ObjectScript.cpp
-	src/object/C4Sector.cpp
-	src/object/C4Sector.h
-	src/object/C4Shape.cpp
-	src/object/C4Shape.h
 	src/platform/C4App.cpp
 	src/platform/C4App.h
 	src/platform/C4AppWin32Impl.h
@@ -808,13 +754,13 @@ set(OC_CLONK_SOURCES
 	src/platform/C4SoundModifiers.h
 	src/platform/C4SoundSystem.cpp
 	src/platform/C4SoundSystem.h
-	src/platform/C4TimeMilliseconds.cpp 
-	src/platform/C4TimeMilliseconds.h
 	src/platform/C4Window.h
 	src/platform/C4windowswrapper.h
 	src/platform/PlatformAbstraction.cpp
 	src/platform/PlatformAbstraction.h
 	src/platform/StdSync.h
+	src/player/C4Achievement.cpp
+	src/player/C4Achievement.h
 	src/player/C4Player.cpp
 	src/player/C4Player.h
 	src/player/C4PlayerList.cpp
@@ -826,7 +772,37 @@ set(OC_CLONK_SOURCES
 	src/script/C4AulDebug.cpp
 	src/script/C4AulDebug.h
 	thirdparty/timsort/sort.h
+	src/lib/C4LogBuf.cpp
+	src/lib/C4LogBuf.h
+	src/lib/C4Log.cpp
+	src/lib/C4Log.h
 )
+
+if(WITH_QT_EDITOR)
+  qt5_add_resources(qt_editor_resources "src/editor/resource.qrc")
+  set(QT_EDITOR_SOURCES
+	  src/editor/C4ConsoleQt.cpp
+	  src/editor/C4ConsoleQt.h
+	  src/editor/C4ConsoleQtState.cpp
+	  src/editor/C4ConsoleQtState.h
+	  src/editor/C4ConsoleQtShapes.cpp
+	  src/editor/C4ConsoleQtShapes.h
+	  src/editor/C4ConsoleQtPropListViewer.cpp
+	  src/editor/C4ConsoleQtPropListViewer.h
+	  src/editor/C4ConsoleQtObjectListViewer.cpp
+	  src/editor/C4ConsoleQtObjectListViewer.h
+	  src/editor/C4ConsoleQtDefinitionListViewer.cpp
+	  src/editor/C4ConsoleQtDefinitionListViewer.h
+	  src/editor/C4ConsoleQtViewport.cpp
+	  src/editor/C4ConsoleQtViewport.h
+	  src/editor/C4ConsoleQtNewScenario.cpp
+	  src/editor/C4ConsoleQtNewScenario.h
+	  src/editor/C4ConsoleQtNewScenario.ui
+	  src/editor/C4ConsoleQtMainWindow.ui
+	  src/editor/resource.qrc
+	  ${qt_editor_resources}
+  )
+endif()
 
 set(MAPE_BASE_SOURCES
 	src/C4Include.cpp
@@ -953,28 +929,27 @@ elseif(UPNP_STYLE STREQUAL "miniupnpc")
 endif()
 
 # source files specific to a GUI library
-if(USE_GTK)
-	list(APPEND OC_GUI_SOURCES
-		src/editor/C4ConsoleGTK.cpp
-		src/editor/C4ConsoleGTKDlg.cpp
-		src/editor/C4ConsoleGTKDlg.h
-		src/platform/C4AppGTK.cpp
-		src/platform/C4WindowGTK.cpp
-		engine-resource.c
-	)
-elseif(USE_SDL_MAINLOOP)
+if(USE_SDL_MAINLOOP)
 	list(APPEND OC_GUI_SOURCES
 		src/platform/C4AppSDL.cpp
 		src/platform/C4WindowSDL.cpp
 	)
+	if(WITH_QT_EDITOR)
+		list(APPEND OC_GUI_SOURCES ${QT_EDITOR_SOURCES})
+	endif()
 elseif(USE_WIN32_WINDOWS)
+	if(WITH_QT_EDITOR)
+		list(APPEND OC_GUI_SOURCES ${QT_EDITOR_SOURCES})
+	else()
+		list(APPEND OC_GUI_SOURCES
+			src/editor/C4ConsoleWin32.cpp
+		)
+	endif()
 	list(APPEND OC_GUI_SOURCES
-		src/editor/C4ConsoleWin32.cpp
 		src/platform/C4WindowWin32.cpp
 	)
 elseif(USE_COCOA)
 	list(APPEND OC_GUI_SOURCES
-		src/editor/C4ConsoleCocoa.mm
 		src/platform/C4WindowMac.mm
 		src/platform/C4AppDelegate+MainMenuActions.h
 		src/platform/C4AppDelegate+MainMenuActions.mm
@@ -983,9 +958,10 @@ elseif(USE_COCOA)
 		src/platform/C4WindowController.h
 		src/platform/C4WindowController.mm
 		src/platform/CocoaKeycodeMap.h
-		src/editor/C4EditorWindowController.h
-		src/editor/C4EditorWindowController.mm
 	)
+	if(WITH_QT_EDITOR)
+		list(APPEND OC_GUI_SOURCES ${QT_EDITOR_SOURCES})
+	endif()
 endif()
 if(WITH_AUTOMATIC_UPDATE)
 	list(APPEND OC_GUI_SOURCES
@@ -1035,10 +1011,14 @@ src/c4group/C4Update.cpp
 src/c4group/C4Update.h
 src/c4group/CStdFile.cpp
 src/c4group/CStdFile.h
+src/graphics/C4BltTransform.cpp
+src/graphics/C4BltTransform.h
 src/lib/C4InputValidation.cpp
 src/lib/C4InputValidation.h
 src/lib/C4Markup.cpp
 src/lib/C4Markup.h
+src/lib/C4Random.cpp
+src/lib/C4Random.h
 src/lib/C4SimpleLog.cpp
 src/lib/SHA1.h
 src/lib/Standard.cpp
@@ -1048,8 +1028,12 @@ src/lib/StdBuf.h
 src/lib/StdCompiler.cpp
 src/lib/StdCompiler.h
 src/lib/StdResStr2.cpp
+src/netpuncher/C4PuncherPacket.cpp
+src/netpuncher/C4PuncherPacket.h
 src/network/C4NetIO.cpp
 src/network/C4NetIO.h
+src/network/C4Network2Address.cpp
+src/network/C4Network2Address.h
 src/platform/StdFile.cpp
 src/platform/StdFile.h
 src/platform/StdRegistry.cpp
@@ -1086,31 +1070,31 @@ endif()
 
 add_library(libc4script
 src/C4Include.cpp
-src/c4group/C4GroupSet.cpp
-src/c4group/C4GroupSet.h
 src/c4group/C4ComponentHost.cpp
 src/c4group/C4ComponentHost.h
+src/c4group/C4GroupSet.cpp
+src/c4group/C4GroupSet.h
 src/c4group/C4LangStringTable.cpp
 src/c4group/C4LangStringTable.h
+src/lib/C4RandomRecord.cpp
 src/lib/C4Real.cpp
 src/lib/C4Real.h
-src/lib/C4Random.cpp
-src/lib/C4Random.h
 src/script/C4Aul.cpp
-src/script/C4AulCompiler.h
+src/script/C4Aul.h
+src/script/C4AulAST.h
 src/script/C4AulCompiler.cpp
+src/script/C4AulCompiler.h
 src/script/C4AulDefFunc.h
 src/script/C4AulExec.cpp
 src/script/C4AulExec.h
 src/script/C4AulFunc.cpp
 src/script/C4AulFunc.h
-src/script/C4Aul.h
-src/script/C4AulAST.h
 src/script/C4AulLink.cpp
 src/script/C4AulParse.cpp
 src/script/C4AulParse.h
 src/script/C4AulScriptFunc.cpp
 src/script/C4AulScriptFunc.h
+src/script/C4AulWarnings.h
 src/script/C4Effect.cpp
 src/script/C4Effect.h
 src/script/C4PropList.cpp
@@ -1120,15 +1104,69 @@ src/script/C4ScriptHost.cpp
 src/script/C4ScriptHost.h
 src/script/C4StringTable.cpp
 src/script/C4StringTable.h
-src/script/C4ValueArray.cpp
-src/script/C4ValueArray.h
 src/script/C4Value.cpp
 src/script/C4Value.h
+src/script/C4ValueArray.cpp
+src/script/C4ValueArray.h
 src/script/C4ValueMap.cpp
 src/script/C4ValueMap.h
 )
 
 target_link_libraries(libc4script libmisc ${LLVM_LIBRARIES_OC} ${LLVM_LDFLAGS})
+
+add_library(libopenclonk
+	src/c4group/C4Extra.cpp
+	src/c4group/C4Extra.h
+	src/control/C4PlayerInfoConflicts.cpp
+	src/graphics/Bitmap256.cpp
+	src/graphics/Bitmap256.h
+	src/graphics/CSurface8.cpp
+	src/graphics/CSurface8.h
+	src/graphics/StdPNG.cpp
+	src/graphics/StdPNG.h
+	src/gui/C4Folder.cpp
+	src/gui/C4Folder.h
+	src/landscape/C4MapScriptAlgo.cpp
+	src/landscape/C4MassMover.cpp
+	src/landscape/C4MassMover.h
+	src/landscape/C4MaterialList.cpp
+	src/landscape/C4MaterialList.h
+	src/landscape/C4Scenario.cpp
+	src/landscape/C4Scenario.h
+	src/landscape/C4ScenarioSection.cpp
+	src/landscape/C4TextureShape.cpp
+	src/landscape/C4TextureShape.h
+	src/lib/C4NameList.cpp
+	src/lib/C4NameList.h
+	src/lib/C4Stat.cpp
+	src/lib/C4Stat.h
+	src/lib/StdMeshMath.cpp
+	src/lib/StdMeshMath.h
+	src/network/C4Network2Discover.cpp
+	src/network/C4Network2Discover.h
+	src/object/C4Action.cpp
+	src/object/C4FindObject.cpp
+	src/object/C4FindObject.h
+	src/object/C4Id.cpp
+	src/object/C4Id.h
+	src/object/C4InfoCore.cpp
+	src/object/C4InfoCore.h
+	src/object/C4Movement.cpp
+	src/object/C4ObjectPtr.cpp
+	src/object/C4ObjectPtr.h
+	src/object/C4Sector.cpp
+	src/object/C4Sector.h
+	src/object/C4Shape.cpp
+	src/object/C4Shape.h
+	src/platform/C4TimeMilliseconds.cpp 
+	src/platform/C4TimeMilliseconds.h
+)
+
+target_link_libraries(libopenclonk ${PNG_LIBRARIES})
+
+target_compile_definitions(libmisc PRIVATE "COMPILED_AS_C4LIBRARY")
+target_compile_definitions(libc4script PRIVATE "COMPILED_AS_C4LIBRARY")
+target_compile_definitions(libopenclonk PRIVATE "COMPILED_AS_C4LIBRARY")
 
 add_executable(c4script
 	include/c4script/c4script.h
@@ -1138,40 +1176,52 @@ add_executable(c4script
 )
 set_property(TARGET c4script PROPERTY FOLDER "Utilities")
 
+target_compile_definitions(c4script PRIVATE "USE_CONSOLE")
+
 target_link_libraries(c4script
-	libc4script
 	libmisc
-)
-
-add_executable(openclonk WIN32 MACOSX_BUNDLE
-	${OC_SYSTEM_SOURCES}
-	${OC_GUI_SOURCES}
-	${OC_CLONK_SOURCES}
-)
-
-target_link_libraries(openclonk
-	${FREETYPE_LIBRARIES}
-	${PNG_LIBRARIES}
-	${JPEG_LIBRARIES}
-	${EXECINFO_LIBRARY}
-	${SDL2_LIBRARIES}
-	${Audio_LIBRARIES}
+	libc4script
 	${GETOPT_LIBRARIES}
-	${GLEW_LIBRARIES}
-	${OPENGL_LIBRARIES}
-	${TinyXML_LIBRARIES}
-	${X11_LIBRARIES}
-	${XRANDR_LIBRARIES}
-	${DBGHELP_LIBRARIES}
-	${UPNP_LIBRARIES}
-	libc4script
-	libmisc
 )
-if(USE_GTK)
-	target_link_libraries(openclonk ${GTK3_LIBRARIES})
-endif()
-if(USE_COCOA)
-	target_link_libraries(openclonk "-framework Cocoa -framework AppKit -framework Quartz -framework OpenAL -framework AudioToolbox")
+
+if(NOT HEADLESS_ONLY)
+	add_executable(openclonk WIN32 MACOSX_BUNDLE
+		${OC_SYSTEM_SOURCES}
+		${OC_GUI_SOURCES}
+		${OC_CLONK_SOURCES}
+	)
+
+	target_link_libraries(openclonk
+		${FREETYPE_LIBRARIES}
+		${PNG_LIBRARIES}
+		${JPEG_LIBRARIES}
+		${EXECINFO_LIBRARY}
+		${SDL2_LIBRARIES}
+		${Audio_LIBRARIES}
+		${GETOPT_LIBRARIES}
+		${GLEW_LIBRARIES}
+		${OPENGL_LIBRARIES}
+		${TinyXML_LIBRARIES}
+		${X11_LIBRARIES}
+		${XRANDR_LIBRARIES}
+		${DBGHELP_LIBRARIES}
+		${UPNP_LIBRARIES}
+		libmisc
+		libc4script
+		libopenclonk
+	)
+	if(USE_COCOA)
+		target_link_libraries(openclonk "-framework Cocoa -framework AppKit -framework Quartz -framework OpenAL -framework AudioToolbox")
+	endif()
+
+	if(WITH_QT_EDITOR)
+		set_target_properties(openclonk PROPERTIES COMPILE_DEFINITIONS WITH_QT_EDITOR)
+		qt5_use_modules(openclonk Widgets)
+	endif()
+
+	if(HAVE_BACKWARD)
+		add_backward(openclonk)
+	endif()
 endif()
 
 add_executable(openclonk-server
@@ -1191,18 +1241,23 @@ target_link_libraries(openclonk-server
 	${READLINE_LIBRARIES}
 	${Audio_LIBRARIES}
 	${GETOPT_LIBRARIES}
-	${GTK3_glib_LIBRARIES}
 	${TinyXML_LIBRARIES}
 	${DBGHELP_LIBRARIES}
-	${UPNP_LIBRARIES}
-	libc4script
 	libmisc
+	libc4script
+	libopenclonk
 )
+if(UPNP_FOUND)
+	target_link_libraries(openclonk-server ${UPNP_LIBRARIES})
+endif()
 if(USE_COCOA)
 	target_link_libraries(openclonk-server "-framework Cocoa")
 endif()
+if(HAVE_BACKWARD)
+	add_backward(openclonk-server)
+endif()
 
-if(GTK3_FOUND AND GTK3_gtksourceview_FOUND)
+if(GTK3_FOUND AND GTK3_gtksourceview_FOUND AND NOT HEADLESS_ONLY)
 	add_executable(mape ${MAPE_BASE_SOURCES} ${MAPE_SOURCES})
 	target_compile_options(mape PRIVATE ${GTK3_COMPILE_DEFINITIONS} ${GTK3_gtksourceview_COMPILE_DEFINITIONS})
 	set_property(TARGET mape PROPERTY FOLDER "Utilities")
@@ -1210,8 +1265,8 @@ if(GTK3_FOUND AND GTK3_gtksourceview_FOUND)
 	target_link_libraries(mape
 		${GTK3_LIBRARIES}
 		${GTK3_gtksourceview_LIBRARIES}
-		libc4script
 		libmisc
+		libc4script
 	)
 	# Suppress the console window for mape even though only a main() and not
 	# a WinMain() entry point is provided.
@@ -1229,11 +1284,17 @@ target_link_libraries(c4group
 	libmisc
 )
 
+add_executable(netpuncher EXCLUDE_FROM_ALL
+	src/netpuncher/C4PuncherHash.h
+	src/netpuncher/main.cpp
+)
+
+target_link_libraries(netpuncher
+	libmisc
+)
+
 if(WIN32)
-	target_link_libraries(openclonk ws2_32)
-	target_link_libraries(openclonk-server ws2_32)
-	target_link_libraries(c4group ws2_32)
-	target_link_libraries(c4script ws2_32)
+	target_link_libraries(libmisc iphlpapi ws2_32)
 endif()
 
 set_property(DIRECTORY APPEND PROPERTY COMPILE_DEFINITIONS $<$<CONFIG:Debug>:_DEBUG>)
@@ -1250,7 +1311,9 @@ if (APPLE AND NOT CMAKE_GENERATOR STREQUAL "Xcode")
 	set(EXECUTABLE_NAME openclonk)
 endif()
 
-set_target_properties(openclonk PROPERTIES MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/src/res/Info.plist")
+if(NOT HEADLESS_ONLY)
+	set_target_properties(openclonk PROPERTIES MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/src/res/Info.plist")
+endif()
 
 if(MSVC)
 	# set target output filenames to a per-configuration value
@@ -1279,14 +1342,15 @@ endif()
 # Precompiled header support for MSVC
 ############################################################################
 if(HAVE_PRECOMPILED_HEADERS)
-	if(MSVC)
+	if(CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
 		get_property(OC_SOURCES TARGET openclonk PROPERTY SOURCES)
 		foreach(FILE ${OC_SOURCES})
 			get_filename_component(FILE_EXT ${FILE} EXT)
 			get_filename_component(FILE_NAME_WE ${FILE} NAME_WE)
-			if(FILE_EXT STREQUAL ".cpp")
-				# This check is necessary since gzio.c gets compiled as C
-				# code, which can't use C++ PCH.
+			if(FILE_EXT STREQUAL ".cpp" AND NOT FILE STREQUAL qt_editor_resources)
+				# The check for .cpp is necessary since gzio.c gets compiled as C
+				# code, which can't use C++ PCH. Also, the auto-generated file
+				# qt_editor_resources does not include the PCH.
 				set_property(SOURCE ${FILE} PROPERTY COMPILE_FLAGS /YuC4Include.h)
 			endif()
 		endforeach()
@@ -1323,10 +1387,11 @@ if (APPLE)
 	endif()
 
 	add_custom_command(TARGET openclonk
-		POST_BUILD COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tools/osx_bundle_libs"
+		POST_BUILD COMMAND
+		"${CMAKE_CURRENT_SOURCE_DIR}/tools/osx_bundle_libs"
+		"$<$<BOOL:${CMAKE_SYSROOT}>:--sysroot=${CMAKE_SYSROOT}>"
 		"$<TARGET_FILE:openclonk>"
 	)
-
 endif()
 
 ############################################################################
@@ -1484,26 +1549,34 @@ foreach(group ${OC_C4GROUPS})
 	endif()
 endforeach()
 
-if (NOT APPLE)
+if(NOT APPLE)
+	# group files (game data)
 	add_custom_target(groups DEPENDS ${OC_C4GROUPS})
 	set_property(TARGET groups PROPERTY FOLDER "Setup")
 	add_dependencies(data groups)
-	
-	# Install new files
-	install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/openclonk.desktop DESTINATION share/applications)
-	# Update the MIME cache -- this makes the clonk:// protocol handler actually work
-	install(CODE "execute_process(COMMAND update-desktop-database)")
-
 	# Install binaries
-	install(TARGETS openclonk DESTINATION games)
 	install(TARGETS c4group DESTINATION bin)
-else()
-	install(TARGETS openclonk
-		BUNDLE DESTINATION .
-	)
-	install(TARGETS c4group c4script
-		RUNTIME DESTINATION .
-	)
+endif()
+if(NOT HEADLESS_ONLY)
+	if(NOT APPLE)
+		# Install new files
+		install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/openclonk.desktop DESTINATION share/applications)
+		# Update the MIME cache -- this makes the clonk:// protocol handler actually work
+		install(CODE "execute_process(COMMAND update-desktop-database)")
+
+		# Install software center metadata
+		install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/openclonk.appdata.xml DESTINATION share/appdata)
+
+		# Install binaries
+		install(TARGETS openclonk DESTINATION games)
+	else()
+		install(TARGETS openclonk
+			BUNDLE DESTINATION .
+		)
+		install(TARGETS c4group c4script
+			RUNTIME DESTINATION .
+		)
+	endif()
 endif()
 
 ############################################################################
@@ -1512,23 +1585,25 @@ endif()
 
 find_program(MAKENSIS makensis PATHS [HKEY_LOCAL_MACHINE\\SOFTWARE\\NSIS])
 
-add_custom_command(
-	OUTPUT setup_openclonk.exe
-	COMMAND ${MAKENSIS} -NOCD -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR} -DPROGRAMFILES=$PROGRAMFILES "-DPRODUCT_NAME=${C4ENGINENAME}" "-DPRODUCT_COMPANY=${C4PROJECT}" "-DCLONK=$<TARGET_FILE_DIR:openclonk>\\$<TARGET_FILE_NAME:openclonk>" "-DC4GROUP=$<TARGET_FILE_DIR:c4group>\\$<TARGET_FILE_NAME:c4group>" ${CMAKE_CURRENT_SOURCE_DIR}/tools/install/oc.nsi "-XOutFile setup_openclonk.exe"
-	MAIN_DEPENDENCY
-		${CMAKE_CURRENT_SOURCE_DIR}/tools/install/oc.nsi
-	DEPENDS
-		${CMAKE_CURRENT_SOURCE_DIR}/tools/install/header.bmp
-		${CMAKE_CURRENT_SOURCE_DIR}/tools/install/inst.ico
-		${CMAKE_CURRENT_SOURCE_DIR}/tools/install/uninst.ico
-		${OC_C4GROUPS} openclonk c4group
-	VERBATIM
-)
+if(NOT HEADLESS_ONLY)
+	add_custom_command(
+		OUTPUT setup_openclonk.exe
+		COMMAND ${MAKENSIS} -NOCD -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR} -DPROGRAMFILES=$PROGRAMFILES "-DPRODUCT_NAME=${C4ENGINENAME}" "-DPRODUCT_COMPANY=${C4PROJECT}" "-DCLONK=$<TARGET_FILE_DIR:openclonk>\\$<TARGET_FILE_NAME:openclonk>" "-DC4GROUP=$<TARGET_FILE_DIR:c4group>\\$<TARGET_FILE_NAME:c4group>" ${CMAKE_CURRENT_SOURCE_DIR}/tools/install/oc.nsi "-XOutFile setup_openclonk.exe"
+		MAIN_DEPENDENCY
+			${CMAKE_CURRENT_SOURCE_DIR}/tools/install/oc.nsi
+		DEPENDS
+			${CMAKE_CURRENT_SOURCE_DIR}/tools/install/header.bmp
+			${CMAKE_CURRENT_SOURCE_DIR}/tools/install/inst.ico
+			${CMAKE_CURRENT_SOURCE_DIR}/tools/install/uninst.ico
+			${OC_C4GROUPS} openclonk c4group
+		VERBATIM
+	)
 
-add_custom_target(setup
-	DEPENDS setup_openclonk.exe groups
-)
-set_property(TARGET setup PROPERTY FOLDER "Setup")
+	add_custom_target(setup
+		DEPENDS setup_openclonk.exe groups
+	)
+	set_property(TARGET setup PROPERTY FOLDER "Setup")
+endif()
 
 ############################################################################
 # CPack support

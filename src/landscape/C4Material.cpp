@@ -49,13 +49,13 @@ const ReactionFuncMapEntry ReactionFuncMap[] =
 	{ "Poof",    &C4MaterialMap::mrfPoof },
 	{ "Corrode", &C4MaterialMap::mrfCorrode },
 	{ "Insert",  &C4MaterialMap::mrfInsert },
-	{ NULL, &C4MaterialReaction::NoReaction }
+	{ nullptr, &C4MaterialReaction::NoReaction }
 };
 
 
 void C4MaterialReaction::CompileFunc(StdCompiler *pComp)
 {
-	if (pComp->isCompiler()) pScriptFunc = NULL;
+	if (pComp->isDeserializer()) pScriptFunc = nullptr;
 	// compile reaction func ptr
 	StdStrBuf sReactionFuncName;
 	int32_t i=0; while (ReactionFuncMap[i].szRFName && (ReactionFuncMap[i].pFunc != pFunc)) ++i;
@@ -86,7 +86,7 @@ void C4MaterialReaction::ResolveScriptFuncs(const char *szMatName)
 			DebugLogF("Error getting function \"%s\" for Material reaction of \"%s\"", this->ScriptFunc.getData(), szMatName);
 	}
 	else
-		pScriptFunc = NULL;
+		pScriptFunc = nullptr;
 }
 
 // -------------------------------------- C4MaterialCore
@@ -184,7 +184,7 @@ bool C4MaterialCore::Load(C4Group &hGroup,
 void C4MaterialCore::CompileFunc(StdCompiler *pComp)
 {
 	assert(pComp->hasNaming());
-	if (pComp->isCompiler()) Clear();
+	if (pComp->isDeserializer()) Clear();
 	pComp->Name("Material");
 	pComp->Value(mkNamingAdapt(toC4CStr(Name),      "Name",                ""));
 
@@ -196,7 +196,7 @@ void C4MaterialCore::CompileFunc(StdCompiler *pComp)
 		{ "Rough",    C4M_Rough },
 		{ "Octagon",  C4M_Octagon },
 		{ "Smoother", C4M_Smoother },
-		{ NULL, C4M_Flat }
+		{ nullptr, C4M_Flat }
 	};
 	pComp->Value(mkNamingAdapt(mkEnumAdaptT<uint8_t>(MapChunkType, Shapes),
 	                                                "Shape",               C4M_Flat));
@@ -215,7 +215,7 @@ void C4MaterialCore::CompileFunc(StdCompiler *pComp)
 	pComp->Value(mkNamingAdapt(MaxSlide,            "MaxSlide",            0));
 	pComp->Value(mkNamingAdapt(WindDrift,           "WindDrift",           0));
 	pComp->Value(mkNamingAdapt(Inflammable,         "Inflammable",         0));
-	if (pComp->isCompiler())
+	if (pComp->isDeserializer())
 	{
 		// The value used to have a wrong spelling ("Incindiary"). If there's
 		// no "Incendiary" value, use the wrong spelling instead
@@ -313,8 +313,8 @@ C4MaterialMap::~C4MaterialMap()
 
 void C4MaterialMap::Clear()
 {
-	if (Map) delete [] Map; Map=NULL; Num=0;
-	delete [] ppReactionMap; ppReactionMap = NULL;
+	if (Map) delete [] Map; Map=nullptr; Num=0;
+	delete [] ppReactionMap; ppReactionMap = nullptr;
 }
 
 int32_t C4MaterialMap::Load(C4Group &hGroup)
@@ -380,11 +380,11 @@ bool C4MaterialMap::CrossMapMaterials(const char* szEarthMaterial) // Called aft
 	ppReactionMap = new C4MaterialReactionPtr[(Num+1)*(Num+1)];
 	for (int32_t iMatPXS=-1; iMatPXS<Num; iMatPXS++)
 	{
-		C4Material *pMatPXS = (iMatPXS+1) ? Map+iMatPXS : NULL;
+		C4Material *pMatPXS = (iMatPXS+1) ? Map+iMatPXS : nullptr;
 		for (int32_t iMatLS=-1; iMatLS<Num; iMatLS++)
 		{
-			C4MaterialReaction *pReaction = NULL;
-			C4Material *pMatLS  = ( iMatLS+1) ? Map+ iMatLS : NULL;
+			C4MaterialReaction *pReaction = nullptr;
+			C4Material *pMatLS  = ( iMatLS+1) ? Map+ iMatLS : nullptr;
 			// natural stuff: material conversion here?
 			if (pMatPXS && pMatPXS->sInMatConvert.getLength() && SEqualNoCase(pMatPXS->sInMatConvert.getData(), pMatLS ? pMatLS->Name : C4TLS_MatSky))
 				pReaction = &DefReactConvert;
@@ -407,7 +407,7 @@ bool C4MaterialMap::CrossMapMaterials(const char* szEarthMaterial) // Called aft
 				else if (DensitySolid(MatDensity(iMatPXS)) && DensitySolid(MatDensity(iMatLS)))
 					pReaction = &DefReactInsert;
 			}
-			// assign the function; or NULL for no reaction
+			// assign the function; or nullptr for no reaction
 			SetMatReaction(iMatPXS, iMatLS, pReaction);
 		}
 	}
@@ -418,7 +418,7 @@ bool C4MaterialMap::CrossMapMaterials(const char* szEarthMaterial) // Called aft
 	for (cnt=0; cnt<Num; cnt++)
 	{
 		C4Material *pMat = Map+cnt;
-		const char *szTextureOverlay = NULL;
+		const char *szTextureOverlay = nullptr;
 		// newgfx: init pattern
 		if (Map[cnt].sTextureOverlay.getLength())
 			if (::TextureMap.GetTexture(Map[cnt].sTextureOverlay.getLength()))
@@ -433,7 +433,7 @@ bool C4MaterialMap::CrossMapMaterials(const char* szEarthMaterial) // Called aft
 			}
 		// default to first texture in texture map
 		int iTexMapIx;
-		if (!szTextureOverlay && (iTexMapIx = ::TextureMap.GetIndex(Map[cnt].Name, NULL, false)))
+		if (!szTextureOverlay && (iTexMapIx = ::TextureMap.GetIndex(Map[cnt].Name, nullptr, false)))
 			szTextureOverlay = TextureMap.GetEntry(iTexMapIx)->GetTextureName();
 		// default to smooth
 		if (!szTextureOverlay)
@@ -533,13 +533,13 @@ bool C4MaterialMap::CrossMapMaterials(const char* szEarthMaterial) // Called aft
 	for (cnt=0; cnt<Num; cnt++)
 	{
 		if (Map[cnt].sBlastShiftTo.getLength())
-			Map[cnt].BlastShiftTo=::TextureMap.GetIndexMatTex(Map[cnt].sBlastShiftTo.getData(), NULL, true, FormatString("BlastShiftTo of mat %s", Map[cnt].Name).getData());
+			Map[cnt].BlastShiftTo=::TextureMap.GetIndexMatTex(Map[cnt].sBlastShiftTo.getData(), nullptr, true, FormatString("BlastShiftTo of mat %s", Map[cnt].Name).getData());
 		if (Map[cnt].sInMatConvertTo.getLength())
 			Map[cnt].InMatConvertTo=Get(Map[cnt].sInMatConvertTo.getData());
 		if (Map[cnt].sBelowTempConvertTo.getLength())
-			Map[cnt].BelowTempConvertTo=::TextureMap.GetIndexMatTex(Map[cnt].sBelowTempConvertTo.getData(), NULL, true, FormatString("BelowTempConvertTo of mat %s", Map[cnt].Name).getData());
+			Map[cnt].BelowTempConvertTo=::TextureMap.GetIndexMatTex(Map[cnt].sBelowTempConvertTo.getData(), nullptr, true, FormatString("BelowTempConvertTo of mat %s", Map[cnt].Name).getData());
 		if (Map[cnt].sAboveTempConvertTo.getLength())
-			Map[cnt].AboveTempConvertTo=::TextureMap.GetIndexMatTex(Map[cnt].sAboveTempConvertTo.getData(), NULL, true, FormatString("AboveTempConvertTo of mat %s", Map[cnt].Name).getData());
+			Map[cnt].AboveTempConvertTo=::TextureMap.GetIndexMatTex(Map[cnt].sAboveTempConvertTo.getData(), nullptr, true, FormatString("AboveTempConvertTo of mat %s", Map[cnt].Name).getData());
 	}
 
 	// Get hardcoded system material indices
@@ -638,17 +638,17 @@ bool C4MaterialMap::SortEnumeration(int32_t iMat, const char *szMatName)
 void C4MaterialMap::Default()
 {
 	Num=0;
-	Map=NULL;
-	ppReactionMap=NULL;
+	Map=nullptr;
+	ppReactionMap=nullptr;
 	max_shape_width=max_shape_height=0;
 }
 
 C4MaterialReaction *C4MaterialMap::GetReaction(int32_t iPXSMat, int32_t iLandscapeMat)
 {
 	// safety
-	if (!ppReactionMap) return NULL;
-	if (!Inside<int32_t>(iPXSMat, -1, Num-1)) return NULL;
-	if (!Inside<int32_t>(iLandscapeMat, -1, Num-1)) return NULL;
+	if (!ppReactionMap) return nullptr;
+	if (!Inside<int32_t>(iPXSMat, -1, Num-1)) return nullptr;
+	if (!Inside<int32_t>(iLandscapeMat, -1, Num-1)) return nullptr;
 	// values OK; get func!
 	return GetReactionUnsafe(iPXSMat, iLandscapeMat);
 }
@@ -703,7 +703,21 @@ bool mrfInsertCheck(int32_t &iX, int32_t &iY, C4Real &fXDir, C4Real &fYDir, int3
 		// Sliding on equal material: Move directly to optimize insertion of rain onto lakes
 		// Also move directly when shifted upwards to ensure movement on permamently moving SolidMask
 		if (iPxsMat == iLsMat || was_pushed_upwards)
-			{ iX = iSlideX; iY = iSlideY; fXDir = 0; return false; }
+		{
+			iX = iSlideX;
+			iY = iSlideY;
+			fXDir = 0;
+			if (was_pushed_upwards)
+			{
+				// When pushed upwards and slide was found into a target position, insert directly to allow additional PXS at same location to solidify in next position in same frame
+				if (::Landscape.GetDensity(iX, iY + Sign(GravAccel)) >= mdens)
+				{
+					return true;
+				}
+			}
+			// Continue existing (and fall down next frame)
+			return false;
+		}
 		// Otherwise, just move using xdir/ydir for nice visuals when rain is moving over landscape
 		// Accelerate into the direction
 		fXDir = (fXDir * 10 + Sign(iSlideX - iX)) / 11 + C4REAL10(Random(5)-2);
@@ -926,7 +940,7 @@ bool C4MaterialMap::mrfScript(C4MaterialReaction *pReaction, int32_t &iX, int32_
 	//                      0           1           2                3                        4                           5                      6               7              8
 	int32_t iXDir1, iYDir1, iXDir2, iYDir2;
 	C4AulParSet pars(iX, iY, iLSPosX, iLSPosY, iXDir1 = fixtoi(fXDir, 100), iYDir1 = fixtoi(fYDir, 100), iPxsMat, iLsMat, int(evEvent));
-	if (!!pReaction->pScriptFunc->Exec(NULL, &pars, false))
+	if (!!pReaction->pScriptFunc->Exec(nullptr, &pars, false))
 	{
 		// PXS shall be killed!
 		return true;

@@ -16,6 +16,7 @@
  */
 
 #include "C4Include.h"
+#include "C4ForbidLibraryCompilation.h"
 
 #include "script/C4Aul.h"
 #include "script/C4AulDefFunc.h"
@@ -36,6 +37,7 @@
 #include "player/C4RankSystem.h"
 #include "control/C4Teams.h"
 #include "lib/StdMeshMath.h"
+#include "object/C4MeshDenumerator.h"
 
 bool C4ValueToMatrix(C4Value& value, StdMeshMatrix* matrix)
 {
@@ -139,7 +141,7 @@ static bool FnJump(C4Object *Obj)
 
 static bool FnEnter(C4Object *Obj, C4Object *pTarget)
 {
-	return !!Obj->Enter(pTarget,true,true,NULL);
+	return !!Obj->Enter(pTarget,true,true,nullptr);
 }
 
 static bool FnExit(C4Object *Obj, long tx, long ty, long tr, long txdir, long tydir, long trdir)
@@ -227,7 +229,7 @@ static bool FnSetName(C4PropList * _this, C4String *pNewName, bool fSetInInfo, b
 			// make sure names in info list aren't duplicated
 			// querying owner info list here isn't 100% accurate, as infos might have been stolen by other players
 			// however, there is no good way to track the original list ATM
-			C4ObjectInfoList *pInfoList = NULL;
+			C4ObjectInfoList *pInfoList = nullptr;
 			C4Player *pOwner = ::Players.Get(Object(_this)->Owner);
 			if (pOwner) pInfoList = &pOwner->CrewInfoList;
 			char NameBuf[C4MaxName+1];
@@ -439,7 +441,7 @@ static bool FnSetCommand(C4Object *Obj, C4String * szCommand, C4Object * pTarget
 	long iCommand = CommandByName(FnStringPar(szCommand));
 	if (!iCommand) { Obj->ClearCommands(); return false; }
 	// Special: convert iData to szText
-	C4String *szText=NULL;
+	C4String *szText=nullptr;
 	if (iCommand==C4CMD_Call)
 		szText=Data.getStr();
 	// FIXME: throw if Tx isn't int
@@ -458,7 +460,7 @@ static bool FnAddCommand(C4Object *Obj, C4String * szCommand, C4Object * pTarget
 	long iCommand = CommandByName(FnStringPar(szCommand));
 	if (!iCommand) return false;
 	// Special: convert iData to szText
-	C4String *szText=NULL;
+	C4String *szText=nullptr;
 	if (iCommand==C4CMD_Call)
 		szText=Data.getStr();
 	// Add
@@ -474,7 +476,7 @@ static bool FnAppendCommand(C4Object *Obj, C4String * szCommand, C4Object * pTar
 	long iCommand = CommandByName(FnStringPar(szCommand));
 	if (!iCommand) return false;
 	// Special: convert iData to szText
-	C4String *szText=NULL;
+	C4String *szText=nullptr;
 	if (iCommand==C4CMD_Call)
 		szText=Data.getStr();
 	// Add
@@ -531,7 +533,7 @@ static C4Object *FnGetActionTarget(C4Object *Obj, long target_index)
 {
 	if (target_index==0) return Obj->Action.Target;
 	if (target_index==1) return Obj->Action.Target2;
-	return NULL;
+	return nullptr;
 }
 
 static void FnSetActionTargets(C4Object *Obj, C4Object *pTarget1, C4Object *pTarget2)
@@ -962,8 +964,8 @@ static bool FnAddMenuItem(C4Object *Obj, C4String * szCaption, C4String * szComm
 
 	// Create symbol
 	C4FacetSurface fctSymbol;
-	C4DefGraphics* pGfx = NULL;
-	C4Object* pGfxObj = NULL;
+	C4DefGraphics* pGfx = nullptr;
+	C4Object* pGfxObj = nullptr;
 	switch (iExtra & C4MN_Add_MaxImage)
 	{
 	case C4MN_Add_ImgRank:
@@ -984,7 +986,7 @@ static bool FnAddMenuItem(C4Object *Obj, C4String * szCaption, C4String * szComm
 		// draw indexed facet
 		fctSymbol.Create(iSymbolSize,iSymbolSize);
 		if (pDef)
-			pDef->Draw(fctSymbol, false, 0, NULL, XPar.getInt());
+			pDef->Draw(fctSymbol, false, 0, nullptr, XPar.getInt());
 		break;
 	case C4MN_Add_ImgObjRank:
 	{
@@ -1061,7 +1063,7 @@ static bool FnAddMenuItem(C4Object *Obj, C4String * szCaption, C4String * szComm
 		{
 			fctSymbol.Create(iSymbolSize,iSymbolSize);
 			uint32_t dwClr = XPar.getInt();
-			if (!szCaption || !Game.DrawTextSpecImage(fctSymbol, caption, NULL, dwClr ? dwClr : 0xff))
+			if (!szCaption || !Game.DrawTextSpecImage(fctSymbol, caption, nullptr, dwClr ? dwClr : 0xff))
 				return false;
 		}
 		*caption = '\0';
@@ -1106,11 +1108,11 @@ static bool FnAddMenuItem(C4Object *Obj, C4String * szCaption, C4String * szComm
 
 	// Add menu item
 	if(pGfxObj)
-		Obj->Menu->Add(caption,pGfxObj,command,iCount,NULL,infocaption,pDef ? pDef->id : C4ID::None,command2,fOwnValue,iValue,fIsSelectable);
+		Obj->Menu->Add(caption,pGfxObj,command,iCount,nullptr,infocaption,pDef ? pDef->id : C4ID::None,command2,fOwnValue,iValue,fIsSelectable);
 	else if(pGfx)
-		Obj->Menu->Add(caption,pGfx,command,iCount,NULL,infocaption,pDef ? pDef->id : C4ID::None,command2,fOwnValue,iValue,fIsSelectable);
+		Obj->Menu->Add(caption,pGfx,command,iCount,nullptr,infocaption,pDef ? pDef->id : C4ID::None,command2,fOwnValue,iValue,fIsSelectable);
 	else
-		Obj->Menu->Add(caption,fctSymbol,command,iCount,NULL,infocaption,pDef ? pDef->id : C4ID::None,command2,fOwnValue,iValue,fIsSelectable);
+		Obj->Menu->Add(caption,fctSymbol,command,iCount,nullptr,infocaption,pDef ? pDef->id : C4ID::None,command2,fOwnValue,iValue,fIsSelectable);
 
 	return true;
 }
@@ -1156,7 +1158,7 @@ static C4Object *FnContents(C4Object *Obj, long index)
 	while ((cobj=Obj->Contents.GetObject(index++)))
 		if (cobj->GetProcedure()!=DFA_ATTACH) return cobj;
 
-	return NULL;
+	return nullptr;
 }
 
 static bool FnShiftContents(C4Object *Obj, bool fShiftBack, C4Def * idTarget, bool fDoCalls)
@@ -1204,9 +1206,9 @@ static bool FnActIdle(C4Object *Obj)
 	return !Obj->GetAction();
 }
 
-static bool FnStuck(C4Object *Obj)
+static bool FnStuck(C4Object *Obj, long off_x, long off_y)
 {
-	return !!Obj->Shape.CheckContact(Obj->GetX(),Obj->GetY());
+	return !!Obj->Shape.CheckContact(Obj->GetX()+off_x,Obj->GetY()+off_y);
 }
 
 static bool FnInLiquid(C4Object *Obj)
@@ -1227,7 +1229,7 @@ static C4Object *FnCreateContents(C4Object *Obj, C4PropList * PropList, Nillable
 	// default amount parameter
 	if (iCount.IsNil()) iCount = 1;
 	// create objects
-	C4Object *pNewObj = NULL;
+	C4Object *pNewObj = nullptr;
 	while (iCount-- > 0) pNewObj = Obj->CreateContents(PropList);
 	// controller will automatically be set upon entrance
 	// return last created
@@ -1334,7 +1336,7 @@ static C4String *FnGetProcedure(C4Object *Obj)
 {
 	// no action?
 	C4PropList* pActionDef = Obj->GetAction();
-	if (!pActionDef) return NULL;
+	if (!pActionDef) return nullptr;
 	// get proc
 	return pActionDef->GetPropertyStr(P_Procedure);
 }
@@ -1419,7 +1421,7 @@ static bool FnSetGraphics(C4Object *Obj, C4String *pGfxName, C4Def *pSrcDef, lon
 		// any overlays must be positive for now
 		if (iOverlayID<0) { Log("SetGraphics: Background overlays not implemented!"); return false; }
 		// deleting overlay?
-		C4DefGraphics *pGrp = NULL;
+		C4DefGraphics *pGrp = nullptr;
 		if (iOverlayMode == C4GraphicsOverlay::MODE_Object || iOverlayMode == C4GraphicsOverlay::MODE_Rank || iOverlayMode == C4GraphicsOverlay::MODE_ObjectPicture)
 		{
 			if (!pOverlayObject) return Obj->RemoveGraphicsOverlay(iOverlayID);
@@ -1451,7 +1453,7 @@ static bool FnSetGraphics(C4Object *Obj, C4String *pGfxName, C4Def *pSrcDef, lon
 			break;
 
 		case C4GraphicsOverlay::MODE_Object:
-			if (pOverlayObject && !pOverlayObject->Status) pOverlayObject = NULL;
+			if (pOverlayObject && !pOverlayObject->Status) pOverlayObject = nullptr;
 			pOverlay->SetAsObject(pOverlayObject, dwBlitMode);
 			break;
 
@@ -1460,18 +1462,18 @@ static bool FnSetGraphics(C4Object *Obj, C4String *pGfxName, C4Def *pSrcDef, lon
 			break;
 
 		case C4GraphicsOverlay::MODE_Rank:
-			if (pOverlayObject && !pOverlayObject->Status) pOverlayObject = NULL;
+			if (pOverlayObject && !pOverlayObject->Status) pOverlayObject = nullptr;
 			pOverlay->SetAsRank(dwBlitMode, pOverlayObject);
 			break;
 
 		case C4GraphicsOverlay::MODE_ObjectPicture:
-			if (pOverlayObject && !pOverlayObject->Status) pOverlayObject = NULL;
+			if (pOverlayObject && !pOverlayObject->Status) pOverlayObject = nullptr;
 			pOverlay->SetAsObjectPicture(pOverlayObject, dwBlitMode);
 			break;
 
 		default:
 			DebugLog("SetGraphics: Invalid overlay mode");
-			pOverlay->SetAsBase(NULL, 0); // make invalid, so it will be removed
+			pOverlay->SetAsBase(nullptr, 0); // make invalid, so it will be removed
 			break;
 		}
 		// remove if invalid
@@ -1484,7 +1486,7 @@ static bool FnSetGraphics(C4Object *Obj, C4String *pGfxName, C4Def *pSrcDef, lon
 		return true;
 	}
 	// no overlay: Base graphics
-	// set graphics - pSrcDef==NULL defaults to pObj->pDef
+	// set graphics - pSrcDef==nullptr defaults to pObj->pDef
 	return Obj->SetGraphics(FnStringPar(pGfxName), pSrcDef);
 }
 
@@ -1619,7 +1621,7 @@ static bool FnSetObjDrawTransform(C4Object *Obj, long iA, long iB, long iC, long
 			{
 				// kill identity-transform, then
 				delete pTransform;
-				Obj->pDrawTransform=NULL;
+				Obj->pDrawTransform=nullptr;
 				return true;
 			}
 			// flipdir must remain: set identity
@@ -1786,7 +1788,7 @@ static Nillable<int> FnPlayAnimation(C4Object *Obj, C4String *szAnimation, int i
 		Instance = Attached->Child;
 	}
 
-	StdMeshInstance::AnimationNode* s_node = NULL;
+	StdMeshInstance::AnimationNode* s_node = nullptr;
 	if (!iSibling.IsNil())
 	{
 		s_node = Instance->GetAnimationNodeByNumber(iSibling);
@@ -1836,7 +1838,7 @@ static Nillable<int> FnTransformBone(C4Object *Obj, C4String *szBoneName, C4Valu
 		Instance = Attached->Child;
 	}
 
-	StdMeshInstance::AnimationNode* s_node = NULL;
+	StdMeshInstance::AnimationNode* s_node = nullptr;
 	if (!iSibling.IsNil())
 	{
 		s_node = Instance->GetAnimationNodeByNumber(iSibling);
@@ -2435,6 +2437,7 @@ C4ScriptConstDef C4ScriptObjectConstMap[]=
 	{ "VIS_God"                ,C4V_Int,          VIS_God},
 	{ "VIS_LayerToggle"        ,C4V_Int,          VIS_LayerToggle},
 	{ "VIS_OverlayOnly"        ,C4V_Int,          VIS_OverlayOnly},
+	{ "VIS_Editor"             ,C4V_Int,          VIS_Editor},
 
 	{ "C4MN_Style_Normal"      ,C4V_Int,          C4MN_Style_Normal},
 	{ "C4MN_Style_Context"     ,C4V_Int,          C4MN_Style_Context},
@@ -2540,7 +2543,7 @@ C4ScriptConstDef C4ScriptObjectConstMap[]=
 	{ "AM_DrawBefore"             ,C4V_Int,      StdMeshInstance::AM_DrawBefore },
 	{ "AM_MatchSkeleton"          ,C4V_Int,      StdMeshInstance::AM_MatchSkeleton },
 
-	{ NULL, C4V_Nil, 0}
+	{ nullptr, C4V_Nil, 0}
 };
 
 

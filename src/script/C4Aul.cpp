@@ -17,24 +17,46 @@
 
 #include "C4Include.h"
 #include "script/C4Aul.h"
+
 #include "script/C4AulExec.h"
 #include "script/C4AulDebug.h"
 #include "config/C4Config.h"
-#include "object/C4Def.h"
 #include "script/C4Effect.h"
+#include "script/C4ScriptHost.h"
 #include "lib/C4Log.h"
 #include "c4group/C4Components.h"
 #include "c4group/C4LangStringTable.h"
 
-C4AulError::C4AulError(): shown(false) {}
+const char *C4AulWarningMessages[] = {
+#define DIAG(id, text, enabled) text,
+#include "C4AulWarnings.h"
+#undef DIAG
+	nullptr
+};
+const char *C4AulWarningIDs[] = {
+#define DIAG(id, text, enabled) #id,
+#include "C4AulWarnings.h"
+#undef DIAG
+	nullptr
+};
 
-void C4AulError::show()
+static_assert(std::extent<decltype(C4AulWarningMessages), 0>::value - 1 == static_cast<size_t>(C4AulWarningId::WarningCount), "Warning message count doesn't match warning count");
+static_assert(std::extent<decltype(C4AulWarningIDs), 0>::value - 1 == static_cast<size_t>(C4AulWarningId::WarningCount), "Warning ID count doesn't match warning count");
+
+static class DefaultErrorHandler : public C4AulErrorHandler
 {
-	shown = true;
-	// simply log error message
-	if (sMessage)
-		DebugLog(sMessage.getData());
-}
+public:
+	void OnError(const char *msg) override
+	{
+		DebugLogF("ERROR: %s", msg);
+		++::ScriptEngine.errCnt;
+	}
+	void OnWarning(const char *msg) override
+	{
+		DebugLogF("WARNING: %s", msg);
+		++::ScriptEngine.warnCnt;
+	}
+} DefaultErrorHandler;
 
 const char *C4AulError::what() const noexcept
 {
@@ -44,8 +66,9 @@ const char *C4AulError::what() const noexcept
 /*--- C4AulScriptEngine ---*/
 
 C4AulScriptEngine::C4AulScriptEngine():
-		C4PropListStaticMember(NULL, NULL, ::Strings.RegString("Global")),
-		warnCnt(0), errCnt(0), lineCnt(0)
+	C4PropListStaticMember(nullptr, nullptr, ::Strings.RegString("Global")),
+	ErrorHandler(&DefaultErrorHandler),
+	warnCnt(0), errCnt(0), lineCnt(0)
 {
 	GlobalNamedNames.Reset();
 	GlobalNamed.Reset();
@@ -53,7 +76,7 @@ C4AulScriptEngine::C4AulScriptEngine():
 	GlobalConstNames.Reset();
 	GlobalConsts.Reset();
 	GlobalConsts.SetNameList(&GlobalConstNames);
-	Child0 = ChildL = NULL;
+	Child0 = ChildL = nullptr;
 	RegisterGlobalConstant("Global", C4VPropList(this));
 }
 
@@ -84,9 +107,21 @@ void C4AulScriptEngine::Clear()
 	RegisterGlobalConstant("Global", C4VPropList(this));
 	GlobalNamed.Reset();
 	GlobalNamed.SetNameList(&GlobalNamedNames);
-	delete pGlobalEffects; pGlobalEffects=NULL;
+	delete pGlobalEffects; pGlobalEffects=nullptr;
 	UserFiles.clear();
 	C4RefCnt::DoDeletions(C4RefCnt::DoDeletionsPassKey());
+	// Delete all global proplists made static (breaks
+	// cyclic references).
+	for (C4Value& value: OwnedPropLists)
+	{
+		C4PropList* plist = value.getPropList();
+		if (plist)
+		{
+			if (plist->Delete()) delete plist;
+			else plist->Clear();
+		}
+	}
+	OwnedPropLists.clear();
 }
 
 void C4AulScriptEngine::RegisterGlobalConstant(const char *szName, const C4Value &rValue)
@@ -123,7 +158,7 @@ void C4AulScriptEngine::Denumerate(C4ValueNumbers * numbers)
 static void GlobalEffectsMergeCompileFunc(StdCompiler *pComp, C4Effect * & pEffects, const char * name, C4PropList * pForObj, C4ValueNumbers * numbers)
 {
 	C4Effect *pOldEffect, *pNextOldEffect=pEffects;
-	pEffects = NULL;
+	pEffects = nullptr;
 	try
 	{
 		pComp->Value(mkParAdapt(mkNamingPtrAdapt(pEffects, name), pForObj, numbers));
@@ -150,9 +185,9 @@ void C4AulScriptEngine::CompileFunc(StdCompiler *pComp, bool fScenarioSection, C
 		pComp->Value(mkNamingAdapt(mkParAdapt(GlobalNamed, numbers), "StaticVariables", GlobalNamedDefault));
 		pComp->Value(mkNamingAdapt(mkParAdapt(*GameScript.ScenPropList._getPropList(), numbers), "Scenario"));
 	}
-	if (fScenarioSection && pComp->isCompiler())
+	if (pComp->isDeserializer() && pGlobalEffects)
 	{
-		// loading scenario section: Merge effects
+		// loading scenario section or game re-init: Merge effects
 		// Must keep old effects here even if they're dead, because the LoadScenarioSection call typically came from execution of a global effect
 		// and otherwise dead pointers would remain on the stack
 		GlobalEffectsMergeCompileFunc(pComp, pGlobalEffects, "Effects", this, numbers);
@@ -227,7 +262,19 @@ C4AulUserFile *C4AulScriptEngine::GetUserFile(int32_t handle)
 			return &*i;
 		}
 	// not found
-	return NULL;
+	return nullptr;
+}
+
+void C4AulScriptEngine::RegisterErrorHandler(C4AulErrorHandler *handler)
+{
+	assert(ErrorHandler == &DefaultErrorHandler);
+	ErrorHandler = handler;
+}
+
+void C4AulScriptEngine::UnregisterErrorHandler(C4AulErrorHandler *handler)
+{
+	assert(ErrorHandler == handler);
+	ErrorHandler = &DefaultErrorHandler;
 }
 
 /*--- C4AulFuncMap ---*/
@@ -253,7 +300,7 @@ unsigned int C4AulFuncMap::Hash(const char * name)
 
 C4AulFunc * C4AulFuncMap::GetFirstFunc(const char * Name)
 {
-	if (!Name) return NULL;
+	if (!Name) return nullptr;
 	C4AulFunc * Func = Funcs[Hash(Name) % HashSize];
 	while (Func && !SEqual(Name, Func->GetName()))
 		Func = Func->MapNext;
@@ -313,4 +360,9 @@ C4AulFuncMap::iterator& C4AulFuncMap::iterator::GotoStart() {
 	idx = 0; cur = nullptr;
 	++(*this);
 	return *this;
+}
+
+C4AulErrorHandler::~C4AulErrorHandler()
+{
+	::ScriptEngine.UnregisterErrorHandler(this);
 }

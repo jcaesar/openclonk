@@ -5,6 +5,7 @@ deps
 *.o
 /openclonk
 /openclonk-server
+/netpuncher
 /c4group
 /c4script
 *.a
@@ -30,6 +31,8 @@ cmake/FindLLVM.cmake
 editor-icons.h
 oc-icon.h
 NativeToolsExport.cmake
+engine-resource.c
+tests/CTestTestfile.cmake
 
 # Documentation
 *.pyc
@@ -56,6 +59,10 @@ planet/fmod.dll
 planet/cmake_install.cmake
 planet/clonk.sln
 planet/clonk.ilk
+*.ipdb
+*.iobj
+openclonk.VC.db
+openclonk.VC.VC.opendb
 
 build
 planet/clonk.app
@@ -116,6 +123,7 @@ openclonk.layout
 openclonk.sdf
 openclonk.cbp
 tests/openclonk_unittest.cbp
+tests/openclonk_unittest.sln
 
 # MacOSX saved searches
 *.savedSearch
@@ -125,10 +133,19 @@ WindowsGamesExplorer.xml
 
 # Mape
 ./mape
+/mape
 mape-icons.h
+mape-resource.c
 
-
-tests/openclonk_unittest.sln
 
 # Packed groups created directly in root path
 /*.oc*
+
+# QMake stuff
+*_automoc.cpp
+moc_*.cpp
+qrc_resource.cpp
+ui_C4ConsoleQt*.h
+resource.qrc.depends
+*.exp
+qt.conf

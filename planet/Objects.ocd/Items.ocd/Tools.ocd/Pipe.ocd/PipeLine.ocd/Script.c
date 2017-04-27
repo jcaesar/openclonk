@@ -5,7 +5,7 @@
 */
 
 local pipe_kit;
-
+local is_air_pipe = false;
 
 private func Initialize()
 {
@@ -18,19 +18,31 @@ private func Initialize()
 // Greyish colour
 public func SetNeutral()
 {
-	SetProperty("LineColors", [RGB(80, 80, 120), RGB(80, 80, 120)]);
+	this.LineColors = [RGB(80, 80, 120), RGB(80, 80, 120)];
+	is_air_pipe = false;
 }
 
 // Reddish colour.
+// Please to not change otherwise people with dyschromatopsia will hunt you down.
 public func SetDrain()
 {
-	SetProperty("LineColors", [RGB(110, 80, 80), RGB(110, 80, 80)]);
+	this.LineColors = [RGB(238, 102, 0), RGB(238, 102, 0)];
+	is_air_pipe = false;
 }
 
 // Greenish colour.
+// Please to not change otherwise people with dyschromatopsia will hunt you down.
 public func SetSource()
 {
-	SetProperty("LineColors", [RGB(80, 110, 80), RGB(80, 110, 80)]);
+	this.LineColors = [RGB(102, 136, 34), RGB(102, 136, 34)];
+	is_air_pipe = false;
+}
+
+// Blueish colour.
+public func SetAir()
+{
+	this.LineColors = [RGB(0, 153, 255), RGB(0, 153, 255)];
+	is_air_pipe = true;
 }
 
 // Returns true if this object is a functioning pipe.
@@ -39,13 +51,17 @@ public func IsPipeLine()
 	return GetAction() == "Connect";
 }
 
+public func IsAirPipe()
+{
+	return this.is_air_pipe;
+}
+
 // Returns whether this pipe is connected to an object.
 // Returns only actually connected objects if the parameter 'strict' is true.
 public func IsConnectedTo(object obj, bool strict)
 {
 	return GetActionTarget(0) == obj || GetActionTarget(1) == obj || (!strict && pipe_kit == obj);
 }
-
 
 // Returns the object which is connected to obj through this pipe.
 public func GetConnectedObject(object obj)
@@ -57,7 +73,7 @@ public func GetConnectedObject(object obj)
 	return;
 }
 
-// Switches connection from one object to another.
+// Switches connection from connected_to to another obj.
 public func SwitchConnection(object connected_to, object obj)
 {
 	var target0 = GetActionTarget(0), target1 = GetActionTarget(1);
@@ -147,6 +163,8 @@ public func SaveScenarioObject(props)
 {
 	if (!inherited(props, ...)) return false;
 	SaveScenarioObjectAction(props);
+	if (pipe_kit) props->AddCall("PipeKit", this, "SetPipeKit", pipe_kit);
+	if (IsAirPipe()) props->AddCall("AirPipe", this, "SetAir");
 	return true;
 }
 

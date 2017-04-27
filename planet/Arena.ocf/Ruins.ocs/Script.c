@@ -13,6 +13,7 @@ protected func Initialize()
 	CreateObject(Goal_LastManStanding, 0, 0, NO_OWNER);
 	CreateObject(Rule_KillLogs);
 	CreateObject(Rule_Gravestones);
+	GetRelaunchRule()->SetLastWeaponUse(false);
 	
 	// Mood.
 	SetSkyAdjust(RGBa(255, 255, 255, 127), RGB(255, 200, 150));
@@ -34,15 +35,6 @@ protected func Initialize()
 	CreateObject(Rule_ObjectFade)->DoFadeTime(5 * 36);
 
 	AddEffect("DryTime",nil,100,2);
-	return;
-}
-
-// Gamecall from LastManStanding goal, on respawning.
-protected func OnPlayerRelaunch(int plr)
-{
-	var clonk = GetCrew(plr);
-	var relaunch = CreateObjectAbove(RelaunchContainer, LandscapeWidth() / 2, LandscapeHeight() / 2, clonk->GetOwner());
-	relaunch->StartRelaunch(clonk);
 	return;
 }
 
@@ -88,7 +80,7 @@ global func FxIntFillChestsStart(object target, effect, int temporary)
 {
 	if(temporary) return 1;
 	var chests = FindObjects(Find_ID(Chest));
-	var w_list = [Bow, Musket, Shield, Sword, Club, GrenadeLauncher, Bow, Musket, Shield, Sword, Club, GrenadeLauncher, DynamiteBox];
+	var w_list = [Bow, Blunderbuss, Shield, Sword, Club, GrenadeLauncher, Bow, Blunderbuss, Shield, Sword, Club, GrenadeLauncher, DynamiteBox];
 	
 	for(var chest in chests)
 		for(var i=0; i<4; ++i)
@@ -100,7 +92,7 @@ global func FxIntFillChestsTimer()
 {
 	SetTemperature(100);
 	var chest = FindObjects(Find_ID(Chest), Sort_Random())[0];
-	var w_list = [Boompack, IronBomb, IronBomb, Firestone, Bow, Musket, Sword, Javelin];
+	var w_list = [Boompack, IronBomb, IronBomb, Firestone, Bow, Blunderbuss, Sword, Javelin];
 	
 	if (chest->ContentsCount() < 5)
 		chest->CreateChestContents(w_list[Random(GetLength(w_list))]);
@@ -114,8 +106,8 @@ global func CreateChestContents(id obj_id)
 	var obj = CreateObjectAbove(obj_id);
 	if (obj_id == Bow)
 		obj->CreateContents(Arrow);
-	if (obj_id == Musket)
-		obj->CreateContents(LeadShot);
+	if (obj_id == Blunderbuss)
+		obj->CreateContents(LeadBullet);
 	obj->Enter(this);
 	return;
 }
@@ -127,4 +119,4 @@ func OnClonkLeftRelaunch(object clonk)
 }
 
 func KillsToRelaunch() { return 0; }
-func RelaunchWeaponList() { return [Bow, Shield, Sword, Club, Javelin, Musket]; }
+func RelaunchWeaponList() { return [Bow, Shield, Sword, Club, Javelin, Blunderbuss]; }

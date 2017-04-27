@@ -6,9 +6,6 @@
 */
 
 
-static checkpoint_locations;
-static inventorslab_location;
-
 protected func Initialize()
 {
 	// Create the parkour goal.
@@ -45,10 +42,9 @@ protected func Initialize()
 	
 	// Rules: no power and restart with keeping inventory.
 	CreateObject(Rule_NoPowerNeed);
-	var restart = FindObject(Find_ID(Rule_Restart));
-	if (!restart)
-		restart = CreateObject(Rule_Restart);
-	restart->SetRemoveContents(false);
+	//GetRelaunchRule()
+	//	->AllowPlayerRestart()
+	//	->SetInventoryTransfer(true);
 	
 	// Initialize parts of the scenario.
 	var amount = BoundBy(SCENPAR_NrCheckPoints, 6, 20);
@@ -101,9 +97,9 @@ private func InitMaterials(int amount)
 		var chest = CreateObjectAbove(Chest, pos.x, pos.y);
 		chest->CreateContents(Dynamite, 4);
 		chest->CreateContents(Club, 4);
-		chest->CreateContents(Musket)->CreateContents(LeadShot);
-		chest->CreateContents(Musket)->CreateContents(LeadShot);
-		chest->CreateContents(Musket)->CreateContents(LeadShot);
+		chest->CreateContents(Blunderbuss)->CreateContents(LeadBullet);
+		chest->CreateContents(Blunderbuss)->CreateContents(LeadBullet);
+		chest->CreateContents(Blunderbuss)->CreateContents(LeadBullet);
 		chest->CreateContents(IronBomb, 4);
 		chest->CreateContents(GrenadeLauncher)->CreateContents(IronBomb);
 		chest->CreateContents(GrenadeLauncher)->CreateContents(IronBomb);
@@ -113,7 +109,7 @@ private func InitMaterials(int amount)
 			chest->CreateContents(WallKit);
 	}
 	// Load all weapons in the chests.
-	for (var weapon in FindObjects(Find_Or(Find_ID(Musket), Find_ID(GrenadeLauncher))))
+	for (var weapon in FindObjects(Find_Or(Find_ID(Blunderbuss), Find_ID(GrenadeLauncher))))
 		weapon->SetLoaded();
 	// Place some catapults.
 	for (var count = 0; count < amount / 4; count++)

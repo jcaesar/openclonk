@@ -1,32 +1,82 @@
-/*--
+/**
 	Wooden Barrel
-	Author: Ringwaul, ST-DDT
-
 	The barrel is used to transport liquids
---*/
+	
+	@author: Ringwaul, ST-DDT
+*/
 
 #include Library_CarryHeavy
 #include Library_LiquidContainer
 #include Library_HasExtraSlot
 
-public func GetCarryTransform(clonk)
-{
-	if(GetCarrySpecial(clonk))
-		return Trans_Translate(1000, 6500, 0);
-	
-	return Trans_Translate(1500, 0, -1500);
-}
-public func GetCarryPhase()
-{
-	return 900;
-}
+/*-- Engine Callbacks --*/
 
-protected func Initialize()
+func Initialize()
 {
 	AddTimer("Check", 5);
 }
 
-func CollectFromStack(object item)
+func RejectCollect(id def, object new_contents)
+{
+	// The barrel can only contain liquids.
+	if (RejectStack(new_contents)) return true;
+	return _inherited(def, new_contents, ...);
+}
+
+func Hit()
+{
+	this->PlayBarrelHitSound();
+	if (Contents())
+	{
+		if (GBackLiquid(0, this.BarrelIntakeY)
+		 && GetMaterial(0, this.BarrelIntakeY) != Contents()->GetLiquidType())
+			return;
+
+		EmptyBarrel(GetR());
+		Sound("Liquids::Splash1");
+	}
+}
+
+func PlayBarrelHitSound()
+{
+	Sound("Hits::Materials::Wood::DullWoodHit?");
+}
+
+public func Collection2(object item)
+{
+	UpdateLiquidContainer();
+	return _inherited(item, ...);
+}
+
+public func Ejection(object item)
+{
+	UpdateLiquidContainer();
+	return _inherited(item, ...);
+}
+
+public func ContentsDestruction(object item)
+{
+	ScheduleCall(this, "UpdateLiquidContainer", 1);
+	return _inherited(item, ...);
+}
+
+public func RemoveLiquid(liquid_name, int amount, object destination)
+{
+	var res = _inherited(liquid_name, amount, destination, ...);
+	UpdateLiquidContainer();
+	return res;
+}
+
+public func PutLiquid(liquid_name, int amount, object source)
+{
+	var res = _inherited(liquid_name, amount, source, ...);
+	UpdateLiquidContainer();
+	return res;
+}
+
+/*-- Callbacks --*/
+
+public func CollectFromStack(object item)
 {
 	// Callback from stackable object: Try grabbing partial objects from this stack, if the stack is too large
 	if (item->GetStackCount() > GetLiquidAmountRemaining() && !this->RejectStack(item))
@@ -43,7 +93,7 @@ func CollectFromStack(object item)
 	}
 }
 
-private func RejectStack(object item)
+public func RejectStack(object item)
 {
 	// Callback from stackable object: When should a stack entrance be rejected, if the object was not merged into the existing stacks?
 	if (Contents())
@@ -63,33 +113,67 @@ private func RejectStack(object item)
 	}
 }
 
-public func RejectCollect(id def, object new_contents)
+public func GetLiquidContainerMaxFillLevel(liquid_name)
 {
-	// The barrel can only contain liquids.
-	if (RejectStack(new_contents)) return true;
-	return _inherited(def, new_contents, ...);
+	return 300;
 }
 
-private func Hit()
+public func IsBarrel()
 {
-	this->PlayBarrelHitSound();
+	return true;
+}
+
+public func IsLiquidContainerForMaterial(string liquid_name)
+{
+	return !!WildcardMatch("Water", liquid_name) || !!WildcardMatch("Oil", liquid_name) || !!WildcardMatch("Concrete", liquid_name);
+}
+
+public func CanBeStackedWith(object other)
+{
+	// Does not take into account the fill level for now.
+	var liquid = other->Contents();
+	var my_liquid = this->Contents();
+	var both_filled = (my_liquid != nil) && (liquid != nil);
+	var both_empty = !my_liquid && !liquid;
+
+	if (both_filled) both_filled = (liquid->~GetLiquidType() == Contents()->~GetLiquidType());
+	
+	return _inherited(other, ...) && (both_empty || both_filled);
+}
+
+// Sells the contents only, leaving an empty barrel.
+// Empty barrels can then be sold separately.
+public func QueryOnSell(int for_player, object in_base)
+{
+	if (Contents() && in_base)
+	{
+		// Sell contents first
+		for(var contents in FindObjects(Find_Container(this)))
+		{
+			in_base->~DoSell(contents, for_player);
+		}
+		return true;
+	}
+	return false;
+}
+
+/*-- Usage --*/
+
+public func ControlUse(object clonk, int iX, int iY)
+{
+	var AimAngle = Angle(0, 0, iX, iY);
 	if (Contents())
 	{
-		if (GBackLiquid(0, this.BarrelIntakeY)
-		 && GetMaterial(0, this.BarrelIntakeY) != Contents()->GetLiquidType())
-			return;
-
-		EmptyBarrel(GetR());
-		Sound("Liquids::Splash1");
+		EmptyBarrel(AimAngle, 50, clonk);
+		if (iX > 1)
+			Contained()->SetDir(1);
+		if (iX < -1)
+			Contained()->SetDir(0);
 	}
+	return true;
 }
 
-func PlayBarrelHitSound()
-{
-	Sound("Hits::Materials::Wood::DullWoodHit?");
-}
-
-private func Check()
+func Check()
 {
 	//Fills Barrel with specified liquid from if submerged
 	FillWithLiquid();
@@ -97,7 +181,7 @@ private func Check()
 	//Message("Volume:|%d|Liquid:|%s", iVolume, szLiquid);
 }
 
-private func FillWithLiquid()
+func FillWithLiquid()
 {
 	var intake = this.BarrelIntakeY;
 	if (!GBackLiquid(0, intake)) return;
@@ -109,7 +193,7 @@ private func FillWithLiquid()
 
 	var remaining_volume = GetLiquidContainerMaxFillLevel() - GetLiquidAmount();
 	var extracted = 0;
-	while(extracted < remaining_volume && GetMaterial(0, intake) == mat)
+	while (extracted < remaining_volume && GetMaterial(0, intake) == mat)
 	{
 		extracted += 1;
 		ExtractLiquid(0, intake);
@@ -124,7 +208,7 @@ private func FillWithLiquid()
 	}
 }
 
-private func EmptyBarrel(int angle, int strength, object clonk)
+func EmptyBarrel(int angle, int strength, object clonk)
 {
 	if (Contents())
 	{
@@ -145,7 +229,7 @@ private func EmptyBarrel(int angle, int strength, object clonk)
 	}
 }
 
-private func UpdateLiquidContainer()
+func UpdateLiquidContainer()
 {
 	if (Contents())
 	{
@@ -171,21 +255,7 @@ private func UpdateLiquidContainer()
 	return;
 }
 
-public func ControlUse(object clonk, int iX, int iY)
-{
-	var AimAngle = Angle(0, 0, iX, iY);
-	if (Contents())
-	{
-		EmptyBarrel(AimAngle, 50, clonk);
-		if (iX > 1)
-			Contained()->SetDir(1);
-		if (iX < -1)
-			Contained()->SetDir(0);
-	}
-	return true;
-}
-
-protected func FxExtinguishingSprayStart(object target, proplist effect, int temp, proplist spray)
+func FxExtinguishingSprayStart(object target, proplist effect, int temp, proplist spray)
 {
 	if (temp)
 		return FX_OK;
@@ -202,7 +272,7 @@ protected func FxExtinguishingSprayStart(object target, proplist effect, int tem
 	return FX_OK;
 }
 
-protected func FxExtinguishingSprayTimer(object target, proplist effect, int time)
+func FxExtinguishingSprayTimer(object target, proplist effect, int time)
 {
 	// Move three lines from the barrel outwards along the defined angle.
 	// And extinguish all objects on these lines.
@@ -220,36 +290,31 @@ protected func FxExtinguishingSprayTimer(object target, proplist effect, int tim
 	return FX_OK;
 }
 
+/*-- Production --*/
+
 public func IsToolProduct() { return true; }
 
-public func GetLiquidContainerMaxFillLevel()
-{
-	return 300;
-}
+/*-- Display --*/
 
-public func IsBarrel()
+public func GetCarryTransform(clonk)
 {
-	return true;
-}
-
-public func IsLiquidContainerForMaterial(string liquid_name)
-{
-	return !!WildcardMatch("Water", liquid_name) || !!WildcardMatch("Oil", liquid_name);
-}
-
-public func CanBeStackedWith(object other)
-{
-	// Does not take into account the fill level for now.
-	var liquid = other->Contents();
-	var my_liquid = this->Contents();
-	var both_filled = (my_liquid != nil) && (liquid != nil);
-	var both_empty = !my_liquid && !liquid;
-
-	if (both_filled) both_filled = (liquid->~GetLiquidType() == Contents()->~GetLiquidType());
+	if(GetCarrySpecial(clonk))
+		return Trans_Translate(1000, 6500, 0);
 	
-	return _inherited(other, ...) && (both_empty || both_filled);
+	return Trans_Translate(1500, 0, -1500);
 }
 
+public func GetCarryPhase()
+{
+	return 900;
+}
+
+public func Definition(proplist def)
+{
+	SetProperty("PictureTransformation", Trans_Mul(Trans_Translate(0, 1000, 0), Trans_Rotate(-40, 1, 0, 0), Trans_Rotate(20, 0, 0, 1)), def);
+}
+
+/*-- Properties --*/
 
 func GetNameForBarrel()
 {
@@ -264,44 +329,9 @@ func GetNameForBarrel()
 	}
 }
 
-
-public func Definition(proplist def)
-{
-	SetProperty("PictureTransformation", Trans_Mul(Trans_Translate(0, 1000, 0), Trans_Rotate(-40, 1, 0, 0), Trans_Rotate(20, 0, 0, 1)), def);
-}
-
-func Collection2(object item)
-{
-	UpdateLiquidContainer();
-	return _inherited(item, ...);
-}
-
-func Ejection(object item)
-{
-	UpdateLiquidContainer();
-	return _inherited(item, ...);
-}
-
-
-// Sells the contents only, leaving an empty barrel.
-// Empty barrels can then be sold separately.
-public func QueryOnSell(int for_player, object in_base)
-{
-	if (Contents() && in_base)
-	{
-		// Sell contents first
-		for(var contents in FindObjects(Find_Container(this)))
-		{
-			in_base->~DoSell(contents, for_player);
-		}
-		return true;
-	}
-	return false;
-}
-
-local Collectible = true;
 local Name = "$Name$";
 local Description = "$Description$";
+local Collectible = true;
 local ContactIncinerate = 2;
 local BarrelIntakeY = 3;
 local Components = {Wood = 2, Metal = 1};

@@ -23,11 +23,12 @@
 #include "object/C4Def.h"
 #include "object/C4DefList.h"
 #include "graphics/C4GraphicsResource.h"
+#include "graphics/C4Draw.h"
 
 C4IDListChunk::C4IDListChunk()
 {
 	// prepare list
-	pNext=NULL;
+	pNext=nullptr;
 }
 
 C4IDListChunk::~C4IDListChunk()
@@ -42,10 +43,10 @@ void C4IDListChunk::Clear()
 	C4IDListChunk *pChunk=pNext,*pChunk2;
 	while (pChunk)
 	{
-		pChunk2=pChunk->pNext; pChunk->pNext=NULL;
+		pChunk2=pChunk->pNext; pChunk->pNext=nullptr;
 		delete pChunk; pChunk=pChunk2;
 	}
-	pNext=NULL;
+	pNext=nullptr;
 }
 
 C4IDList::C4IDList() : C4IDListChunk()
@@ -73,7 +74,7 @@ C4IDList &C4IDList::operator = (const C4IDList &rCopy)
 		pTo->pNext=pNew; pTo=pNew;
 	}
 	// finalize
-	pTo->pNext=NULL;
+	pTo->pNext=nullptr;
 	return *this;
 }
 
@@ -470,10 +471,10 @@ bool C4IDList::operator==(const C4IDList& rhs) const
 void C4IDList::CompileFunc(StdCompiler *pComp, bool fValues)
 {
 	// Get compiler characteristics
-	bool fCompiler = pComp->isCompiler();
+	bool deserializing = pComp->isDeserializer();
 	bool fNaming = pComp->hasNaming();
 	// Compiling: Clear existing data first
-	if (fCompiler) Clear();
+	if (deserializing) Clear();
 	// Start
 	C4IDListChunk *pChunk = this;
 	size_t iNr = 0, iCNr = 0;
@@ -485,7 +486,7 @@ void C4IDList::CompileFunc(StdCompiler *pComp, bool fValues)
 	for (;;)
 	{
 		// Prepare compiling of single mapping
-		if (!fCompiler)
+		if (!deserializing)
 		{
 			// End of list?
 			if (iNr >= Count) break;
@@ -521,11 +522,11 @@ void C4IDList::CompileFunc(StdCompiler *pComp, bool fValues)
 				// Count
 				pComp->Value(mkDefaultAdapt(pChunk->Count[iCNr], 0));
 		}
-		else if (fCompiler)
+		else if (deserializing)
 			pChunk->Count[iCNr] = 0;
 		// Goto next entry
 		iNr++; iCNr++;
 		// Save back count
-		if (fCompiler && fNaming) Count = iNr;
+		if (deserializing && fNaming) Count = iNr;
 	}
 }

@@ -11,9 +11,6 @@ func InitializeObjects()
 	var Grass003 = CreateObjectAbove(Grass, 228, 1180);
 	Grass003->SetClrModulation(0xffa08060);
 
-	var Rule_BaseRespawn001 = CreateObject(Rule_BaseRespawn);
-	Rule_BaseRespawn001->SetInventoryTransfer(true);
-	Rule_BaseRespawn001->SetFreeCrew(true);
 
 	var Tree_Coniferous_Burned001 = CreateObject(Tree_Coniferous_Burned, 17, 1097);
 	Tree_Coniferous_Burned001->SetR(10);
@@ -480,9 +477,9 @@ func InitializeObjects()
 	var Mushroom006 = CreateObject(Mushroom, 396, 1410);
 	Mushroom006->SetCon(13);
 
-	Chest006->CreateContents(Musket);
+	Chest006->CreateContents(Blunderbuss);
 
-	Chest006->CreateContents(LeadShot, 3);
+	Chest006->CreateContents(LeadBullet, 3);
 
 	Clonk009->CreateContents(Javelin, 3);
 	Clonk008->CreateContents(Javelin, 3);
@@ -542,8 +539,6 @@ func InitializeObjects()
 	g_king->CreateContents(Firestone, 3);
 
 	CreateObject(Rule_Gravestones);
-
-	CreateObject(Rule_Restart);
 
 	return true;
 }

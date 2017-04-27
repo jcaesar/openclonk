@@ -25,6 +25,22 @@
 #include "game/C4Game.h"
 #include "object/C4GameObjects.h"
 
+void C4ScriptHost::DoAppend(C4Def *def)
+{
+	if (std::find(def->Script.SourceScripts.begin(), def->Script.SourceScripts.end(), this) == def->Script.SourceScripts.end())
+	{
+		def->Script.SourceScripts.push_back(this);
+		if (!Includes.empty())
+		{
+			Warn("#appendto contains #include");
+			// Try to fullfil #include, but it won't work properly: #appendtos
+			// are always appended, but #includes are prepended to the script.
+			def->Script.Includes.insert(def->Script.Includes.end(), Includes.begin(), Includes.end());
+		}
+
+	}
+}
+
 // ResolveAppends and ResolveIncludes must be called both
 // for each script. ResolveAppends has to be called first!
 bool C4ScriptHost::ResolveAppends(C4DefList *rDefs)
@@ -35,11 +51,10 @@ bool C4ScriptHost::ResolveAppends(C4DefList *rDefs)
 	{
 		if (*a != "*" || !rDefs)
 		{
-			C4Def *Def = rDefs ? rDefs->GetByName(*a) : NULL;
+			C4Def *Def = rDefs ? rDefs->GetByName(*a) : nullptr;
 			if (Def)
 			{
-				if (std::find(Def->Script.SourceScripts.begin(), Def->Script.SourceScripts.end(), this) == Def->Script.SourceScripts.end())
-					Def->Script.SourceScripts.push_back(this);
+				DoAppend(Def);
 			}
 			else
 			{
@@ -58,8 +73,7 @@ bool C4ScriptHost::ResolveAppends(C4DefList *rDefs)
 				if (!pDef) break;
 				if (pDef == GetPropList()) continue;
 				// append
-				if (std::find(pDef->Script.SourceScripts.begin(), pDef->Script.SourceScripts.end(), this) == pDef->Script.SourceScripts.end())
-					pDef->Script.SourceScripts.push_back(this);
+				DoAppend(pDef);
 			}
 		}
 	}
@@ -75,7 +89,7 @@ bool C4ScriptHost::ResolveIncludes(C4DefList *rDefs)
 	// catch circular includes
 	if (Resolving)
 	{
-		C4AulParseError(this, "Circular include chain detected - ignoring all includes!").show();
+		Engine->GetErrorHandler()->OnError(C4AulParseError(this, "Circular include chain detected - ignoring all includes!").what());
 		IncludesResolved = true;
 		State = ASS_LINKED;
 		return false;
@@ -84,7 +98,7 @@ bool C4ScriptHost::ResolveIncludes(C4DefList *rDefs)
 	// append all includes to local script
 	for (std::list<StdCopyStrBuf>::reverse_iterator i = Includes.rbegin(); i != Includes.rend(); ++i)
 	{
-		C4Def *Def = rDefs ? rDefs->GetByName(*i) : NULL;
+		C4Def *Def = rDefs ? rDefs->GetByName(*i) : nullptr;
 		if (Def)
 		{
 			// resolve #includes in included script first (#include-chains :( )
@@ -122,6 +136,9 @@ void C4ScriptHost::UnLink()
 		p->SetProperty(P_Prototype, C4VPropList(Engine->GetPropList()));
 	}
 
+	// Delete cyclic references of owned proplists
+	DeleteOwnedPropLists();
+
 	// includes will have to be re-resolved now
 	IncludesResolved = false;
 
@@ -132,10 +149,14 @@ void C4AulScriptEngine::UnLink()
 {
 	warnCnt = errCnt = lineCnt = 0;
 
+	// Make everything writeable
+	GetPropList()->ThawRecursively();
+	for (C4ScriptHost *s = Child0; s; s = s->Next)
+		s->GetPropList()->ThawRecursively();
+
 	// unlink scripts
 	for (C4ScriptHost *s = Child0; s; s = s->Next)
 		s->UnLink();
-	GetPropList()->Thaw();
 	// Do not clear global variables and constants, because they are registered by the
 	// preparser or other parts. Note that keeping those fields means that you cannot delete a global
 	// variable or constant at runtime by removing it from the script.
@@ -158,17 +179,21 @@ void C4AulScriptEngine::Link(C4DefList *rDefs)
 			s->Parse();
 
 		if (rDefs)
+		{
+			rDefs->SortByPriority();
 			rDefs->CallEveryDefinition();
+		}
 
 		// Done modifying the proplists now
 		for (C4ScriptHost *s = Child0; s; s = s->Next)
-			s->GetPropList()->Freeze();
-		GetPropList()->Freeze();
+			s->GetPropList()->FreezeAndMakeStaticRecursively(&s->ownedPropLists);
+
+		GetPropList()->FreezeAndMakeStaticRecursively(&OwnedPropLists);
 	}
 	catch (C4AulError &err)
 	{
 		// error??! show it!
-		err.show();
+		ErrorHandler->OnError(err.what());
 	}
 
 	// Set name list for globals (FIXME: is this necessary?)

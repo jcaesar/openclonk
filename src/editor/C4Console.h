@@ -29,7 +29,8 @@
 
 const int C4CNS_ModePlay = 0,
           C4CNS_ModeEdit = 1,
-          C4CNS_ModeDraw = 2;
+          C4CNS_ModeCreateObject = 2,
+          C4CNS_ModeDraw = 3;
 
 #define IDM_NET_CLIENT1   10000
 #define IDM_NET_CLIENT2   10100
@@ -72,10 +73,11 @@ public:
 	void HelpAbout();
 	bool FileSelect(StdStrBuf *sFilename, const char *szFilter, DWORD dwFlags, bool fSave=false);
 	bool SaveGame(const char * path);
-	bool SaveScenario(const char * path);
-	bool FileSaveAs(bool fSaveGame);
+	bool SaveScenario(const char * path, bool export_packed=false);
+	bool FileSaveAs(bool fSaveGame, bool export_packed=false);
 	bool FileSave();
-	bool FileOpen();
+	bool FileNew();
+	bool FileOpen(const char *filename=nullptr, bool host_in_network=false);
 	bool FileOpenWPlrs();
 	bool FileCommand();
 	bool FileClose();

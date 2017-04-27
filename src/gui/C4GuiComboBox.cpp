@@ -23,6 +23,7 @@
 #include "graphics/C4FacetEx.h"
 #include "gui/C4MouseControl.h"
 #include "graphics/C4GraphicsResource.h"
+#include "graphics/C4Draw.h"
 
 #include "platform/C4Window.h"
 
@@ -64,8 +65,8 @@ namespace C4GUI
 // ComboBox
 
 	ComboBox::ComboBox(const C4Rect &rtBounds) :
-			Control(rtBounds), iOpenMenu(0), pFillCallback(NULL), fReadOnly(false), fSimple(false), fMouseOver(false),
-			pUseFont(NULL), dwFontClr(C4GUI_ComboFontClr), dwBGClr(C4GUI_StandardBGColor), dwBorderClr(0), pFctSideArrow(NULL)
+			Control(rtBounds), iOpenMenu(0), pFillCallback(nullptr), fReadOnly(false), fSimple(false), fMouseOver(false),
+			pUseFont(nullptr), dwFontClr(C4GUI_ComboFontClr), dwBGClr(C4GUI_StandardBGColor), dwBorderClr(0), pFctSideArrow(nullptr)
 	{
 		*Text=0;
 		// key callbacks - lots of possibilities to get the dropdown

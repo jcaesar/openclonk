@@ -14,6 +14,7 @@
  */
 
 #include "C4Include.h"
+#include "C4ForbidLibraryCompilation.h"
 #include "landscape/fow/C4FoWRegion.h"
 #include "graphics/C4DrawGL.h"
 
@@ -47,9 +48,9 @@ C4FoWRegion::~C4FoWRegion()
 #endif
 }
 
-bool C4FoWRegion::BindFramebuf()
-{
 #ifndef USE_CONSOLE
+bool C4FoWRegion::BindFramebuf(GLuint prev_fb)
+{
 	// Flip texture
 	pSurface.swap(pBackSurface);
 
@@ -149,14 +150,13 @@ bool C4FoWRegion::BindFramebuf()
 	if (status1 != GL_FRAMEBUFFER_COMPLETE ||
 	   (pBackSurface && status2 != GL_FRAMEBUFFER_COMPLETE))
 	{
-		glBindFramebuffer(GL_FRAMEBUFFER, 0);
+		glBindFramebuffer(GL_FRAMEBUFFER, prev_fb);
 		return false;
 	}
-#endif
-
 	// Worked!
 	return true;
 }
+#endif
 
 int32_t C4FoWRegion::getSurfaceHeight() const
 {
@@ -188,6 +188,9 @@ void C4FoWRegion::Update(C4Rect r, const FLOAT_RECT& vp)
 bool C4FoWRegion::Render(const C4TargetFacet *pOnScreen)
 {
 #ifndef USE_CONSOLE
+	GLint prev_fb;
+	glGetIntegerv(GL_FRAMEBUFFER_BINDING, &prev_fb);
+
 	// Update FoW at interesting location
 	pFoW->Update(Region, pPlayer);
 
@@ -205,7 +208,7 @@ bool C4FoWRegion::Render(const C4TargetFacet *pOnScreen)
 
 	// Create & bind the frame buffer
 	pDraw->StorePrimaryClipper();
-	if(!BindFramebuf())
+	if(!BindFramebuf(prev_fb))
 	{
 		pDraw->RestorePrimaryClipper();
 		return false;
@@ -233,7 +236,7 @@ bool C4FoWRegion::Render(const C4TargetFacet *pOnScreen)
 
 	// Render FoW to frame buffer object
 	glBlendFunc(GL_ONE, GL_ONE);
-	pFoW->Render(this, NULL, pPlayer, projectionMatrix);
+	pFoW->Render(this, nullptr, pPlayer, projectionMatrix);
 
 	// Copy over the old state
 	if (OldRegion.Wdt > 0)
@@ -328,7 +331,7 @@ bool C4FoWRegion::Render(const C4TargetFacet *pOnScreen)
 	}
 
 	// Done!
-	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	glBindFramebuffer(GL_FRAMEBUFFER, prev_fb);
 	pDraw->RestorePrimaryClipper();
 
 	OldRegion = Region;

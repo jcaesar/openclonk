@@ -61,6 +61,7 @@ protected func Initialize()
 	}
 	// Create Disasters.
 	//Earthquake->SetChance(2); - this is so random...not fair without relaunches
+	
 	return;
 }
 

@@ -123,14 +123,8 @@ private func InitAnimals()
 		bat->DoEnergy(bat.MaxEnergy - bat->GetEnergy());
 	}
 	// Some fireflies attracted to trees on two islands.
-	var count = 0;
-	for (var tree in FindObjects(Find_ID(Tree_Deciduous), Find_Or(Find_AtRect(200, 100, 300, 200), Find_AtRect(300, 300, 200, 200)), Sort_Random()))
-	{
-		Firefly->SpawnSwarm(tree, RandomX(6, 12));
-		count++;
-		if (count > 4)
-			break;	
-	}
+	Firefly->Place(2, nil, Rectangle(200, 100, 300, 200));
+	Firefly->Place(2, nil, Rectangle(300, 300, 200, 200));
 	return;
 }
 
@@ -374,7 +368,7 @@ global func FxClonkRestoreStop(object target, effect, int reason, bool  temporar
 		var plr = target->GetOwner();
 		var clonk = CreateObject(Clonk, 0, 0, plr);
 		clonk->GrabObjectInfo(target);
-		Rule_BaseRespawn->TransferInventory(target, clonk);
+		Rule_Relaunch->TransferInventory(target, clonk);
 		SetCursor(plr, clonk);
 		clonk->DoEnergy(100000);
 		// Add an interaction to call the airship.

@@ -18,6 +18,7 @@
 /* Operates viewports, message board and draws the game */
 
 #include "C4Include.h"
+#include "C4ForbidLibraryCompilation.h"
 #include "game/C4GraphicsSystem.h"
 
 #include "game/C4Viewport.h"
@@ -32,8 +33,8 @@
 #include "network/C4Network2.h"
 #include "game/C4Game.h"
 #include "object/C4GameObjects.h"
-
 #include "graphics/StdPNG.h"
+#include "graphics/C4Draw.h"
 
 static const int MAX_BACKGROUND_FPS = 5;
 
@@ -58,7 +59,7 @@ void C4GraphicsSystem::Clear()
 	// Clear message board
 	MessageBoard.reset();
 	// clear loader
-	if (pLoaderScreen) { delete pLoaderScreen; pLoaderScreen=NULL; }
+	if (pLoaderScreen) { delete pLoaderScreen; pLoaderScreen=nullptr; }
 	// Close viewports
 	::Viewports.Clear();
 	// No debug stuff
@@ -167,7 +168,7 @@ void C4GraphicsSystem::Default()
 	ShowHelp=false;
 	FlashMessageText[0]=0;
 	FlashMessageTime=0; FlashMessageX=FlashMessageY=0;
-	pLoaderScreen=NULL;
+	pLoaderScreen=nullptr;
 }
 
 void C4GraphicsSystem::ClearFullscreenBackground()
@@ -200,7 +201,7 @@ bool C4GraphicsSystem::SaveScreenshot(bool fSaveAll, float fSaveAllZoom)
 	// Keep static counter so multiple screenshots in succession do not use same filename even if the background thread hasn't started writing the file yet
 	char szFilename[_MAX_PATH+1];
 	static int32_t iScreenshotIndex=1;
-	const char *strFilePath = NULL;
+	const char *strFilePath = nullptr;
 	do
 		sprintf(szFilename,"Screenshot%03i.png",iScreenshotIndex++);
 	while (FileExists(strFilePath = Config.AtScreenshotPath(szFilename)));

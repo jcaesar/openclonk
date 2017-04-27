@@ -101,7 +101,7 @@ void C4MainStat::Show()
 	for (ii=0; ii<iCnt; ii++) bHS[ii] = false;
 	for (i=0; i<iCnt; i++)
 	{
-		C4Stat* pBestStat = NULL;
+		C4Stat* pBestStat = nullptr;
 		unsigned int iBestNr = ~0;
 
 		for (ii=0, pAkt = pFirst; ii<iCnt; ii++, pAkt = pAkt->pNext)
@@ -126,7 +126,7 @@ void C4MainStat::Show()
 		StatArray[i] = pBestStat;
 	}
 
-	delete bHS;
+	delete [] bHS;
 
 	LogSilent("** Stat");
 

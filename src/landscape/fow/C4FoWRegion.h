@@ -16,10 +16,14 @@
 #ifndef C4FOWREGION_H
 #define C4FOWREGION_H
 
+#include "C4ForbidLibraryCompilation.h"
 #include "lib/C4Rect.h"
 #include "graphics/C4FacetEx.h"
 #include "player/C4Player.h"
 #include "landscape/fow/C4FoW.h"
+#ifndef USE_CONSOLE
+#include <GL/glew.h>
+#endif
 
 class C4Surface;
 
@@ -54,13 +58,14 @@ public:
 #endif
 
 	void Update(C4Rect r, const FLOAT_RECT& vp);
-	bool Render(const C4TargetFacet *pOnScreen = NULL);
+	bool Render(const C4TargetFacet *pOnScreen = nullptr);
 
 	// Fills a 2x3 matrix to transform fragment coordinates to light texture coordinates
 	void GetFragTransform(const C4Rect& clipRect, const C4Rect& outRect, float lightTransform[6]) const;
 private:
-	bool BindFramebuf();
-
+#ifndef USE_CONSOLE
+	bool BindFramebuf(GLuint prev_fb);
+#endif
 };
 
 #endif

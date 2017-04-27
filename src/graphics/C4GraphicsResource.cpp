@@ -18,6 +18,7 @@
 /* Loads all standard graphics from Graphics.ocg */
 
 #include "C4Include.h"
+#include "C4ForbidLibraryCompilation.h"
 #include "graphics/C4GraphicsResource.h"
 
 #include "object/C4DefList.h"
@@ -76,14 +77,14 @@ void C4GraphicsResource::Default()
 	fctFlagClr.Default();
 	fctPlayerClr.Default();
 
-	fctCursor.Default();
-	fctDropTarget.Default();
 	fctKeyboard.Default();
 	fctGamepad.Default();
 	fctCommand.Default();
 	fctKey.Default();
 	fctOKCancel.Default();
 	fctMouse.Default();
+
+	fctTransformKnob.Default();
 
 	iNumRanks=1;
 	idRegisteredMainGroupSetFiles=-1;
@@ -123,6 +124,7 @@ void C4GraphicsResource::Clear()
 	fctHand.Clear();
 	fctGamepad.Clear();
 	fctBuild.Clear();
+	fctTransformKnob.Clear();
 	// GUI data
 	sfcCaption.Clear(); sfcButton.Clear(); sfcButtonD.Clear(); sfcScroll.Clear(); sfcContext.Clear();
 	idSfcCaption = idSfcButton = idSfcButtonD = idSfcScroll = idSfcContext = 0;
@@ -136,8 +138,9 @@ void C4GraphicsResource::Clear()
 	fctProgressBar.Clear();
 	fctContext.Default();
 
+
 	// unhook deflist from font
-	FontRegular.SetCustomImages(NULL);
+	FontRegular.SetCustomImages(nullptr);
 
 	Achievements.Clear();
 
@@ -151,7 +154,7 @@ bool C4GraphicsResource::InitFonts()
 {
 	// this regards scenario-specific fonts or overloads in Extra.ocg
 	const char *szFont;
-	if (*Game.C4S.Head.Font) szFont = Game.C4S.Head.Font; else szFont = Config.General.RXFontName;
+	if (!Game.C4S.Head.Font.empty()) szFont = Game.C4S.Head.Font.c_str(); else szFont = Config.General.RXFontName;
 	if (!::FontLoader.InitFont(&FontRegular, szFont, C4FontLoader::C4FT_Main, Config.General.RXFontSize, &Files)) return false;
 	Game.SetInitProgress(ProgressStart); ProgressStart += ProgressIncrement;
 	if (!::FontLoader.InitFont(&FontTiny, szFont, C4FontLoader::C4FT_Log, Config.General.RXFontSize, &Files)) return false;
@@ -265,6 +268,7 @@ bool C4GraphicsResource::Init()
 	if (!LoadFile(fctHand,        "Hand",         Files, C4FCT_Height, C4FCT_Full, false, 0))             return false;
 	if (!LoadFile(fctGamepad,     "Gamepad",      Files, 80,           C4FCT_Full, false, 0))             return false;
 	if (!LoadFile(fctBuild,       "Build",        Files, C4FCT_Full,   C4FCT_Full, false, 0))             return false;
+	if (!LoadFile(fctTransformKnob,"TransformKnob",Files,C4FCT_Full,   C4FCT_Full, false, 0))             return false;
 
 	// achievements
 	if (!Achievements.Init(Files)) return false;
@@ -315,10 +319,6 @@ bool C4GraphicsResource::LoadCursorGfx()
 	szCursorFilename = "Cursor";
 	if (!LoadFile(fctMouseCursor, szCursorFilename, Files, C4FCT_Height, C4FCT_Full, false, 0))
 		return false;
-	// adjust dependant faces
-	int32_t iCursorSize = fctMouseCursor.Hgt;
-	fctCursor.Set(fctMouseCursor.Surface, 11*iCursorSize, 0, iCursorSize, iCursorSize);
-	fctDropTarget.Set(fctMouseCursor.Surface, 11*iCursorSize, 0, iCursorSize, iCursorSize);
 	return true;
 }
 
@@ -365,7 +365,7 @@ void C4GraphicsResource::CloseFiles()
 
 static C4Group *FindSuitableFile(const char *szName, C4GroupSet &rGfxSet, char *szFileName, int32_t * pID)
 {
-	const char * const extensions[] = { "bmp", "jpeg", "jpg", "png", NULL };
+	const char * const extensions[] = { "bmp", "jpeg", "jpg", "png", nullptr };
 
 	return rGfxSet.FindSuitableFile(szName, extensions, szFileName, pID);
 }

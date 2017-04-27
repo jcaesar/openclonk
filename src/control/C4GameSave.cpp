@@ -79,7 +79,10 @@ bool C4GameSave::SaveCore()
 	// reset some network flags
 	rC4S.Head.NetworkGame=0;
 	// Title in language game was started in (not: save scenarios and net references)
-	if (!GetKeepTitle()) SCopy(Game.ScenarioTitle.getData(), rC4S.Head.Title, C4MaxTitle);
+	if (!GetKeepTitle())
+	{
+		rC4S.Head.Title = Game.ScenarioTitle.getData();
+	}
 	// some adjustments for everything but saved scenarios
 	if (IsExact())
 	{
@@ -89,7 +92,7 @@ bool C4GameSave::SaveCore()
 		if (!Game.Parameters.Save(*pSaveGroup, &Game.C4S)) return false;
 	}
 	// clear MissionAccess in save games and records (sulai)
-	*rC4S.Head.MissionAccess = 0;
+	rC4S.Head.MissionAccess.clear();
 	// store origin
 	if (GetSaveOrigin())
 	{
@@ -120,7 +123,7 @@ bool C4GameSave::SaveScenarioSections()
 	{
 		// compose section filename
 		SCopy(C4CFN_ScenarioSections, fn);
-		SDelete(fn, 1, iWildcardPos); SInsert(fn, pSect->szName, iWildcardPos);
+		SDelete(fn, 1, iWildcardPos); SInsert(fn, pSect->name.getData(), iWildcardPos);
 		// do not save self, because that is implied in CurrentScenarioSection and the main landscape/object data
 		if (pSect == Game.pCurrentScenarioSection)
 			pSaveGroup->DeleteEntry(fn);
@@ -129,7 +132,7 @@ bool C4GameSave::SaveScenarioSections()
 			// modified section: delete current
 			pSaveGroup->DeleteEntry(fn);
 			// replace by new
-			pSaveGroup->Add(pSect->szTempFilename, fn);
+			pSaveGroup->Add(pSect->temp_filename.getData(), fn);
 		}
 	}
 	// done, success
@@ -329,7 +332,7 @@ void C4GameSave::WriteDescNetworkClients(StdStrBuf &sBuf)
 	// Desc
 	sBuf.Append(LoadResStr("IDS_DESC_CLIENTS"));
 	// Client names
-	for (C4Network2Client *pClient=::Network.Clients.GetNextClient(NULL); pClient; pClient=::Network.Clients.GetNextClient(pClient))
+	for (C4Network2Client *pClient=::Network.Clients.GetNextClient(nullptr); pClient; pClient=::Network.Clients.GetNextClient(pClient))
 		{ sBuf.Append(", ");  sBuf.Append(pClient->getName()); }
 	// End of line
 	WriteDescLineFeed(sBuf);
@@ -402,7 +405,7 @@ bool C4GameSave::Save(const char *szFilename)
 	C4Group *pLSaveGroup = new C4Group();
 	if (!SaveCreateGroup(szFilename, *pLSaveGroup))
 	{
-		LogF(LoadResStr("IDS_ERR_SAVE_TARGETGRP"), szFilename ? szFilename : "NULL!");
+		LogF(LoadResStr("IDS_ERR_SAVE_TARGETGRP"), szFilename ? szFilename : "nullptr!");
 		delete pLSaveGroup;
 		return false;
 	}
@@ -459,7 +462,7 @@ bool C4GameSave::Close()
 			delete pSaveGroup;
 			fOwnGroup = false;
 		}
-		pSaveGroup = NULL;
+		pSaveGroup = nullptr;
 	}
 	return fSuccess;
 }
@@ -527,7 +530,7 @@ void C4GameSaveRecord::AdjustCore(C4Scenario &rC4S)
 	// default record title
 	char buf[1024 + 1];
 	sprintf(buf, "%03i %s [%d.%d]", iNum, Game.ScenarioTitle.getData(), (int)C4XVER1, (int)C4XVER2);
-	SCopy(buf, rC4S.Head.Title, C4MaxTitle);
+	rC4S.Head.Title = buf;
 }
 
 bool C4GameSaveRecord::SaveComponents()

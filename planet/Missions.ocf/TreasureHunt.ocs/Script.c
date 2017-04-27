@@ -8,11 +8,22 @@
 static g_is_initialized; // set after first player join
 static g_max_player_num; // max number of players that were ever joined
 
-static npc_pyrit, npc_dagobert, npc_tarzan, g_golden_shovel, g_flagpole, g_golden_idol, g_last_stone_door;
+// Set in Objects.c
+//static npc_dagobert, npc_tarzan, g_golden_shovel, g_flagpole, g_golden_idol, g_last_stone_door;
 static g_got_gem_task, g_got_oil, g_goal, g_treasure_collected;
+static npc_pyrit;
 
 func DoInit(int first_player)
 {
+	GetRelaunchRule()->Set({
+		inventory_transfer = true,
+		free_crew = true,
+		relaunch_time = 36,
+		respawn_at_base = true,
+		default_relaunch_count = nil,
+		player_restart = true,
+		respawn_last_clonk = true
+	});
 	ClearFreeRect(530,1135, 50,2);
 	if (g_last_stone_door) g_last_stone_door->DoDamage(170 - g_last_stone_door->GetDamage());
 	if (g_golden_idol)
@@ -174,3 +185,7 @@ func OnInvincibleDamage(object damaged_target)
 	return true;
 }
 
+public func OnPlayerRelaunch()
+{
+	return true;
+}

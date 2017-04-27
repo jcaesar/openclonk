@@ -503,9 +503,8 @@ func InitializeObjects()
 	var Torch018 = CreateObjectAbove(Torch, 1005, 1164);
 	Torch018->AttachToWall(true);
 
-	var Rule_Restart001 = CreateObject(Rule_Restart);
 
-	var g_goal = CreateObject(Goal_Parkour);
+	g_goal = CreateObject(Goal_Parkour);
 
 	g_goal->SetStartpoint(20, 1000);
 	g_goal->AddCheckpoint(760, 950, PARKOUR_CP_Respawn|PARKOUR_CP_Check|PARKOUR_CP_Ordered|PARKOUR_CP_Team);

@@ -24,6 +24,7 @@
 
 #include "script/C4Aul.h"
 #include "script/C4AulAST.h"
+#include <bitset>
 
 // aul script state
 enum C4AulScriptState
@@ -54,6 +55,9 @@ public:
 	std::string Translate(const std::string &text) const;
 	std::list<C4ScriptHost *> SourceScripts;
 	StdCopyStrBuf ScriptName; // script name
+
+	bool IsWarningEnabled(const char *pos, C4AulWarningId warning) const;
+
 protected:
 	C4ScriptHost();
 	void Unreg(); // remove from list
@@ -63,6 +67,9 @@ protected:
 	bool Preparse(); // preparse script; return if successfull
 	virtual bool Parse(); // parse preparsed script; return if successfull
 	virtual void UnLink(); // reset to unlinked state
+
+	void UnlinkOwnedFunctions();
+	void DeleteOwnedPropLists();
 
 	void Warn(const char *pMsg, ...) GNUC_FORMAT_ATTRIBUTE_O;
 
@@ -74,8 +81,9 @@ protected:
 
 	virtual void AddEngineFunctions() {}; // add any engine functions specific to this script host
 	void CopyPropList(C4Set<C4Property> & from, C4PropListStatic * to);
-	virtual bool ResolveIncludes(C4DefList *rDefs); // resolve includes
-	virtual bool ResolveAppends(C4DefList *rDefs); // resolve appends
+	bool ResolveIncludes(C4DefList *rDefs); // resolve includes
+	bool ResolveAppends(C4DefList *rDefs); // resolve appends
+	void DoAppend(C4Def *def);
 	bool Resolving; // set while include-resolving, to catch circular includes
 	bool IncludesResolved;
 
@@ -83,13 +91,26 @@ protected:
 	C4LangStringTable *stringTable;
 	C4Set<C4Property> LocalValues;
 	C4AulScriptState State; // script state
+
+	// list of all functions generated from code in this script host
+	std::vector<C4Value> ownedFunctions;
+
+	// list of all static proplists that refer to this script host
+	// filled in at link time and used to delete all proplists
+	// in Clear() even in case of cyclic references.
+	std::vector<C4Value> ownedPropLists;
+
+	void EnableWarning(const char *pos, C4AulWarningId warning, bool enable = true);
+
 	friend class C4AulParse;
 	friend class C4AulProfiler;
 	friend class C4AulScriptEngine;
 	friend class C4AulDebug;
 	friend class C4AulCompiler;
+	friend class C4AulScriptFunc;
 
 private:
+	std::map<const char*, std::bitset<(size_t)C4AulWarningId::WarningCount>> enabledWarnings;
 	std::unique_ptr<::aul::ast::Script> ast;
 };
 
@@ -98,7 +119,8 @@ class C4ExtraScriptHost: public C4ScriptHost
 {
 	C4Value ParserPropList;
 public:
-	C4ExtraScriptHost(C4String *parent_key_name = NULL);
+	C4ExtraScriptHost(C4String *parent_key_name = nullptr);
+	~C4ExtraScriptHost();
 	void Clear();
 
 	bool Delete() { return true; }
@@ -116,7 +138,7 @@ public:
 class C4DefScriptHost: public C4ScriptHost
 {
 public:
-	C4DefScriptHost() : C4ScriptHost(), Def(NULL) { }
+	C4DefScriptHost() : C4ScriptHost(), Def(nullptr) { }
 
 	void SetDef(C4Def *to_def) { Def=to_def; }
 	virtual bool Parse();
@@ -140,7 +162,7 @@ public:
 	C4Value Call(const char *szFunction, C4AulParSet *pPars=0, bool fPassError=false);
 	C4Value ScenPropList;
 	C4Value ScenPrototype;
-	C4Effect * pScenarioEffects = NULL;
+	C4Effect * pScenarioEffects = nullptr;
 };
 
 extern C4GameScriptHost GameScript;

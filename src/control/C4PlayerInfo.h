@@ -45,26 +45,27 @@ public:
 	// player flags
 	enum Flags
 	{
-		PIF_Joined         = 1<<0,   // player has joined the game
-		PIF_Removed        = 1<<2,   // player has been removed
-		PIF_HasRes         = 1<<3,   // pRes is set
-		PIF_JoinIssued     = 1<<4,   // flag for host to mark a player for which the join is issued
-		PIF_TempFile       = 1<<5,   // player file is temporary and to be deleted after join recreation
-		PIF_InScenarioFile = 1<<6,   // player file is present within the scenario; res is not to be used
-		PIF_JoinedForSavegameOnly = 1<<7, // player file has been specified to take over a savegame player; do not join as normal player if association fails
-		PIF_Disconnected   = 1<<8,   // the player was removed because his client disconnected
-		PIF_Won            = 1<<9,   // player survived until game end (for game evaluation only)
-		PIF_VotedOut       = 1<<10,  // player was removed from the round after a successful voting
-		PIF_AttributesFixed= 1<<11, // player color and name aren't changed on collision
-		PIF_NoScenarioInit = 1<<12, // do not call ScenariInit for this player
-		PIF_NoEliminationCheck = 1<<13, // do not eliminate player if crew is empty
-		PIF_Invisible      = 1<<14,  // do not show in lobby and menus
+		PIF_Joined = 1 << 0,   // player has joined the game
+		PIF_Removed = 1 << 2,   // player has been removed
+		PIF_HasRes = 1 << 3,   // pRes is set
+		PIF_JoinIssued = 1 << 4,   // flag for host to mark a player for which the join is issued
+		PIF_TempFile = 1 << 5,   // player file is temporary and to be deleted after join recreation
+		PIF_InScenarioFile = 1 << 6,   // player file is present within the scenario; res is not to be used
+		PIF_JoinedForSavegameOnly = 1 << 7, // player file has been specified to take over a savegame player; do not join as normal player if association fails
+		PIF_Disconnected = 1 << 8,   // the player was removed because his client disconnected
+		PIF_Won = 1 << 9,   // player survived until game end (for game evaluation only)
+		PIF_VotedOut = 1 << 10,  // player was removed from the round after a successful voting
+		PIF_AttributesFixed = 1 << 11, // player color and name aren't changed on collision
+		PIF_NoScenarioInit = 1 << 12, // do not call ScenariInit for this player
+		PIF_NoEliminationCheck = 1 << 13, // do not eliminate player if crew is empty
+		PIF_Invisible = 1 << 14,  // do not show in lobby and menus
+		PIF_NoScenarioSave = 1 << 15,  // not saved in SavePlayerInfos.txt if "save as scenario" is performed
 
 		// flags to be synchronized via network and saved into player info
-		PIF_SyncFlags = PIF_Joined | PIF_Removed | PIF_HasRes | PIF_InScenarioFile | PIF_JoinedForSavegameOnly | PIF_Disconnected | PIF_Won | PIF_VotedOut | PIF_AttributesFixed | PIF_NoScenarioInit | PIF_NoEliminationCheck | PIF_Invisible,
+		PIF_SyncFlags = PIF_Joined | PIF_Removed | PIF_HasRes | PIF_InScenarioFile | PIF_JoinedForSavegameOnly | PIF_Disconnected | PIF_Won | PIF_VotedOut | PIF_AttributesFixed | PIF_NoScenarioInit | PIF_NoEliminationCheck | PIF_Invisible | PIF_NoScenarioSave,
 
 		// flags to be copied from savegame-player for takeover
-		PIF_SavegameTakeoverFlags = PIF_Joined | PIF_Removed | PIF_JoinIssued | PIF_AttributesFixed | PIF_NoScenarioInit | PIF_NoEliminationCheck | PIF_Invisible
+		PIF_SavegameTakeoverFlags = PIF_Joined | PIF_Removed | PIF_JoinIssued | PIF_AttributesFixed | PIF_NoScenarioInit | PIF_NoEliminationCheck | PIF_Invisible | PIF_NoScenarioSave,
 	};
 
 	// player attributes used in attribute conflict resolver
@@ -167,6 +168,7 @@ public:
 	bool HasJoined() const { return !!(dwFlags & PIF_Joined); }    // return whether player has joined
 	bool IsJoined() const { return HasJoined() && !(dwFlags & PIF_Removed); } // return whether player is currently in the game
 	bool HasJoinIssued() const { return !!(dwFlags & (PIF_Joined | PIF_JoinIssued)); } // return whether player join is in the queue already (or performed long ago, even)
+	bool HasJoinPending() const { return !(dwFlags & (PIF_Joined | PIF_Removed)); } // return whether player join should be done but has not been performed yet
 	bool IsUsingColor() const { return !IsRemoved() && !idSavegamePlayer; } //return whether the player is actually using the player color
 	bool IsUsingName() const { return !IsRemoved() && !sLeagueAccount.getLength(); } //return whether the player is actually using the player name (e.g. not if league name is used)
 	bool IsUsingAttribute(Attribute eAttr) const { if (eAttr == PLRATT_Color) return IsUsingColor(); else return IsUsingName(); }
@@ -175,6 +177,7 @@ public:
 	bool IsAttributesFixed() const { return !!(dwFlags & PIF_AttributesFixed); }
 	bool IsInvisible() const { return !!(dwFlags & PIF_Invisible); }
 	bool IsScenarioInitDesired() const { return !(dwFlags & PIF_NoScenarioInit); }
+	bool IsScenarioSaveDesired() const { return !(dwFlags & PIF_NoScenarioSave); }
 	C4ID GetScriptPlayerExtraID() const { return idExtraData; }
 	bool IsNoEliminationCheck() const { return !!(dwFlags & PIF_NoEliminationCheck); }
 	bool HasAutoGeneratedColor() { return dwColor != dwOriginalColor; } // whether the player got a new color assigned due to color conflict
@@ -228,7 +231,7 @@ private:
 	uint32_t dwFlags; // bit mask of the above flags
 
 public:
-	C4ClientPlayerInfos(const char *szJoinFilenames=NULL, bool fAdd=false, C4PlayerInfo *pAddInfo=NULL); // ctor; sets local data (or makes an add-player-packet if filename is given) if par is true
+	C4ClientPlayerInfos(const char *szJoinFilenames=nullptr, bool fAdd=false, C4PlayerInfo *pAddInfo=nullptr); // ctor; sets local data (or makes an add-player-packet if filename is given) if par is true
 	C4ClientPlayerInfos(const C4ClientPlayerInfos &rCopy); // copy ctor
 	~C4ClientPlayerInfos() { Clear(); }                   // dtor
 
@@ -356,10 +359,10 @@ public:
 	// query functions
 	int32_t GetInfoCount() const { return iClientCount; }    // get number of registered client infos
 	C4ClientPlayerInfos *GetIndexedInfo(int32_t iIndex) const // get client player infos by indexed
-	{ return (ppClients && Inside<int32_t>(iIndex, 0, iClientCount-1)) ? ppClients[iIndex] : NULL; }
+	{ return (ppClients && Inside<int32_t>(iIndex, 0, iClientCount-1)) ? ppClients[iIndex] : nullptr; }
 	C4ClientPlayerInfos **GetInfoPtrByClientID(int32_t iClientID) const; // get info for a specific client ID
 	C4ClientPlayerInfos *GetInfoByClientID(int32_t iClientID) const
-	{ C4ClientPlayerInfos **ppNfo = GetInfoPtrByClientID(iClientID); return ppNfo ? *ppNfo : NULL; }
+	{ C4ClientPlayerInfos **ppNfo = GetInfoPtrByClientID(iClientID); return ppNfo ? *ppNfo : nullptr; }
 	C4PlayerInfo *GetPlayerInfoByIndex(int32_t index) const;  // get player info by index (for running through all players regardless of clients or ids)
 	C4PlayerInfo *GetPlayerInfoByID(int32_t id) const;        // get player info by unique player ID
 	C4PlayerInfo *GetPlayerInfoByID(int32_t id, int32_t *pidClient) const;  // get player info by unique player ID, and assign associated client
@@ -369,13 +372,14 @@ public:
 	C4PlayerInfo *GetActivePlayerInfoByName(const char *szName);    // find info by name (case insensitive)
 	int32_t GetPlayerCount() const;                           // get number of players on all clients
 	int32_t GetJoinIssuedPlayerCount() const;                 // get number of players with PIF_JoinIssued-flag set
+	int32_t GetJoinPendingPlayerCount() const;                 // get number of players with PIF_JoinIssued-flag but not joined or removed flag set
 	int32_t GetActivePlayerCount(bool fCountInvisible) const;                     // get number of players that have not been removed
 	StdStrBuf GetActivePlayerNames(bool fCountInvisible, int32_t iAtClientID=-1) const;                   // get a comma-separated list of players that have not been removed yet
 	int32_t GetActiveScriptPlayerCount(bool fCountSavegameResumes, bool fCountInvisible) const;               // get number of script players that have not been removed
 	C4PlayerInfo *GetPrimaryInfoByClientID(int32_t iClientID) const
 	{
 		C4ClientPlayerInfos *pInfoPkt = GetInfoByClientID(iClientID);
-		if (!pInfoPkt) return NULL;
+		if (!pInfoPkt) return nullptr;
 		return pInfoPkt->GetPlayerInfo(0);
 	}
 	C4PlayerInfo *FindSavegameResumePlayerInfo(const C4PlayerInfo *pMatchInfo, MatchingLevel mlMatchStart, MatchingLevel mlMatchEnd) const; // automatic savegame player association: Associate by name (or prefcolor, if none matches)
@@ -386,7 +390,7 @@ public:
 	{ *ppRemoveInfo = ppClients[--iClientCount]; /* maybe redundant self-assignment; no vector shrink */ }
 
 public:
-	bool Load(C4Group &hGroup, const char *szFromFile, class C4LangStringTable *pLang=NULL); // clear self and load from group file
+	bool Load(C4Group &hGroup, const char *szFromFile, class C4LangStringTable *pLang=nullptr); // clear self and load from group file
 	bool Save(C4Group &hGroup, const char *szToFile); // save to group file
 
 	// external ID counter manipulation used by C4Game

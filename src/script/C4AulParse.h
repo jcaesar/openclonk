@@ -48,7 +48,7 @@ public:
 	C4AulParse(class C4ScriptHost *host);
 	C4AulParse(C4AulScriptFunc * Fn, C4AulScriptContext* context, C4AulScriptEngine *Engine);
 	~C4AulParse();
-	std::unique_ptr<::aul::ast::FunctionDecl> Parse_DirectExec(const char *code);
+	std::unique_ptr<::aul::ast::FunctionDecl> Parse_DirectExec(const char *code, bool whole_function);
 	std::unique_ptr<::aul::ast::Script> Parse_Script(C4ScriptHost *);
 
 private:
@@ -61,8 +61,13 @@ private:
 	int32_t cInt; // current int constant
 	C4String * cStr; // current string constant
 	C4AulScriptContext* ContextToExecIn;
+	void Parse_Function(bool parse_for_direct_exec);
+	void Parse_WarningPragma();
+
+protected:
+	// All of the Parse_* functions need to be protected (not private!) so
+	// we can make them public in a derived class for unit testing purposes
 	std::unique_ptr<::aul::ast::FunctionDecl> Parse_ToplevelFunctionDecl();
-	void Parse_Function(::aul::ast::Function *func);
 	std::unique_ptr<::aul::ast::Stmt> Parse_Statement();
 	std::unique_ptr<::aul::ast::Block> Parse_Block();
 	std::unique_ptr<::aul::ast::ArrayLit> Parse_Array();
@@ -72,21 +77,24 @@ private:
 	std::unique_ptr<::aul::ast::If> Parse_If();
 	std::unique_ptr<::aul::ast::ForLoop> Parse_For();
 	std::unique_ptr<::aul::ast::RangeLoop> Parse_ForEach();
-	void Parse_CallParams(::aul::ast::CallExpr *call);
 	std::unique_ptr<::aul::ast::Expr> Parse_Expression(int iParentPrio = -1);
 	std::unique_ptr<::aul::ast::VarDecl> Parse_Var();
+	void Shift();
+
+private:
+	void Parse_Function(::aul::ast::Function *func);
+	void Parse_CallParams(::aul::ast::CallExpr *call);
 
 	bool AdvanceSpaces(); // skip whitespaces; return whether script ended
 	int GetOperator(const char* pScript);
 	void ClearToken(); // clear any data held with the current token
 	C4AulTokenType GetNextToken(); // get next token of SPos
 
-	void Shift();
-	void Match(C4AulTokenType TokenType, const char * Expected = NULL);
-	void Check(C4AulTokenType TokenType, const char * Expected = NULL);
+	void Match(C4AulTokenType TokenType, const char * Expected = nullptr);
+	void Check(C4AulTokenType TokenType, const char * Expected = nullptr);
 	NORETURN void UnexpectedToken(const char * Expected);
 
-	void Warn(const char *pMsg, ...) GNUC_FORMAT_ATTRIBUTE_O;
+	void Warn(C4AulWarningId warning, ...);
 	void Error(const char *pMsg, ...) GNUC_FORMAT_ATTRIBUTE_O;
 	void AppendPosition(StdStrBuf & Buf);
 

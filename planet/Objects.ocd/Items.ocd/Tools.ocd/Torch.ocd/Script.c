@@ -13,24 +13,48 @@ local TRCH_InHand   = 1;
 local TRCH_Attached = 2;
 local TRCH_Fixed    = 3;
 
-protected func Initialize()
+/*-- Engine Callbacks --*/
+
+func Initialize()
 {
-	local state = TRCH_Normal;
+	state = TRCH_Normal;
 	SetMeshMaterial("Torch");
-	return;
 }
 
-private func Hit()
+func Hit()
 {
 	Sound("Hits::Materials::Wood::WoodHit?");
-	return;
 }
 
-public func GetCarryMode() { return CARRY_HandBack; }
+// Set state on entrance of a clonk.
+func Entrance(object container)
+{
+	if (container->~IsClonk())
+		state = TRCH_InHand;
+	return _inherited(container, ...);
+}
 
-public func IsWorkshopProduct() { return true; }
-public func IsTool() { return true; }
-public func IsToolProduct() { return true; }
+// Set state on departure from a clonk.
+func Departure(object container)
+{
+	if (container->~IsClonk())
+		state = TRCH_Normal;
+	return _inherited(container, ...);
+}
+
+public func SaveScenarioObject(proplist props, ...)
+{
+	if (!_inherited(props, ...)) return false;
+	if (state == TRCH_Attached || state == TRCH_Fixed)
+	{
+		props->AddCall("Attach", this, "AttachToWall", state == TRCH_Fixed);
+		props->Remove("Category");
+		props->Remove("Plane");
+	}
+	return true;
+}
+
+/*-- Callbacks --*/
 
 // Returns whether the torch currently is a source of light.
 public func IsLightSource()
@@ -38,6 +62,15 @@ public func IsLightSource()
 	return !!GetEffect("IntBurning", this);
 }
 
+public func IsInteractable(object clonk)
+{
+	return state == TRCH_Attached;
+}
+
+public func GetInteractionMetaInfo(object clonk)
+{
+	return { Description = "$MsgTorchDetach$", IconName = nil, IconID = nil, Selected = false };
+}
 
 /*-- Usage --*/
 
@@ -60,16 +93,6 @@ public func ControlUse(object clonk)
 	// Otherwise log a message about where one can attach torches.
 	Message("$MsgTorchAttach$");
 	return true;
-}
-
-public func IsInteractable(object clonk)
-{
-	return state == TRCH_Attached;
-}
-
-func GetInteractionMetaInfo(object clonk)
-{
-	return { Description = "$MsgTorchDetach$", IconName = nil, IconID = nil, Selected = false };
 }
 
 public func Interact(object clonk)
@@ -98,7 +121,7 @@ public func AttachToWall(bool fixed)
 	this.MeshTransformation = Trans_Rotate(-20, 1, 0, 0);
 	// Add a burning effect if not already done.
 	if (!GetEffect("IntBurning", this))
-		AddEffect("IntBurning", this, 100, 1, this);
+		AddEffect("IntBurning", this, 100, 4, this);
 	return;
 }
 
@@ -110,7 +133,7 @@ public func DetachFromWall()
 	this.Collectible = true;
 	state = TRCH_Normal;
 	// Remove the burning effect if active.
-	if (!GetEffect("IntBurning", this))
+	if (GetEffect("IntBurning", this))
 		RemoveEffect("IntBurning", this);
 	return;
 }
@@ -122,31 +145,14 @@ public func SetState(int to_state)
 	return;
 }
 
-// Set state on entrance of a clonk.
-protected func Entrance(object container)
-{
-	if (container->~IsClonk())
-		state = TRCH_InHand;
-	return _inherited(container, ...);
-}
-
-// Set state on departure from a clonk.
-protected func Departure(object container)
-{
-	if (container->~IsClonk())
-		state = TRCH_Normal;
-	return _inherited(container, ...);
-}
-
-
 /*-- Burning Effect --*/
 
-private func FxIntBurningStart(object target, effect fx, int temporary)
+func FxIntBurningStart(object target, effect fx, int temporary)
 {
 	if (temporary)
 		return 1;
-	// Ensure the interval is always one frame.
-	fx.Interval = 1;
+	// Starting interval
+	fx.Interval = 4;
 	// Fire particle
 	fx.flame = 
 	{
@@ -177,49 +183,53 @@ private func FxIntBurningStart(object target, effect fx, int temporary)
 	return 1;
 }
 
-private func FxIntBurningTimer (object target, effect fx, int time)
+func FxIntBurningTimer (object target, effect fx, int time)
 {
 	// If the torched is attached or fixed it should emit some fire and smoke particles.
 	if (state == TRCH_Attached || state == TRCH_Fixed)
 	{
 		// Fire effects.
-		CreateParticle("FireSharp", PV_Random(-1, 2), PV_Random(0, -3), PV_Random(-2, 2), PV_Random(-3, -5), 10 + Random(3), fx.flame, 8);
+		CreateParticle("FireSharp", PV_Random(-1, 2), PV_Random(0, -3), PV_Random(-2, 2), PV_Random(-3, -5), 10 + Random(3), fx.flame, 12);
 		// Smoke effects.
-		CreateParticle("Smoke", PV_Random(-1, 2), PV_Random(-7, -9), PV_Random(-2, 2), PV_Random(-2, 2), 24 + Random(12), fx.smoke, 2);
+		CreateParticle("Smoke", PV_Random(-1, 2), PV_Random(-7, -9), PV_Random(-2, 2), PV_Random(-2, 2), 24 + Random(12), fx.smoke, 4);
+		// Interval jitter
+		if (!Random(10)) fx.Interval = 3+Random(3);
 	}
 	return 1;
 }
 
-protected func FxIntBurningStop(object target, proplist effect, int reason, bool temporary)
+func FxIntBurningStop(object target, proplist effect, int reason, bool temporary)
 {
 	if (temporary)
 		return 1;
-	// Remove the light from this torch.	
+	// Remove the light from this torch.
 	SetLightRange(0);
 	return 1;
 }
 
-public func SaveScenarioObject(proplist props, ...)
+/*-- Production --*/
+
+public func IsTool() { return true; }
+public func IsToolProduct() { return true; }
+
+/*-- Display --*/
+
+public func GetCarryMode(object clonk, bool idle, bool nohand)
 {
-	if (!_inherited(props, ...)) return false;
-	if (state == TRCH_Attached || state == TRCH_Fixed)
-	{
-		props->AddCall("Attach", this, "AttachToWall", state == TRCH_Fixed);
-		props->Remove("Category");
-		props->Remove("Plane");
-	}
-	return true;
+	if (idle || nohand)
+		return CARRY_Back;
+
+	return CARRY_Spear;
 }
 
-
-/*-- Properties --*/
-
-protected func Definition(def) 
+func Definition(def)
 {
 	SetProperty("PictureTransformation", Trans_Mul(Trans_Translate(2500, -1500, 0), Trans_Rotate(-30, 0, 0, 1)), def);
 }
 
-local Collectible = 1;
+/*-- Properties --*/
+
 local Name = "$Name$";
 local Description = "$Description$";
+local Collectible = true;
 local Components = {Wood = 1, Coal = 1};

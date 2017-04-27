@@ -24,7 +24,6 @@
 #ifdef _WIN32
 #include <io.h>
 #include "platform/C4windowswrapper.h"
-#define vsnprintf _vsnprintf
 #else
 #define O_BINARY 0
 #define O_SEQUENTIAL 0
@@ -34,14 +33,6 @@
 #include <ctype.h>
 #include <fcntl.h>
 #include <sys/stat.h>
-
-#if !defined(HAVE_VASPRINTF) && defined(HAVE___MINGW_VASPRINTF)
-// MinGW declares a vasprintf-compatible function as __mingw_vasprintf.
-// Rename it for our use.
-#define vasprintf __mingw_vasprintf
-#define HAVE_VASPRINTF
-#endif
-
 
 // *** StdBuf
 
@@ -133,7 +124,7 @@ void StdBuf::CompileFunc(StdCompiler *pComp, int iType)
 	uint32_t tmp = iSize; pComp->Value(mkIntPackAdapt(tmp)); iSize = tmp;
 	pComp->Separator(StdCompiler::SEP_PART2);
 	// Read/write data
-	if (pComp->isCompiler())
+	if (pComp->isDeserializer())
 	{
 		New(iSize);
 		pComp->Raw(getMData(), iSize, StdCompiler::RawCompileType(iType));
@@ -149,29 +140,29 @@ void StdBuf::CompileFunc(StdCompiler *pComp, int iType)
 #ifdef _WIN32
 StdStrBuf::StdStrBuf(const wchar_t * utf16)
 {
-	int len = WideCharToMultiByte(CP_UTF8, 0, utf16, -1, NULL, 0, 0, 0);
+	int len = WideCharToMultiByte(CP_UTF8, 0, utf16, -1, nullptr, 0, 0, 0);
 	SetSize(len);
 	WideCharToMultiByte(CP_UTF8, 0, utf16, -1, getMData(), getSize(), 0, 0);
 }
 StdStrBuf::wchar_t_holder StdStrBuf::GetWideChar() const
 {
-	if (!getSize()) return StdStrBuf::wchar_t_holder(NULL);
+	if (!getSize()) return StdStrBuf::wchar_t_holder(nullptr);
 
-	int len = MultiByteToWideChar(CP_UTF8, 0, getData(), getSize(), NULL, 0);
+	int len = MultiByteToWideChar(CP_UTF8, 0, getData(), getSize(), nullptr, 0);
 	wchar_t * p = new wchar_t[len];
 	MultiByteToWideChar(CP_UTF8, 0, getData(), getSize(), p, len);
 	return StdStrBuf::wchar_t_holder(p);
 }
 StdBuf StdStrBuf::GetWideCharBuf()
 {
-	int len = MultiByteToWideChar(CP_UTF8, 0, getData(), getSize(), NULL, 0);
+	int len = MultiByteToWideChar(CP_UTF8, 0, getData(), getSize(), nullptr, 0);
 	StdBuf r; r.SetSize(len * sizeof(wchar_t));
 	MultiByteToWideChar(CP_UTF8, 0, getData(), getSize(), getMBufPtr<wchar_t>(r), len);
 	return r;
 }
 StdStrBuf::wchar_t_holder GetWideChar(const char * utf8, bool double_null_terminate)
 {
-	int len = MultiByteToWideChar(CP_UTF8, 0, utf8, -1, NULL, 0);
+	int len = MultiByteToWideChar(CP_UTF8, 0, utf8, -1, nullptr, 0);
 	if (double_null_terminate) ++len;
 	wchar_t * p = new wchar_t[len];
 	MultiByteToWideChar(CP_UTF8, 0, utf8, -1, p, len);
@@ -180,7 +171,7 @@ StdStrBuf::wchar_t_holder GetWideChar(const char * utf8, bool double_null_termin
 }
 StdBuf GetWideCharBuf(const char * utf8)
 {
-	int len = MultiByteToWideChar(CP_UTF8, 0, utf8, -1, NULL, 0);
+	int len = MultiByteToWideChar(CP_UTF8, 0, utf8, -1, nullptr, 0);
 	StdBuf r; r.SetSize(len * sizeof(wchar_t));
 	MultiByteToWideChar(CP_UTF8, 0, utf8, -1, getMBufPtr<wchar_t>(r), len);
 	return r;
@@ -269,7 +260,7 @@ void StdStrBuf::AppendBackslash()
 
 void StdStrBuf::CompileFunc(StdCompiler *pComp, int iRawType)
 {
-	if (pComp->isCompiler())
+	if (pComp->isDeserializer())
 	{
 		char *pnData;
 		pComp->String(&pnData, StdCompiler::RawCompileType(iRawType));
@@ -433,7 +424,8 @@ void StdStrBuf::AppendCharacter(uint32_t unicodechar)
 	else /* not an unicode code point, ignore */ {}
 }
 
-void StdStrBuf::EnsureUnicode()
+// Returns true if charset was converted.
+bool StdStrBuf::EnsureUnicode()
 {
 	// assume that it's windows-1252 and convert to utf-8
 	if (!IsValidUtf8(getData(), getLength()))
@@ -477,7 +469,9 @@ void StdStrBuf::EnsureUnicode()
 		}
 		buf.SetLength(j);
 		Take(std::move(buf));
+		return true;
 	}
+	return false;
 }
 
 bool StdStrBuf::TrimSpaces()
@@ -513,3 +507,16 @@ bool StdStrBuf::TrimSpaces()
 	SetLength(iLength - iSpaceLeftCount - iSpaceRightCount);
 	return true;
 }
+
+#ifdef _WIN32
+std::string WStrToString(wchar_t *ws)
+{
+	int len = WideCharToMultiByte(CP_UTF8, 0, ws, -1, nullptr, 0, 0, 0);
+	assert(len >= 0);
+	if (len <= 0) return std::string{};
+
+	std::string s(static_cast<size_t>(len), '\0');
+	s.resize(WideCharToMultiByte(CP_UTF8, 0, ws, -1, &s[0], s.size(), 0, 0) - 1);
+	return s;
+}
+#endif

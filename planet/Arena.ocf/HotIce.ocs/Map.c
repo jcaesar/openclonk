@@ -5,9 +5,6 @@
 	@authors Sven2
 */
 
-static g_player_spawn_positions;
-static g_map_width;
-
 // Called be the engine: draw the complete map here.
 public func InitializeMap(proplist map)
 {
@@ -33,6 +30,11 @@ public func InitializeMap(proplist map)
 	return true;
 }
 
+func SpawnPositionCount()
+{
+	return Max(Max(GetStartupPlayerCount(), GetPlayerCount()), 2);
+}
+
 func DrawBigIslandMap(proplist map)
 {
 	var w = map.Wdt, h=map.Hgt;
@@ -52,7 +54,7 @@ func DrawBigIslandMap(proplist map)
 		map->Draw("^Ice-ice2", nil, [x,y,1,1]);
 	}
 	// Player spawns simply in middle of big island
-	var plrcnt = Max(GetStartupPlayerCount(), 2);
+	var plrcnt = SpawnPositionCount();
 	g_player_spawn_positions = CreateArray(plrcnt);
 	for (var i = 0; i < plrcnt; ++i)
 	{
@@ -77,8 +79,11 @@ func DrawSmallIslandsMap(proplist map)
 		if (Abs(x-w/2) < w/10) szx += Random(3); // central islands sometimes wider
 		map->Draw("^Ice-ice2", nil, [x-szx,y,1+2*szx,szy]);
 	}
+	// Balloon spawn: do nothing further
+	if (SCENPAR_SpawnType == 1)
+		return true;
 	// Starting islands for player spawns
-	var spawn_island_count = Max(GetStartupPlayerCount(), 2);
+	var spawn_island_count = SpawnPositionCount();
 	g_player_spawn_positions = CreateArray(spawn_island_count);
 	for (var i = 0; i < spawn_island_count; ++i)
 	{

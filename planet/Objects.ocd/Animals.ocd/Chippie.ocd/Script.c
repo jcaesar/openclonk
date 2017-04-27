@@ -3,31 +3,35 @@
 	Small, lovely creatures.
 */
 
+#include Library_Animal
+
 local Name = "$Name$";
 local Description = "$Description$";
+local animal_reproduction_area_size = 800;
+local animal_reproduction_rate = 200;
+local animal_max_count = 10;
 
 // Remember the attachee to be able to detach again.
 local attach_object, attached_mesh;
 // Remember the energy sucked to frequently spawn offsprings.
 local energy_sucked;
 
-public func Construction()
+public func Construction(...)
 {
 	AddEffect("Activity", this, 1, 10, this);
 	SetAction("Walk");
-	if (GetOwner() == NO_OWNER)
-		SetCreatureControlled();
 	energy_sucked = 0;
-	return true;
+	return _inherited(...);
 }
 
 public func Destruction()
 {
 	if (GetAction() == "Clawing")
 		StopClawing();
+	return _inherited(...);
 }
 
-public func Death()
+public func Death(int killed_by)
 {
 	var particles = 
 	{
@@ -89,7 +93,7 @@ private func FxClawingTimer(target, effect, time)
 		}
 		
 		// Grow and prosper.
-		if (GetCon() < 150 && !Random(10))
+		if (GetCon() < 150 && !Random(5))
 		{
 			DoCon(1);
 			DoEnergy(5);
@@ -106,7 +110,7 @@ private func StartJump()
 
 private func FxJumpCheckTimer(target, effect, time)
 {
-	var e = FindObject(Find_AtPoint(), Find_OCF(OCF_Alive), Find_Hostile(GetOwner()));
+	var e = FindObject(Find_AtPoint(), Find_OCF(OCF_Alive), Find_AnimalHostile(GetOwner()));
 	if(e)
 	{
 		ClawTo(e);
@@ -191,7 +195,7 @@ private func FxActivityTimer(target, effect, time)
 	
 	if(!GetEffect("DmgShock", this) && !GBackSemiSolid())
 	{
-		for(var enemy in FindObjects(Find_Distance(100), Find_OCF(OCF_Alive), Find_Hostile(GetOwner()), Sort_Distance()))
+		for(var enemy in FindObjects(Find_Distance(100), Find_OCF(OCF_Alive), Find_AnimalHostile(GetOwner()), Sort_Distance()))
 		{
 			if(!PathFree(GetX(), GetY(), enemy->GetX(), enemy->GetY())) continue;
 			
@@ -230,14 +234,6 @@ private func FxActivityTimer(target, effect, time)
 				obj->AddEffect("DoDance", obj, 1, 35*5, obj);
 				obj->AddEffect("DanceCooldown", obj, 1, 35*10, obj);
 			}
-			
-			if(!GetEffect("EggCooldown", this))
-			{
-				if(!Random(10))
-				{
-					LayEgg();
-				}
-			}
 		}
 	}
 	
@@ -258,23 +254,41 @@ private func FxActivityDamage(target, effect, dmg)
 	return dmg;
 }
 
+private func SpecialReproduction()
+{
+	LayEgg();
+	// Always return true even if laying egg failed. Otherwise mammalian reproduction is performed.
+	return true;
+}
+
 private func LayEgg()
 {
 	if(GetEffect("DmgShock", this)) return;
+	if(GetEffect("EggCooldown", this)) return;
 	var o = CreateObject(Chippie_Egg, 0, 0, GetOwner());
 	o->SetSpeed(-GetXDir(), -GetYDir());
 	o->SetCon(50);
 	o->StartGrowth(10);
 	AddEffect("EggCooldown", this, 1, 35*30, this);
+	return o;
 }
+
+// Chippies grow (solely) via sucking blood (their size influences the damage they do).
+public func GrowthSpeed() { return 0; }
 
 local MaxEnergy = 10000;
 local MaxBreath = 10000;
 local NoBurnDecay = 1;
 local ContactIncinerate = 15;
-local CorrosionResist = 1;
+local CorrosionResist = true;
 local BorderBound = C4D_Border_Sides;
 local ContactCalls = true;
+
+public func Definition(proplist def)
+{
+	def.PictureTransformation = Trans_Mul(Trans_Translate(1000, -700, 0), Trans_Scale(1400), Trans_Rotate(-10, 1, 0, 0), Trans_Rotate(50, 0, 1, 0));
+	return _inherited(def, ...);
+}
 
 local ActMap = {
 Walk = {
@@ -355,7 +369,6 @@ Jump = {
 	Length = 20,
 	Delay = 2,
 	Animation = "Move",
-	PhaseCall = "CheckStuck",
 	StartCall = "StartJump",
 	EndCall = "EndJump",
 	AbortCall = "EndJump"

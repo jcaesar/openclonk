@@ -5,14 +5,12 @@
 	Defend the windmills against waves of enemies
 */
 
-static g_goal, g_object_fade, g_flag, g_windgen1, g_windgen2, g_windgen3, g_windmill, g_chest, g_windbag, g_lorry;
 
 static g_wave; // index of current wave
 static g_spawned_enemies;
 static g_relaunchs; // array of relaunch counts
 static g_scores; // array of player scores
 static g_ai; // derived from AI; contains changes for this scenario
-static g_homebases; // item management / buy menus for each player
 static g_lost; // True if all windmills are destroyed
 static const ENEMY = 10; // player number of enemy
 static const ALLOW_DEBUG_COMMANDS = true;
@@ -47,7 +45,7 @@ func InitializePlayer(int plr, int iX, int iY, object pBase, int iTeam)
 	{
 		g_relaunchs = [];
 		g_scores = [];
-		Scoreboard->Init([{key = "relaunchs", title = Rule_Restart, sorted = true, desc = true, default = "", priority = 75},
+		Scoreboard->Init([{key = "relaunchs", title = Rule_Relaunch, sorted = true, desc = true, default = "", priority = 75},
 	                    {key = "score", title = Nugget, sorted = true, desc = true, default = "0", priority = 100}]);
 	}
 	g_relaunchs[plr] = MAX_RELAUNCH;
@@ -99,7 +97,6 @@ func JoinPlayer(plr, prev_clonk)
 	}
 	SetCursor(plr, clonk);
 	clonk->DoEnergy(1000);
-	clonk->MakeInvincibleToFriendlyFire();
 	// contents
 	clonk.MaxContentsCount = 1;
 	if (prev_clonk) TransferInventory(prev_clonk, clonk);
@@ -111,19 +108,23 @@ func JoinPlayer(plr, prev_clonk)
 		arrow->SetInfiniteStackCount();
 	}
 	clonk->~CrewSelection(); // force update HUD
+	// Make this work under the friendly fire rule.
+	for (var obj in [g_windgen1, g_windgen2, g_windgen3, g_windmill])
+		if (obj)
+			obj->SetOwner(plr);
 }
 
 // Enter all buyable things into the homebase
 func FillHomebase(object homebase)
 {
 	// Quick buy items on hotkeys
-	homebase->SetQuickbuyItems([WindBag, Bow, Javelin, Musket, GrenadeLauncher, nil, nil, nil, nil, nil]);
+	homebase->SetQuickbuyItems([WindBag, Bow, Javelin, Blunderbuss, GrenadeLauncher, nil, nil, nil, nil, nil]);
 
 	// Buy menu entries
 	homebase->AddCaption("$HomebaseWeapons$");
 	homebase->AddHomebaseItem(new Homebase.ITEMTYPE_Weapon     { item = Bow,                         ammo = Arrow,    desc = "$HomebaseDescBow$" });
 	homebase->AddHomebaseItem(new Homebase.ITEMTYPE_Weapon     { item = Javelin,         cost = 10,                   desc = "$HomebaseDescJavelin$"                                            , infinite = true});
-	homebase->AddHomebaseItem(new Homebase.ITEMTYPE_Weapon     { item = Musket,          cost = 50,  ammo = LeadShot, desc = "$HomebaseDescMusket$",          requirements = ["AdvancedWeapons"] });
+	homebase->AddHomebaseItem(new Homebase.ITEMTYPE_Weapon     { item = Blunderbuss,          cost = 50,  ammo = LeadBullet, desc = "$HomebaseDescBlunderbuss$",          requirements = ["AdvancedWeapons"] });
 	homebase->AddHomebaseItem(new Homebase.ITEMTYPE_Weapon     { item = GrenadeLauncher,             ammo = IronBomb, desc = "$HomebaseDescGrenadeLauncher$", requirements = ["MasterWeapons"] });
 	homebase->AddHomebaseItem(new Homebase.ITEMTYPE_Weapon     { item = WindBag,         cost = 500,                  desc = "$HomebaseDescWindBag$", requirements = ["MasterWeapons"] });
 
@@ -207,20 +208,12 @@ func StartGame()
 		obj.MaxEnergy = 800000;
 		obj->DoEnergy(obj.MaxEnergy/1000);
 		obj->AddEnergyBar();
-		obj.FxNoPlayerDamageDamage = Scenario.Object_NoPlayerDamage;
-		AddEffect("NoPlayerDamage", obj, 500, 0, obj);
+		GameCallEx("OnCreationRuleNoFF", obj);
 	}
 	// Launch first wave!
 	g_wave = 1;
 	ScheduleCall(nil, Scenario.LaunchWave, 50, 1, g_wave);
 	return true;
-}
-
-func Object_NoPlayerDamage(object target, fx, dmg, cause, cause_player)
-{
-	// players can't damage windmills
-	if (GetPlayerType(cause_player) == C4PT_User) return 0;
-	return dmg;
 }
 
 public func WindmillDown(object windmill)
@@ -383,7 +376,7 @@ func OnWaveCleared(int wave)
 		DoWealthForAll(bounty);
 	}
 	CustomMessage(Format("$MsgWaveCleared$%s|                                                             ", wave, bounty_msg));
-	Sound("NextWave");
+	Sound("UI::NextWave");
 	// Fade out stuff
 	Airship->AllStop();
 	if (g_object_fade)
@@ -398,6 +391,11 @@ func OnWaveCleared(int wave)
 		// There is no next wave? Game done D:
 		ScheduleCall(nil, Scenario.OnAllWavesCleared, 50, 1);
 	}
+}
+
+public func GiveRandomAttackTarget(object attacker)
+{
+	return GetRandomWindmill();
 }
 
 //======================================================================
@@ -416,11 +414,6 @@ func OnAllWavesCleared()
 //======================================================================
 /* Wave and enemy definitions */
 
-static const CSKIN_Default = 0,
-             CSKIN_Steampunk = 1,
-             CSKIN_Alchemist = 2,
-             CSKIN_Farmer = 3;
-
 static ENEMY_WAVE_DATA;
 
 static const g_respawning_weapons = [Firestone, Rock];
@@ -434,13 +427,13 @@ func InitWaveData()
 	var bowman      = { Name="$EnemyBow$",       Inventory=[Bow, Arrow],  Energy=30, Bounty=10, Color=0xff80ff80, Skin=CSKIN_Steampunk, Backpack=0,                    IsCrew=true };
 	var artillery   = { Name="$EnemyArtillery$", Inventory=Firestone,     Energy=10, Bounty=25, Color=0xffffff80, Skin=CSKIN_Steampunk, Backpack=0, Vehicle=Catapult,  IsCrew=true };
 	var ballooner   = { Name="$EnemyBalloon$",   Inventory=Sword,         Energy=30, Bounty=15, Color=0xff008000, Skin=CSKIN_Default,               Vehicle=Balloon };
-	var rocketeer   = { Name="$EnemyRocket$",    Inventory=[Bow, Arrow],  Energy=15, Bounty=15, Color=0xffffffff, Skin=CSKIN_Steampunk,             Vehicle=Boomattack };
-	var boomattack  = { Type=Boomattack, Bounty=2 };
-	var boomattackf = { Type=Boomattack, Bounty=15, Speed=300 };
+	var rocketeer   = { Name="$EnemyRocket$",    Inventory=[Bow, Arrow],  Energy=15, Bounty=15, Color=0xffffffff, Skin=CSKIN_Steampunk,             Vehicle=DefenseBoomAttack };
+	var boomattack  = { Type=DefenseBoomAttack, Bounty=2 };
+	var boomattackf = { Type=DefenseBoomAttack, Bounty=15, Speed=300 };
 
 	// Define composition of waves
 	ENEMY_WAVE_DATA = [nil,
-			{ Name = "$WaveFirst$", Bounty = 1, Enemies = 
+		{ Name = "$WaveFirst$", Bounty = 1, Enemies = 
 			new boomattack   {  Num= 1, Interval=10, PosX = 0, PosY = 500 },
 			Arrows = { X = 0, Y = 500 },
 			Chest = { Item = GoldBar, Value = 25 }

@@ -6,7 +6,7 @@
 */
 
 // Set in Objects.c
-static g_chemical, g_cabin, g_sawmill, g_workshop, g_flagpole, g_windmill, npc_newton, npc_lara, npc_lisa, npc_woody, npc_rocky, npc_mave, npc_pyrit, npc_clonko, npc_matthi, npc_dora;
+//static g_chemical, g_cabin, g_sawmill, g_workshop, g_flagpole, g_windmill, npc_newton, npc_lara, npc_lisa, npc_woody, npc_rocky, npc_mave, npc_pyrit, npc_clonko, npc_matthi, npc_dora;
 
 // Created after intro
 static g_goal;
@@ -26,6 +26,15 @@ static g_is_initialized,      // intro started
 
 func Initialize()
 {
+	GetRelaunchRule()->Set({
+		inventory_transfer = true,
+		free_crew = true,
+		relaunch_time = 36,
+		respawn_at_base = true,
+		default_relaunch_count = nil,
+		player_restart = true,
+		respawn_last_clonk = true
+	});
 	npc_newton->SetAlternativeSkin("MaleBlackHair");
 	npc_pyrit->SetAlternativeSkin("MaleBrownHair");
 	npc_woody->SetAlternativeSkin("Youngster");
@@ -121,4 +130,9 @@ func OnGoalsFulfilled()
 	GainMissionAccess("S2Raid");
 	GainScenarioAchievement("Done");
 	return true; // GameOver done by outro
+}
+
+public func OnPlayerRelaunch()
+{
+	return true;
 }

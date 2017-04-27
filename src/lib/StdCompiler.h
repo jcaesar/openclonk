@@ -45,7 +45,7 @@ class StdCompiler
 
 public:
 
-	StdCompiler() : pWarnCB(NULL), pWarnData(NULL)
+	StdCompiler() : pWarnCB(nullptr), pWarnData(nullptr)
 #ifdef STDCOMPILER_EXCEPTION_WORKAROUND
 			, fFailSafe(false), fFail(false)
 #endif
@@ -60,8 +60,8 @@ public:
 	virtual bool isDoublePass()                   { return false; }
 
 	// Changes the target?
-	virtual bool isCompiler()                     { return false; }
-	inline  bool isDecompiler()                   { return !isCompiler(); }
+	virtual bool isDeserializer()                 { return false; }
+	inline  bool isSerializer()                   { return !isDeserializer(); }
 
 	// Does the compiler support naming, so values can be omitted without harm to
 	// the data structure? Is separation implemented?
@@ -86,7 +86,7 @@ public:
 	// for whatever reason (suppress warning messages).
 	virtual bool Name(const char *szName)         { return true; }
 	virtual void NameEnd(bool fBreak = false)     { }
-	virtual const char *GetNameByIndex(size_t idx) const { return NULL; }
+	virtual const char *GetNameByIndex(size_t idx) const { return nullptr; }
 
 	// Special: A naming that follows to the currently active naming (on the same level).
 	// Note this will end the current naming, so no additional NameEnd() is needed.
@@ -98,7 +98,7 @@ public:
 	virtual bool Default(const char *szName)      { return true; }
 
 	// Return count of sub-namings. May be unimplemented.
-	virtual int NameCount(const char *szName = NULL) { assert(false); return 0; }
+	virtual int NameCount(const char *szName = nullptr) { assert(false); return 0; }
 
 
 	// * Separation
@@ -153,6 +153,7 @@ public:
 	// Note that string won't allow '\0' inside the buffer, even with escaped compiling!
 	virtual void String(char *szString, size_t iMaxLength, RawCompileType eType = RCT_Escaped) = 0;
 	virtual void String(char **pszString, RawCompileType eType = RCT_Escaped) = 0;
+	virtual void String(std::string &str, RawCompileType type = RCT_Escaped) = 0;
 	virtual void Raw(void *pData, size_t iSize, RawCompileType eType = RCT_Escaped) = 0;
 
 	// * Position
@@ -181,12 +182,12 @@ public:
 	// Compiling/Decompiling (may throw a data format exception!)
 	template <class T> inline void Compile(T &&rStruct)
 	{
-		assert(isCompiler());
+		assert(isDeserializer());
 		DoCompilation(rStruct);
 	}
 	template <class T> inline void Decompile(const T &rStruct)
 	{
-		assert(!isCompiler());
+		assert(!isDeserializer());
 		DoCompilation(const_cast<T &>(rStruct));
 	}
 
@@ -301,7 +302,8 @@ protected:
 
 	// Standard separator character
 	static char SeparatorToChar(Sep eSep);
-
+	// String end test depending on encoding type
+	static bool IsStringEnd(char c, RawCompileType eType);
 };
 
 // Standard compile funcs
@@ -317,6 +319,11 @@ inline void CompileFunc(T &rStruct, StdCompiler *pComp)
 	// c) You are trying to compile a simple value that has no
 	//    fixed representation (float, int). Use safe types instead.
 	rStruct.CompileFunc(pComp);
+}
+
+inline void CompileFunc(std::string &s, StdCompiler *comp)
+{
+	comp->String(s);
 }
 
 template <class T>
@@ -388,14 +395,14 @@ void CompileFromBuf(StructT &&TargetStruct, const typename CompT::InT &SrcBuf)
 template <class CompT, class StructT>
 StructT * CompileFromBufToNew(const typename CompT::InT &SrcBuf)
 {
-	StructT *pStruct = NULL;
+	StructT *pStruct = nullptr;
 	CompileFromBuf<CompT>(mkPtrAdaptNoNull(pStruct), SrcBuf);
 	return pStruct;
 }
 template <class CompT, class StructT>
 StructT * CompileFromBufToNewNamed(const typename CompT::InT &SrcBuf, const char *szName)
 {
-	StructT *pStruct = NULL;
+	StructT *pStruct = nullptr;
 	CompileFromBuf<CompT>(mkNamingAdapt(mkPtrAdaptNoNull(pStruct), szName), SrcBuf);
 	return pStruct;
 }
@@ -416,26 +423,26 @@ class StdCompilerNull : public StdCompiler
 public:
 
 	// Properties
-	virtual bool isCompiler()                     { return true; }
-	virtual bool hasNaming()                      { return true; }
+	virtual bool isDeserializer() override { return true; }
+	virtual bool hasNaming() override { return true; }
 
 	// Naming
-	virtual bool Name(const char *szName)         { return false; }
-	virtual int NameCount(const char *szName = NULL) { return 0; }
+	virtual bool Name(const char *szName) override { return false; }
+	virtual int NameCount(const char *szName = nullptr) override { return 0; }
 
 	// Data readers
-	virtual void DWord(int32_t &rInt)             { }
-	virtual void DWord(uint32_t &rInt)            { }
-	virtual void Word(int16_t &rShort)            { }
-	virtual void Word(uint16_t &rShort)           { }
-	virtual void Byte(int8_t &rByte)              { }
-	virtual void Byte(uint8_t &rByte)             { }
-	virtual void Boolean(bool &rBool)             { }
-	virtual void Character(char &rChar)           { }
-	virtual void String(char *szString, size_t iMaxLength, RawCompileType eType = RCT_Escaped) { }
-	virtual void String(char **pszString, RawCompileType eType = RCT_Escaped) { }
-	virtual void Raw(void *pData, size_t iSize, RawCompileType eType = RCT_Escaped) { }
-
+	virtual void DWord(int32_t &rInt) override { }
+	virtual void DWord(uint32_t &rInt) override { }
+	virtual void Word(int16_t &rShort) override { }
+	virtual void Word(uint16_t &rShort) override { }
+	virtual void Byte(int8_t &rByte) override { }
+	virtual void Byte(uint8_t &rByte) override { }
+	virtual void Boolean(bool &rBool) override { }
+	virtual void Character(char &rChar) override { }
+	virtual void String(char *szString, size_t iMaxLength, RawCompileType eType = RCT_Escaped) override { }
+	virtual void String(char **pszString, RawCompileType eType = RCT_Escaped) override { }
+	virtual void String(std::string &str, RawCompileType eType = RCT_Escaped) override {}
+	virtual void Raw(void *pData, size_t iSize, RawCompileType eType = RCT_Escaped) override { }
 };
 
 // *** Binary compiler
@@ -453,24 +460,25 @@ public:
 	inline OutT getOutput() { return Buf; }
 
 	// Properties
-	virtual bool isDoublePass() { return true; }
+	virtual bool isDoublePass() override { return true; }
 
 	// Data writers
-	virtual void DWord(int32_t &rInt);
-	virtual void DWord(uint32_t &rInt);
-	virtual void Word(int16_t &rShort);
-	virtual void Word(uint16_t &rShort);
-	virtual void Byte(int8_t &rByte);
-	virtual void Byte(uint8_t &rByte);
-	virtual void Boolean(bool &rBool);
-	virtual void Character(char &rChar);
-	virtual void String(char *szString, size_t iMaxLength, RawCompileType eType = RCT_Escaped);
-	virtual void String(char **pszString, RawCompileType eType = RCT_Escaped);
-	virtual void Raw(void *pData, size_t iSize, RawCompileType eType = RCT_Escaped);
+	virtual void DWord(int32_t &rInt) override;
+	virtual void DWord(uint32_t &rInt) override;
+	virtual void Word(int16_t &rShort) override;
+	virtual void Word(uint16_t &rShort) override;
+	virtual void Byte(int8_t &rByte) override;
+	virtual void Byte(uint8_t &rByte) override;
+	virtual void Boolean(bool &rBool) override;
+	virtual void Character(char &rChar) override;
+	virtual void String(char *szString, size_t iMaxLength, RawCompileType eType = RCT_Escaped) override;
+	virtual void String(char **pszString, RawCompileType eType = RCT_Escaped) override;
+	virtual void String(std::string &str, RawCompileType eType = RCT_Escaped) override;
+	virtual void Raw(void *pData, size_t iSize, RawCompileType eType = RCT_Escaped) override;
 
 	// Passes
-	virtual void Begin();
-	virtual void BeginSecond();
+	virtual void Begin() override;
+	virtual void BeginSecond() override;
 
 protected:
 	// Process data
@@ -493,26 +501,27 @@ public:
 	void setInput(InT &&In) { Buf = std::move(In); }
 
 	// Properties
-	virtual bool isCompiler()                     { return true; }
+	virtual bool isDeserializer() override { return true; }
 
 	// Data readers
-	virtual void DWord(int32_t &rInt);
-	virtual void DWord(uint32_t &rInt);
-	virtual void Word(int16_t &rShort);
-	virtual void Word(uint16_t &rShort);
-	virtual void Byte(int8_t &rByte);
-	virtual void Byte(uint8_t &rByte);
-	virtual void Boolean(bool &rBool);
-	virtual void Character(char &rChar);
-	virtual void String(char *szString, size_t iMaxLength, RawCompileType eType = RCT_Escaped);
-	virtual void String(char **pszString, RawCompileType eType = RCT_Escaped);
-	virtual void Raw(void *pData, size_t iSize, RawCompileType eType = RCT_Escaped);
+	virtual void DWord(int32_t &rInt) override;
+	virtual void DWord(uint32_t &rInt) override;
+	virtual void Word(int16_t &rShort) override;
+	virtual void Word(uint16_t &rShort) override;
+	virtual void Byte(int8_t &rByte) override;
+	virtual void Byte(uint8_t &rByte) override;
+	virtual void Boolean(bool &rBool) override;
+	virtual void Character(char &rChar) override;
+	virtual void String(char *szString, size_t iMaxLength, RawCompileType eType = RCT_Escaped) override;
+	virtual void String(char **pszString, RawCompileType eType = RCT_Escaped) override;
+	virtual void String(std::string &str, RawCompileType eType = RCT_Escaped) override;
+	virtual void Raw(void *pData, size_t iSize, RawCompileType eType = RCT_Escaped) override;
 
 	// Position
-	virtual StdStrBuf getPosition() const;
+	virtual StdStrBuf getPosition() const override;
 
 	// Passes
-	virtual void Begin();
+	virtual void Begin() override;
 
 	// Data
 	size_t getPosition() { return iPos; }
@@ -564,31 +573,32 @@ public:
 	inline OutT getOutput() { return Buf; }
 
 	// Properties
-	virtual bool hasNaming() { return  true; }
+	virtual bool hasNaming() override { return true; }
 
 	// Naming
-	virtual bool Name(const char *szName);
-	virtual void NameEnd(bool fBreak = false);
+	virtual bool Name(const char *szName) override;
+	virtual void NameEnd(bool fBreak = false) override;
 
 	// Separators
-	virtual bool Separator(Sep eSep);
+	virtual bool Separator(Sep eSep) override;
 
 	// Data writers
-	virtual void DWord(int32_t &rInt);
-	virtual void DWord(uint32_t &rInt);
-	virtual void Word(int16_t &rShort);
-	virtual void Word(uint16_t &rShort);
-	virtual void Byte(int8_t &rByte);
-	virtual void Byte(uint8_t &rByte);
-	virtual void Boolean(bool &rBool);
-	virtual void Character(char &rChar);
-	virtual void String(char *szString, size_t iMaxLength, RawCompileType eType = RCT_Escaped);
-	virtual void String(char **pszString, RawCompileType eType = RCT_Escaped);
-	virtual void Raw(void *pData, size_t iSize, RawCompileType eType = RCT_Escaped);
+	virtual void DWord(int32_t &rInt) override;
+	virtual void DWord(uint32_t &rInt) override;
+	virtual void Word(int16_t &rShort) override;
+	virtual void Word(uint16_t &rShort) override;
+	virtual void Byte(int8_t &rByte) override;
+	virtual void Byte(uint8_t &rByte) override;
+	virtual void Boolean(bool &rBool) override;
+	virtual void Character(char &rChar) override;
+	virtual void String(char *szString, size_t iMaxLength, RawCompileType eType = RCT_Escaped) override;
+	virtual void String(char **pszString, RawCompileType eType = RCT_Escaped) override;
+	virtual void String(std::string &str, RawCompileType eType = RCT_Escaped) override;
+	virtual void Raw(void *pData, size_t iSize, RawCompileType eType = RCT_Escaped) override;
 
 	// Passes
-	virtual void Begin();
-	virtual void End();
+	virtual void Begin() override;
+	virtual void End() override;
 
 protected:
 
@@ -629,41 +639,42 @@ public:
 	void setInput(const InT &In) { Buf.Ref(In); lineBreaks.clear(); }
 
 	// Properties
-	virtual bool isCompiler() { return true; }
-	virtual bool hasNaming() { return true; }
+	virtual bool isDeserializer() override { return true; }
+	virtual bool hasNaming() override { return true; }
 
 	// Naming
-	virtual bool Name(const char *szName);
-	virtual void NameEnd(bool fBreak = false);
-	virtual bool FollowName(const char *szName);
-	virtual const char *GetNameByIndex(size_t idx) const;
+	virtual bool Name(const char *szName) override;
+	virtual void NameEnd(bool fBreak = false) override;
+	virtual bool FollowName(const char *szName) override;
+	virtual const char *GetNameByIndex(size_t idx) const override;
 
 	// Separators
-	virtual bool Separator(Sep eSep);
-	virtual void NoSeparator();
+	virtual bool Separator(Sep eSep) override;
+	virtual void NoSeparator() override;
 
 	// Counters
-	virtual int NameCount(const char *szName = NULL);
+	virtual int NameCount(const char *szName = nullptr) override;
 
 	// Data writers
-	virtual void DWord(int32_t &rInt);
-	virtual void DWord(uint32_t &rInt);
-	virtual void Word(int16_t &rShort);
-	virtual void Word(uint16_t &rShort);
-	virtual void Byte(int8_t &rByte);
-	virtual void Byte(uint8_t &rByte);
-	virtual void Boolean(bool &rBool);
-	virtual void Character(char &rChar);
-	virtual void String(char *szString, size_t iMaxLength, RawCompileType eType = RCT_Escaped);
-	virtual void String(char **pszString, RawCompileType eType = RCT_Escaped);
-	virtual void Raw(void *pData, size_t iSize, RawCompileType eType = RCT_Escaped);
+	virtual void DWord(int32_t &rInt) override;
+	virtual void DWord(uint32_t &rInt) override;
+	virtual void Word(int16_t &rShort) override;
+	virtual void Word(uint16_t &rShort) override;
+	virtual void Byte(int8_t &rByte) override;
+	virtual void Byte(uint8_t &rByte) override;
+	virtual void Boolean(bool &rBool) override;
+	virtual void Character(char &rChar) override;
+	virtual void String(char *szString, size_t iMaxLength, RawCompileType eType = RCT_Escaped) override;
+	virtual void String(char **pszString, RawCompileType eType = RCT_Escaped) override;
+	virtual void String(std::string &str, RawCompileType eType = RCT_Escaped) override;
+	virtual void Raw(void *pData, size_t iSize, RawCompileType eType = RCT_Escaped) override;
 
 	// Position
-	virtual StdStrBuf getPosition() const;
+	virtual StdStrBuf getPosition() const override;
 
 	// Passes
-	virtual void Begin();
-	virtual void End();
+	virtual void Begin() override;
+	virtual void End() override;
 
 protected:
 
@@ -684,10 +695,10 @@ protected:
 		// Name number in parent map
 		const char *Pos;
 		// Constructor
-		NameNode(NameNode *pParent = NULL) :
+		NameNode(NameNode *pParent = nullptr) :
 			Section(false), Parent(pParent),
-			FirstChild(NULL), PrevChild(NULL), NextChild(NULL), LastChild(NULL),
-			Indent(-1), Pos(NULL)
+			FirstChild(nullptr), PrevChild(nullptr), NextChild(nullptr), LastChild(nullptr),
+			Indent(-1), Pos(nullptr)
 		{ }
 	};
 	NameNode *pNameRoot, *pName;
@@ -720,7 +731,7 @@ protected:
 	long ReadNum();
 	size_t GetStringLength(RawCompileType eTyped);
 	StdBuf ReadString(size_t iLength, RawCompileType eTyped, bool fAppendNull = true);
-	bool TestStringEnd(RawCompileType eType);
+	bool TestStringEnd(RawCompileType eType) { return IsStringEnd(*pPos, eType); }
 	char ReadEscapedChar();
 	unsigned long ReadUNum();
 

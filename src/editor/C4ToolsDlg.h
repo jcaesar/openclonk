@@ -20,9 +20,6 @@
 #ifndef INC_C4ToolsDlg
 #define INC_C4ToolsDlg
 
-#ifdef USE_GTK
-#include <gtk/gtk.h>
-#endif
 
 #include "config/C4Constants.h"
 #include "landscape/C4Landscape.h"
@@ -72,15 +69,16 @@ public:
 	bool SetGrade(int32_t iGrade);
 	bool SetTool(int32_t iTool, bool fTemp);
 	bool ToggleTool() { return !!SetTool((Tool+1)%4, false); }
-	bool SetLandscapeMode(LandscapeMode iMode, bool fThroughControl=false);
+	bool SetLandscapeMode(LandscapeMode iMode, bool flat_chunk_shapes, bool fThroughControl=false);
 	bool SetIFT(bool fIFT);
 	bool ToggleIFT() { return !!SetIFT(!ModeIFT); }
-	bool SelectTexture(const char *szTexture);
-	bool SelectMaterial(const char *szMaterial);
-	bool SelectBackTexture(const char *szTexture);
-	bool SelectBackMaterial(const char *szMaterial);
+	bool SelectTexture(const char *szTexture, bool by_console_gui=false);
+	bool SelectMaterial(const char *szMaterial, bool by_console_gui = false);
+	bool SelectBackTexture(const char *szTexture, bool by_console_gui = false);
+	bool SelectBackMaterial(const char *szMaterial, bool by_console_gui = false);
 	void SetAlternateTool();
 	void ResetAlternateTool();
+	bool IsGradedTool() const { return Tool == C4TLS_Brush || Tool == C4TLS_Line || Tool == C4TLS_Fill; } // return whether Grade measure affects selected tool
 protected:
 	void AssertValidTexture();
 	void AssertValidBackTexture();

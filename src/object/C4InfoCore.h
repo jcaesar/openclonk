@@ -51,7 +51,7 @@ public:
 public:
 	bool Save(C4Group &hGroup, class C4DefList *pDefs);
 	bool Load(C4Group &hGroup);
-	void Default(C4ID n_id=C4ID::None, class C4DefList *pDefs=NULL, const char *cpNames=NULL);
+	void Default(C4ID n_id=C4ID::None, class C4DefList *pDefs=nullptr, const char *cpNames=nullptr);
 	void Promote(int32_t iRank, C4RankSystem &rRanks, bool fForceRankName);
 	bool GetNextRankInfo(C4RankSystem &rDefaultRanks, int32_t *piNextRankExp, StdStrBuf *psNextRankName);
 	void CompileFunc(StdCompiler *pComp);
@@ -98,7 +98,6 @@ public:
 	int32_t PrefMouse;
 	int32_t PrefColor;
 	uint32_t PrefColorDw, PrefColor2Dw;
-	int32_t PrefPosition;
 	int32_t PrefClonkSkin;
 	// Old control method - loaded for backwards compatilibity if PrefControl is unassigned
 	// and stored back so you can use the same player file for CR and OC
@@ -109,7 +108,7 @@ public:
 	// achievements indexed by achievement name and scenario
 	C4ScenarioParameters Achievements; 
 public:
-	void Default(C4RankSystem *pRanks=NULL);
+	void Default(C4RankSystem *pRanks=nullptr);
 	void Promote(int32_t iRank, C4RankSystem &rRanks);
 	bool Load(C4Group &hGroup);
 	bool Save(C4Group &hGroup);

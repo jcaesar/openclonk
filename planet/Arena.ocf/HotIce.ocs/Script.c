@@ -44,6 +44,7 @@ func ResetRound()
 	// Clear and redraw the map.
 	LoadScenarioSection("main");
 	InitializeRound();
+	AssignHandicaps();
 	// Re-enable the players.
 	for (var clonk in clonks)
 	{
@@ -60,7 +61,8 @@ func InitializeRound()
 	// Checking for victory: Only active after a Clonk dies.
 	g_check_victory_effect = AddEffect("CheckVictory", nil, 1, 0);
 	g_player_spawn_index = 0;
-	ShuffleArray(g_player_spawn_positions);
+	if (GetType(g_player_spawn_positions) == C4V_Array)
+		ShuffleArray(g_player_spawn_positions);
 
 	// Materials: Chests
 	var i,pos;
@@ -122,7 +124,18 @@ func InitializePlayer(int plr)
 	Scoreboard->SetData(ScoreboardTeam(team), "team", "", ScoreboardTeam(team));
 	Scoreboard->SetPlayerData(plr, "team", "", ScoreboardTeam(team) + 1);
 
-	return InitPlayerRound(plr);
+	// Players joining at runtime will participate in the following round.
+	PutInRelaunchContainer(GetCrew(plr));
+}
+
+func InitializePlayers()
+{
+	AssignHandicaps();
+	for (var i = 0; i < GetPlayerCount(); i++)
+	{
+		var plr = GetPlayerByIndex(i);
+		InitPlayerRound(plr);
+	}
 }
 
 func InitPlayerRound(int plr)
@@ -136,20 +149,34 @@ func InitPlayerRound(int plr)
 	var ls_wdt = LandscapeWidth(), ls_hgt = LandscapeHeight();
 	var crew = GetCrew(plr), start_pos;
 	// Position by map type?
-	if (g_player_spawn_positions && g_player_spawn_index < GetLength(g_player_spawn_positions))
+	if (SCENPAR_SpawnType == 0)
 	{
-		start_pos = g_player_spawn_positions[g_player_spawn_index++];
-		var map_zoom = ls_wdt / g_map_width;
-		start_pos = {x=start_pos[0]*map_zoom+map_zoom/2, y=start_pos[1]*map_zoom};
+		if (g_player_spawn_positions && g_player_spawn_index < GetLength(g_player_spawn_positions))
+		{
+			start_pos = g_player_spawn_positions[g_player_spawn_index++];
+			var map_zoom = ls_wdt / g_map_width;
+			start_pos = {x=start_pos[0]*map_zoom+map_zoom/2, y=start_pos[1]*map_zoom};
+		}
+		else
+		{
+			// Start positions not defined or exhausted: Spawn in lower area for both maps becuase starting high is an an advantage.
+			start_pos = FindLocation(Loc_InRect(ls_wdt/5,ls_hgt/2,ls_wdt*3/5,ls_hgt/3), Loc_Wall(CNAT_Bottom), Loc_Func(Scenario.IsStartSpot));
+			if (!start_pos) start_pos = FindLocation(Loc_InRect(ls_wdt/10,0,ls_wdt*8/10,ls_hgt*4/5), Loc_Wall(CNAT_Bottom), Loc_Func(Scenario.IsStartSpot));
+			if (!start_pos) start_pos = {x=Random(ls_wdt*6/10)+ls_wdt*2/10, y=ls_hgt*58/100};
+		}
+		crew->SetPosition(start_pos.x, start_pos.y-10);
 	}
-	else
+	else // Balloon spawn
 	{
-		// Start positions not defined or exhausted: Spawn in lower area for both maps becuase starting high is an an advantage.
-		start_pos = FindLocation(Loc_InRect(ls_wdt/5,ls_hgt/2,ls_wdt*3/5,ls_hgt/3), Loc_Wall(CNAT_Bottom), Loc_Func(Scenario.IsStartSpot));
-		if (!start_pos) start_pos = FindLocation(Loc_InRect(ls_wdt/10,0,ls_wdt*8/10,ls_hgt*4/5), Loc_Wall(CNAT_Bottom), Loc_Func(Scenario.IsStartSpot));
-		if (!start_pos) start_pos = {x=Random(ls_wdt*6/10)+ls_wdt*2/10, y=ls_hgt*58/100};
+		var spawn_x = ls_wdt/3, spawn_y = 10;
+		spawn_x += Random(spawn_x);
+		var balloon = CreateObject(BalloonDeployed, spawn_x, spawn_y - 16, plr);
+		crew->SetPosition(spawn_x, spawn_y);
+		balloon->SetRider(crew);
+		crew->SetAction("Ride", balloon);
+		balloon->SetSpeed(0,0);
+		crew->SetSpeed(0,0);
 	}
-	crew->SetPosition(start_pos.x, start_pos.y-10);
 	// initial material
 	if (SCENPAR_Weapons == 0)
 	{
@@ -169,11 +196,14 @@ func InitPlayerRound(int plr)
 			var ammo = launcher->CreateContents(IronBomb);
 			launcher->AddTimer(Scenario.ReplenishLauncherAmmo, 10);
 			// Start reloading the launcher during the countdown.
-			crew->SetHandItemPos(0, crew->GetItemPos(launcher));
-			// This doesn't play the animation properly - simulate a click instead.
-			/* crew->StartLoad(launcher); */
-			crew->StartUseControl(CON_Use, 0, 0, launcher);
-			crew->StopUseControl(0, 0, launcher);
+			if (!IsHandicapped(plr))
+			{
+				crew->SetHandItemPos(0, crew->GetItemPos(launcher));
+				// This doesn't play the animation properly - simulate a click instead.
+				/* crew->StartLoad(launcher); */
+				crew->StartUseControl(CON_Use, 0, 0, launcher);
+				crew->StopUseControl(0, 0, launcher);
+			}
 		}
 	}
 	crew.MaxEnergy = 100000;
@@ -181,8 +211,18 @@ func InitPlayerRound(int plr)
 	// Disable the Clonk during the countdown.
 	crew->SetCrewEnabled(false);
 	crew->SetComDir(COMD_Stop);
+
+	if (SCENPAR_SpawnType == 1 && balloon)
+		balloon->CreateEffect(IntNoGravity, 1, 1);
+
 	return true;
 }
+
+local IntNoGravity = new Effect {
+	Timer = func() {
+		Target->SetSpeed(0,0);
+	}
+};
 
 // Called by the round start countdown.
 func OnCountdownFinished()
@@ -192,7 +232,19 @@ func OnCountdownFinished()
 	{
 		clonk->SetCrewEnabled(true);
 		SetCursor(clonk->GetOwner(), clonk);
+		if (SCENPAR_SpawnType == 1 && clonk->GetActionTarget())
+			RemoveEffect("IntNoGravity", clonk->GetActionTarget());
 	}
+}
+
+func PutInRelaunchContainer(object clonk)
+{
+	var plr = clonk->GetOwner();
+	var relaunch = CreateObject(RelaunchContainer, LandscapeWidth() / 2, LandscapeHeight() / 2, plr);
+	// We just use the relaunch object as a dumb container.
+	clonk->Enter(relaunch);
+	// Allow scrolling around the landscape.
+	SetPlayerViewLock(plr, false);
 }
 
 func OnClonkDeath(object clonk)
@@ -205,16 +257,54 @@ func OnClonkDeath(object clonk)
 	{
 		var crew = CreateObject(Clonk, 0, 0, plr);
 		crew->MakeCrewMember(plr);
-		var relaunch = CreateObject(RelaunchContainer, LandscapeWidth() / 2, LandscapeHeight() / 2, plr);
-		// We just use the relaunch object as a dumb container.
-		crew->Enter(relaunch);
-		// Allow scrolling around the landscape.
-		SetPlayerViewLock(plr, false);
+		PutInRelaunchContainer(crew);
 	}
 
 	// Check for victory after three seconds to allow stalemates.
 	if (!g_gameover)
 		g_check_victory_effect.Interval = g_check_victory_effect.Time + 36 * 3;
+}
+
+// Returns an array of team -> number of players in team.
+func GetTeamPlayers()
+{
+	var result = CreateArray(GetTeamCount() + 1);
+	for (var i = 0; i < GetPlayerCount(); i++)
+	{
+		var plr = GetPlayerByIndex(i), team = GetPlayerTeam(plr);
+		SetLength(result, Max(team + 1, GetLength(result)));
+		result[team] = result[team] ?? [];
+		PushBack(result[team], plr);
+	}
+	return result;
+}
+
+static g_handicapped_players;
+
+func _MinSize(int a, array b) { if (b == nil) return a; else return Min(a, GetLength(b)); }
+
+// Assigns handicaps so that the number of not-handicapped players is the same for all teams.
+func AssignHandicaps()
+{
+	g_handicapped_players = CreateArray(GetPlayerCount());
+	var teams = GetTeamPlayers();
+	var smallest_size = Reduce(teams, Scenario._MinSize, ~(1<<31));
+	for (var team in teams) if (team != nil)
+	{
+		var to_handicap = GetLength(team) - smallest_size;
+		while (GetLength(team) > to_handicap)
+			RemoveArrayIndexUnstable(team, Random(GetLength(team)));
+		for (var plr in team)
+		{
+			SetLength(g_handicapped_players, Max(plr + 1, GetLength(g_handicapped_players)));
+			g_handicapped_players[plr] = true;
+		}
+	}
+}
+
+func IsHandicapped(int plr)
+{
+	return !!g_handicapped_players[plr];
 }
 
 // Returns a list of colored player names, for example "Sven2, Maikel, Luchs"

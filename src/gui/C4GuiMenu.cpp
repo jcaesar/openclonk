@@ -22,6 +22,7 @@
 #include "graphics/C4FacetEx.h"
 #include "gui/C4MouseControl.h"
 #include "graphics/C4GraphicsResource.h"
+#include "graphics/C4Draw.h"
 
 #include "platform/C4Window.h"
 
@@ -84,7 +85,7 @@ namespace C4GUI
 // ----------------------------------------------------
 // ContextMenu
 
-	ContextMenu::ContextMenu() : Window(), pTarget(NULL), pSelectedItem(NULL), pSubmenu(NULL)
+	ContextMenu::ContextMenu() : Window(), pTarget(nullptr), pSelectedItem(nullptr), pSubmenu(nullptr)
 	{
 		iMenuIndex = ++iGlobalMenuIndex;
 		// set min size
@@ -151,7 +152,7 @@ namespace C4GUI
 	ContextMenu::~ContextMenu()
 	{
 		// del any submenu
-		if (pSubmenu) { delete pSubmenu; pSubmenu=NULL; }
+		if (pSubmenu) { delete pSubmenu; pSubmenu=nullptr; }
 		// forward RemoveElement to screen
 		Screen *pScreen = GetScreen();
 		if (pScreen) pScreen->RemoveElement(this);
@@ -207,7 +208,7 @@ namespace C4GUI
 		{
 			// reset selection
 			Element *pPrevSelectedItem = pSelectedItem;
-			pSelectedItem = NULL;
+			pSelectedItem = nullptr;
 			// get client component the mouse is over
 			iX -= GetMarginLeft(); iY -= GetMarginTop();
 			for (Element *pCurr = GetFirst(); pCurr; pCurr = pCurr->GetNext())
@@ -231,7 +232,7 @@ namespace C4GUI
 		// no submenu open? then deselect any selected item
 		if (pOldEntry==pSelectedItem && !pSubmenu)
 		{
-			pSelectedItem = NULL;
+			pSelectedItem = nullptr;
 			SelectionChanged(true);
 		}
 	}
@@ -369,11 +370,11 @@ namespace C4GUI
 		// target lost?
 		if (pChild == pTarget) { Abort(false); return; }
 		// submenu?
-		if (pChild == pSubmenu) pSubmenu = NULL;
+		if (pChild == pSubmenu) pSubmenu = nullptr;
 		// clear selection var
 		if (pChild == pSelectedItem)
 		{
-			pSelectedItem = NULL;
+			pSelectedItem = nullptr;
 			SelectionChanged(false);
 		}
 		// forward to any submenu
@@ -549,7 +550,7 @@ namespace C4GUI
 
 	void ContextMenu::SelectItem(int32_t iIndex)
 	{
-		// get item to be selected (may be NULL on purpose!)
+		// get item to be selected (may be nullptr on purpose!)
 		Element *pNewSelElement = GetElementByIndex(iIndex);
 		if (pNewSelElement != pSelectedItem) return;
 		// set new

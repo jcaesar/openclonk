@@ -19,6 +19,9 @@
 #include "network/C4NetIO.h"
 #include "network/C4Client.h"
 #include "network/C4InteractiveThread.h"
+#include "netpuncher/C4PuncherPacket.h"
+
+#include <atomic>
 
 class C4Network2IOConnection;
 
@@ -95,6 +98,10 @@ protected:
 	int iTCPIRate, iTCPORate, iTCPBCRate,
 	iUDPIRate, iUDPORate, iUDPBCRate;
 
+	// punching
+	C4NetIO::addr_t PuncherAddrIPv4, PuncherAddrIPv6;
+	bool IsPuncherAddr(const C4NetIO::addr_t& addr) const;
+
 public:
 
 	bool hasTCP() const { return !! pNetIO_TCP; }
@@ -110,7 +117,7 @@ public:
 	C4NetIO *DataIO(); // by both
 
 	// connections
-	bool Connect(const C4NetIO::addr_t &addr, C4Network2IOProtocol eProt, const C4ClientCore &nCCore, const char *szPassword = NULL); // by main thread
+	bool Connect(const C4NetIO::addr_t &addr, C4Network2IOProtocol eProt, const C4ClientCore &nCCore, const char *szPassword = nullptr); // by main thread
 	void SetAcceptMode(bool fAcceptAll); // by main thread
 	void SetExclusiveConnMode(bool fExclusiveConn); // by main thread
 	int getConnectionCount(); // by main thread
@@ -130,6 +137,11 @@ public:
 	// sending helpers
 	bool SendMsgToClient(C4NetIOPacket &rPkt, int iClient); // by both
 	bool BroadcastMsg(const C4NetIOPacket &rPkt); // by both
+
+	// punch
+	bool InitPuncher(C4NetIO::addr_t PuncherAddr); // by main thread
+	void SendPuncherPacket(const C4NetpuncherPacket&, C4NetIO::HostAddress::AddressFamily family);
+	void Punch(const C4NetIO::addr_t&); // sends a ping packet
 
 	// stuff
 	C4NetIO *getNetIO(C4Network2IOProtocol eProt); // by both
@@ -179,13 +191,13 @@ protected:
 	// packet handling (some are really handled here)
 	void HandlePacket(char cStatus, const C4PacketBase *pPacket, C4Network2IOConnection *pConn);
 	void HandleFwdReq(const class C4PacketFwd &rFwd, C4Network2IOConnection *pBy);
+	void HandlePuncherPacket(const C4NetIOPacket &rPacket);
 
 	// misc
 	bool Ping();
 	void CheckTimeout();
 	void GenerateStatistics(int iInterval);
 	void SendConnPackets();
-
 };
 
 enum C4Network2IOConnStatus
@@ -219,8 +231,8 @@ protected:
 	bool fBroadcastTarget;                  // broadcast target?
 	time_t iTimestamp;                      // timestamp of last status change
 	int iPingTime;                          // ping
-	C4TimeMilliseconds tLastPing;          // if > iLastPong, it's the first ping that hasn't been answered yet, NULL if no ping received yet
-	C4TimeMilliseconds tLastPong;          // last pong received, NULL if no pong received yet
+	C4TimeMilliseconds tLastPing;          // if > iLastPong, it's the first ping that hasn't been answered yet, nullptr if no ping received yet
+	C4TimeMilliseconds tLastPong;          // last pong received, nullptr if no pong received yet
 	C4ClientCore CCore;                     // client core (>= CS_HalfAccepted)
 	CStdCSec CCoreCSec;
 	int iIRate, iORate;                     // input/output rates (by C4NetIO, in b/s)
@@ -244,12 +256,12 @@ protected:
 	C4Network2IOConnection *pNext;
 
 	// reference counter
-	long iRefCnt;
+	std::atomic_long iRefCnt;
 
 public:
 	C4NetIO  *getNetClass()   const { return pNetClass; }
 	C4Network2IOProtocol   getProtocol()    const { return eProt; }
-	const C4NetIO::addr_t &getPeerAddr()    const { return PeerAddr.sin_port ? PeerAddr : ConnectAddr; }
+	const C4NetIO::addr_t &getPeerAddr()    const { return PeerAddr.GetPort() ? PeerAddr : ConnectAddr; }
 	const C4NetIO::addr_t &getConnectAddr() const { return ConnectAddr; }
 	uint32_t  getID()         const { return iID; }
 	uint32_t  getRemoteID()   const { return iRemoteID; }
@@ -337,7 +349,7 @@ class C4PacketConn : public C4PacketBase
 {
 public:
 	C4PacketConn();
-	C4PacketConn(const class C4ClientCore &nCCore, uint32_t iConnID, const char *szPassword = NULL);
+	C4PacketConn(const class C4ClientCore &nCCore, uint32_t iConnID, const char *szPassword = nullptr);
 
 protected:
 	int32_t iVer;
@@ -358,7 +370,7 @@ class C4PacketConnRe : public C4PacketBase
 {
 public:
 	C4PacketConnRe();
-	C4PacketConnRe(bool fOK, bool fWrongPassword, const char *szMsg = NULL);
+	C4PacketConnRe(bool fOK, bool fWrongPassword, const char *szMsg = nullptr);
 
 protected:
 	bool fOK, fWrongPassword;

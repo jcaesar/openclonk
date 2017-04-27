@@ -7,11 +7,19 @@
 
 static g_is_initialized;
 
-static g_ruin1, g_ruin2, g_ruin3, g_elev1, g_elev2, g_farmer, g_king;
-static npc_pyrit, g_cannon, g_cannoneer;
+static npc_pyrit;
 
 private func DoInit(int first_player)
 {
+	GetRelaunchRule()->Set({
+		inventory_transfer = true,
+		free_crew = true,
+		relaunch_time = 36,
+		respawn_at_base = true,
+		default_relaunch_count = nil,
+		player_restart = true,
+		respawn_last_clonk = true
+	});
 	// Message when first player enters shroom area
 	ScheduleCall(nil, Scenario.ShroomCaveCheck, 21, 0xffffff);
 	// Scorching village
@@ -116,4 +124,9 @@ public func OnGoalsFulfilled()
 	GainScenarioAchievement("Done");
 	GainMissionAccess("S2Castle");
 	return false;
+}
+
+public func OnPlayerRelaunch()
+{
+	return true;
 }

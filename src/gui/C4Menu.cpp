@@ -27,6 +27,7 @@
 #include "player/C4Player.h"
 #include "gui/C4MouseControl.h"
 #include "graphics/C4GraphicsResource.h"
+#include "graphics/C4Draw.h"
 #include "game/C4Game.h"
 #include "player/C4PlayerList.h"
 #include "control/C4GameControl.h"
@@ -48,7 +49,7 @@ const int32_t C4MN_InfoCaption_Delay = 90;
 C4MenuItem::C4MenuItem(C4Menu *pMenu, int32_t iIndex, const char *szCaption,
                        const char *szCommand, int32_t iCount, C4Object *pObject, const char *szInfoCaption,
                        C4ID idID, const char *szCommand2, bool fOwnValue, int32_t iValue, int32_t iStyle, bool fIsSelectable)
-		: C4GUI::Element(), Count(iCount), id(idID), Object(pObject), pSymbolObj(NULL), pSymbolGraphics(NULL), dwSymbolClr(0u),
+		: C4GUI::Element(), Count(iCount), id(idID), Object(pObject), pSymbolObj(nullptr), pSymbolGraphics(nullptr), dwSymbolClr(0u),
 		fOwnValue(fOwnValue), iValue(iValue), fSelected(false), iStyle(iStyle), pMenu(pMenu),
 		iIndex(iIndex), IsSelectable(fIsSelectable), TextDisplayProgress(-1)
 {
@@ -145,11 +146,11 @@ void C4MenuItem::DrawElement(C4TargetFacet &cgo)
 	// Draw if there is no text progression at all (TextDisplayProgress==-1, or if it's progressed far enough already (TextDisplayProgress>0)
 	if(pSymbolObj && TextDisplayProgress)
 	{
-		pSymbolObj->DrawPicture(cgoSymbolOut, false, NULL);
+		pSymbolObj->DrawPicture(cgoSymbolOut, false, nullptr);
 	}
 	else if (pSymbolGraphics && TextDisplayProgress)
 	{
-		pSymbolGraphics->Draw(cgoSymbolOut, dwSymbolClr ? dwSymbolClr : 0xffffffff, NULL, 0, 0, NULL);
+		pSymbolGraphics->Draw(cgoSymbolOut, dwSymbolClr ? dwSymbolClr : 0xffffffff, nullptr, 0, 0, nullptr);
 	}
 	else if (Symbol.Surface && TextDisplayProgress)
 		Symbol.DrawClr(cgoItemSymbol, true, dwSymbolClr);
@@ -234,7 +235,7 @@ void C4MenuItem::MouseEnter(C4GUI::CMouse &rMouse)
 // -----------------------------------------------------------
 // C4Menu
 
-C4Menu::C4Menu() : C4GUI::Dialog(100, 100, NULL, true) // will be re-adjusted later
+C4Menu::C4Menu() : C4GUI::Dialog(100, 100, nullptr, true) // will be re-adjusted later
 {
 	Default();
 	AddElement(pClientWindow = new C4GUI::ScrollWindow(this));
@@ -390,8 +391,7 @@ bool C4Menu::AddItem(C4MenuItem *pNew, const char *szCaption, const char *szComm
                      int32_t iCount, C4Object *pObject, const char *szInfoCaption,
                      C4ID idID, const char *szCommand2, bool fOwnValue, int32_t iValue, bool fIsSelectable)
 {
-#ifdef DEBUGREC_MENU
-	if (Config.General.DebugRec)
+	if (DEBUGREC_MENU && Config.General.DebugRec)
 		if (pObject)
 		{
 			C4RCMenuAdd rc = { pObject ? pObject->Number : -1, iCount, idID, fOwnValue, iValue, fIsSelectable };
@@ -399,7 +399,6 @@ bool C4Menu::AddItem(C4MenuItem *pNew, const char *szCaption, const char *szComm
 			if (szCommand) AddDbgRec(RCT_MenuAddC, szCommand, strlen(szCommand)+1);
 			if (szCommand2) AddDbgRec(RCT_MenuAddC, szCommand2, strlen(szCommand2)+1);
 		}
-#endif
 	// Add it to the list
 	pClientWindow->AddElement(pNew);
 	// first menuitem is portrait, if it does not have text but a facet
@@ -824,7 +823,7 @@ void C4Menu::DrawElement(C4TargetFacet &cgo)
 		if (pItem && pItem->fOwnValue)
 			iValue = pItem->iValue;
 		else
-			iValue = pDef->GetValue(NULL, NO_OWNER);
+			iValue = pDef->GetValue(nullptr, NO_OWNER);
 	}
 
 	// Store and clear global clipper
@@ -999,7 +998,7 @@ C4Viewport *C4Menu::GetViewport()
 		if (pVP->IsViewportMenu(this))
 			return pVP;
 	// none matching
-	return NULL;
+	return nullptr;
 }
 
 void C4Menu::UpdateElementPositions()
@@ -1011,7 +1010,7 @@ void C4Menu::UpdateElementPositions()
 	pClientWindow->SetBounds(GetContainedClientRect());
 	// re-stack all list items
 	int xOff, yOff = 0;
-	C4MenuItem *pCurr = static_cast<C4MenuItem *>(pClientWindow->GetFirst()), *pPrev = NULL;
+	C4MenuItem *pCurr = static_cast<C4MenuItem *>(pClientWindow->GetFirst()), *pPrev = nullptr;
 	if (HasPortrait() && pCurr)
 	{
 		// recheck portrait
@@ -1070,7 +1069,7 @@ void C4Menu::UpdateElementPositions()
 					// following item larger height: Need to re-stack from beginning
 					iMaxDlgOptionHeight = rcNewBounds.Hgt;
 					pNext = pFirstStack;
-					pPrev = NULL;
+					pPrev = nullptr;
 					yOff = 0;
 					iIndex = 0;
 					continue;

@@ -1,2 +1,8 @@
 Name=Winde
-Description=÷ffne oder schlieﬂe die verbundene Burgt¸r mit [Hoch] oder [Runter].
+Description=√ñffne oder schlie√üe die verbundene Burgt√ºr mit [Hoch] oder [Runter].
+Target=Ziel
+UpAction=Aktion 'Hoch'
+DownAction=Aktion 'Runter'
+ConnectNearestDoor=Tuer verbinden
+ControlUp=Winde hoch
+ControlDown=Winde runter

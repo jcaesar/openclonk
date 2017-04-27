@@ -38,7 +38,7 @@ private func Place(int amount, proplist rectangle, proplist settings)
 	
 	while ((amount > 0) && (--max_tries > 0))
 	{
-		var spot = FindLocation(loc_bkg, Loc_Space(20), loc_area);
+		var spot = FindLocation(loc_bkg, Loc_Space(10), loc_area);
 		if (!spot)
 			continue;
 		
@@ -486,9 +486,10 @@ private func Death()
 
 /*-- Reproduction --*/
 
-private func ReproductionAreaSize() { return 1200; }
-private func ReproductionRate() { return 200; }
-private func MaxAnimalCount() { return 10; }
+// Overloading animal library default values
+local animal_reproduction_area_size = 1200;
+local animal_reproduction_rate = 50;
+local animal_max_count = 10;
 
 // Only bats with full health reproduce.
 private func SpecialReproductionCondition()
@@ -506,9 +507,9 @@ public func Birth(object parent)
 
 /*-- Properties --*/
 
-private func Definition(proplist def)
+public func Definition(proplist def)
 {
-	def.PictureTransformation = Trans_Mul(Trans_Rotate(-65, 0, 1, 0), Trans_Rotate(-35, 0, 0, 1));
+	def.PictureTransformation = Trans_Mul(Trans_Translate(3000, 0, 0), Trans_Rotate(-65, 0, 1, 0), Trans_Rotate(-35, 0, 0, 1));
 	return _inherited(def, ...);
 }
 

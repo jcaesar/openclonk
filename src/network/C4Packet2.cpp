@@ -30,7 +30,7 @@ template <class T> struct unpack_class
 {
 	static C4PacketBase *unpack(StdCompiler *pComp)
 	{
-		assert(pComp->isCompiler());
+		assert(pComp->isDeserializer());
 		T *pPkt = new T();
 		try
 		{
@@ -101,7 +101,6 @@ const C4PktHandlingData PktHandlingData[] =
 	{ PID_ControlPkt,   PC_Network, "Control Paket",              false,  false,  PH_C4GameControlNetwork,  PKT_UNPACK(C4PacketControlPkt)  },
 	{ PID_ExecSyncCtrl, PC_Network, "Execute Sync Control",       false,  false,  PH_C4GameControlNetwork,  PKT_UNPACK(C4PacketExecSyncCtrl)},
 
-
 	// Control (Isn't send over network, handled only as part of a control list)
 	{ CID_ClientJoin,   PC_Control, "Client Join",                false,  true,   0,                        PKT_UNPACK(C4ControlClientJoin) },
 	{ CID_ClientUpdate, PC_Control, "Client Update",              false,  true,   0,                        PKT_UNPACK(C4ControlClientUpdate)},
@@ -125,11 +124,13 @@ const C4PktHandlingData PktHandlingData[] =
 	{ CID_MenuCommand,   PC_Control, "Menu Command",              false,  true,   0,                        PKT_UNPACK(C4ControlMenuCommand)},
 	{ CID_EMMoveObj,    PC_Control, "EM Move Obj",                false,  true,   0,                        PKT_UNPACK(C4ControlEMMoveObject)},
 	{ CID_EMDrawTool,   PC_Control, "EM Draw Tool",               false,  true,   0,                        PKT_UNPACK(C4ControlEMDrawTool) },
+	{ CID_ReInitScenario,PC_Control, "Reinit Scenario",           false,  true,   0,                        PKT_UNPACK(C4ControlReInitScenario) },
+	{ CID_EditGraph,    PC_Control, "Edit Graph",                 false,  true,   0,                        PKT_UNPACK(C4ControlEditGraph)  },
 
 	{ CID_DebugRec,     PC_Control, "Debug Rec",                  false,  true,   0,                        PKT_UNPACK(C4ControlDebugRec)   },
 
 	// EOL
-	{ PID_None,         PC_Network, NULL,                         false,  true,   0,                        NULL                            }
+	{ PID_None,         PC_Network, nullptr,                         false,  true,   0,                        nullptr                            }
 };
 
 const char *PacketNameByID(C4PacketType eID)
@@ -193,20 +194,20 @@ void C4PktBuf::CompileFunc(StdCompiler *pComp)
 // *** C4IDPacket
 
 C4IDPacket::C4IDPacket()
-		: eID(PID_None), pPkt(NULL), fOwnPkt(true), pNext(NULL)
+		: eID(PID_None), pPkt(nullptr), fOwnPkt(true), pNext(nullptr)
 {
 
 }
 
 C4IDPacket::C4IDPacket(C4PacketType eID, C4PacketBase *pPkt, bool fTakePkt)
-		: eID(eID), pPkt(pPkt), fOwnPkt(fTakePkt), pNext(NULL)
+		: eID(eID), pPkt(pPkt), fOwnPkt(fTakePkt), pNext(nullptr)
 {
 
 }
 
 C4IDPacket::C4IDPacket(const C4IDPacket &Packet2)
 		: C4PacketBase(Packet2),
-		eID(PID_None), pPkt(NULL), fOwnPkt(true), pNext(NULL)
+		eID(PID_None), pPkt(nullptr), fOwnPkt(true), pNext(nullptr)
 {
 	// kinda hacky (note this might throw an uncaught exception)
 	C4PacketBase::unpack(Packet2.C4PacketBase::pack());
@@ -228,12 +229,12 @@ const char *C4IDPacket::getPktName() const
 
 void C4IDPacket::Default()
 {
-	eID = PID_None; pPkt = NULL;
+	eID = PID_None; pPkt = nullptr;
 }
 
 void C4IDPacket::Clear()
 {
-	if (fOwnPkt) delete pPkt; pPkt = NULL;
+	if (fOwnPkt) delete pPkt; pPkt = nullptr;
 	eID = PID_None;
 }
 
@@ -242,12 +243,12 @@ void C4IDPacket::CompileFunc(StdCompiler *pComp)
 	// Packet ID
 	pComp->Value(mkNamingAdapt(mkIntAdaptT<uint8_t>(eID), "ID", PID_None));
 	// Compiling or Decompiling?
-	if (pComp->isCompiler())
+	if (pComp->isDeserializer())
 	{
 		if (!pComp->Name(getPktName()))
 			{ pComp->excCorrupt("C4IDPacket: Data value needed! Packet data missing!"); return; }
 		// Delete old packet
-		if (fOwnPkt) delete pPkt; pPkt = NULL;
+		if (fOwnPkt) delete pPkt; pPkt = nullptr;
 		if (eID == PID_None) return;
 		// Search unpacking function
 		for (const C4PktHandlingData *pPData = PktHandlingData; pPData->ID != PID_None; pPData++)
@@ -268,14 +269,14 @@ void C4IDPacket::CompileFunc(StdCompiler *pComp)
 // *** C4PacketList
 
 C4PacketList::C4PacketList()
-		: pFirst(NULL), pLast(NULL)
+		: pFirst(nullptr), pLast(nullptr)
 {
 
 }
 
 C4PacketList::C4PacketList(const C4PacketList &List2)
 		: C4PacketBase(List2),
-		pFirst(NULL), pLast(NULL)
+		pFirst(nullptr), pLast(nullptr)
 {
 	Append(List2);
 }
@@ -322,7 +323,7 @@ void C4PacketList::Take(C4PacketList &List)
 {
 	pFirst = List.pFirst;
 	pLast = List.pLast;
-	List.pFirst = List.pLast = NULL;
+	List.pFirst = List.pLast = nullptr;
 }
 
 void C4PacketList::Append(const C4PacketList &List)
@@ -343,7 +344,7 @@ void C4PacketList::Remove(C4IDPacket *pPkt)
 	{
 		pFirst = pPkt->pNext;
 		if (pPkt == pLast)
-			pLast = NULL;
+			pLast = nullptr;
 	}
 	else
 	{
@@ -367,7 +368,7 @@ void C4PacketList::Delete(C4IDPacket *pPkt)
 void C4PacketList::CompileFunc(StdCompiler *pComp)
 {
 	// unpack packets
-	if (pComp->isCompiler())
+	if (pComp->isDeserializer())
 	{
 		// Read until no further sections available
 		while (pComp->Name("IDPacket"))

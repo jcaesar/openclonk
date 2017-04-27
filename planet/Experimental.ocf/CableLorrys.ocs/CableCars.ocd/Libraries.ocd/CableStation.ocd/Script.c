@@ -25,7 +25,7 @@ public func CableDeactivation(int count) { }
 
 /*--- Callbacks ---*/
 
-// Be sure to always call these via _inherited();
+// Be sure to always call these via _inherited(...);
 
 func Initialize()
 {
@@ -333,7 +333,7 @@ public func RenewConnections(object crossing)
 */
 public func GetNextWaypoint(object end)
 {
-  if (!destination_list) return nil;
+	if (!destination_list) return nil;
 	for (var item in destination_list)
 	{
 		if (!item) continue;

@@ -32,7 +32,7 @@ public:
 	virtual bool Read(void *pBuffer, size_t iSize) = 0;
 	virtual bool Advance(int iOffset) = 0;
 	// Get size. compatible with c4group!
-	virtual size_t AccessedEntrySize() = 0;
+	virtual size_t AccessedEntrySize() const = 0;
 	virtual ~CStdStream() {}
 };
 
@@ -56,20 +56,20 @@ public:
 	bool Create(const char *szFileName, bool fCompressed=false, bool fExecutable=false, bool fMemory=false);
 	bool Open(const char *szFileName, bool fCompressed=false);
 	bool Append(const char *szFilename, bool text=false); // append (uncompressed only)
-	bool Close(StdBuf **ppMemory = NULL);
+	bool Close(StdBuf **ppMemory = nullptr);
 	bool Default();
-	bool Read(void *pBuffer, size_t iSize) { return Read(pBuffer, iSize, 0); }
+	bool Read(void *pBuffer, size_t iSize) override { return Read(pBuffer, iSize, 0); }
 	bool Read(void *pBuffer, size_t iSize, size_t *ipFSize);
 	bool Write(const void *pBuffer, int iSize);
 	bool WriteString(const char *szStr);
 	bool Rewind();
-	bool Advance(int iOffset);
+	bool Advance(int iOffset) override;
 	int Seek(long int offset, int whence); // seek in file by offset and stdio-style SEEK_* constants. Only implemented for uncompressed files.
 	long int Tell(); // get current file pos. Only implemented for uncompressed files.
 	bool IsOpen() const { return hFile || hgzFile; }
 	// flush contents to disk
 	inline bool Flush() { if (ModeWrite && BufferLoad) return SaveBuffer(); else return true; }
-	size_t AccessedEntrySize();
+	size_t AccessedEntrySize() const override;
 protected:
 	void ClearBuffer();
 	int LoadBuffer();

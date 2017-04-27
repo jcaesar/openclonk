@@ -12,6 +12,7 @@ protected func Initialize()
 	CreateObject(Goal_LastManStanding, 0, 0, NO_OWNER);
 	CreateObject(Rule_KillLogs);
 	CreateObject(Rule_Gravestones);
+	GetRelaunchRule()->SetLastWeaponUse(false);
 	
 	// Chests with weapons.
 	var chest = CreateObjectAbove(Chest, 108, 248);
@@ -82,23 +83,13 @@ protected func InitializePlayer(int plr)
 	return;
 }
 
-// Gamecall from LastManStanding goal, on respawning.
-protected func OnPlayerRelaunch(int plr)
-{
-	var clonk = GetCrew(plr);
-	var relaunch = CreateObjectAbove(RelaunchContainer, LandscapeWidth() / 2, LandscapeHeight() / 2, clonk->GetOwner());
-	relaunch->StartRelaunch(clonk);
-	return;
-}
-
-
 // Refill/fill chests.
 global func FxIntFillChestsStart(object target, proplist effect, int temporary, object chest)
 {
 	if (temporary)
 		return 1;
 	// Store weapon list and chest.		
-	effect.w_list = [Dynamite, Dynamite, Firestone, Firestone, Bow, Musket, Club, Sword, Javelin, IronBomb, PowderKeg];
+	effect.w_list = [Dynamite, Dynamite, Firestone, Firestone, Bow, Blunderbuss, Club, Sword, Javelin, IronBomb, PowderKeg];
 	effect.chest = chest;
 	// Fill the chest with ten items.
 	for (var i = 0; i < 10; i++)
@@ -121,8 +112,8 @@ global func CreateChestContents(id obj_id)
 	var obj = CreateObjectAbove(obj_id);
 	if (obj_id == Bow)
 		obj->CreateContents([Arrow, BombArrow][Random(2)]);
-	if (obj_id == Musket)
-		obj->CreateContents(LeadShot);
+	if (obj_id == Blunderbuss)
+		obj->CreateContents(LeadBullet);
 	obj->Enter(this);
 	return;
 }
@@ -135,5 +126,10 @@ public func OnClonkLeftRelaunch(object clonk)
 	return;
 }
 
+public func RelaunchPosition()
+{
+	return [LandscapeWidth() / 2, LandscapeHeight() / 2];
+}
+
 public func KillsToRelaunch() { return 0; }
-public func RelaunchWeaponList() { return [Bow, Shield, Sword, Firestone, Dynamite, Javelin, Musket]; }
+public func RelaunchWeaponList() { return [Bow, Shield, Sword, Firestone, Dynamite, Javelin, Blunderbuss]; }

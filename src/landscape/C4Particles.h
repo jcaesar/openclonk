@@ -13,15 +13,17 @@
  * for the above references.
  */
 
+#include "C4ForbidLibraryCompilation.h"
 #include "graphics/C4FacetEx.h"
 #include "lib/C4Random.h"
 
 #include "platform/StdScheduler.h"
 
-#pragma push_macro("new")
-#undef new
 #include <pcg/pcg_random.hpp>
-#pragma pop_macro("new")
+#ifndef USE_CONSOLE
+#include <GL/glew.h>
+#endif
+#include "graphics/C4Shader.h"
 
 #ifndef INC_C4Particles
 #define INC_C4Particles
@@ -513,7 +515,7 @@ public:
 	GLuint GetIBO(size_t forParticleAmount);
 
 	// creates a new particle
-	void Create(C4ParticleDef *of_def, C4ParticleValueProvider &x, C4ParticleValueProvider &y, C4ParticleValueProvider &speedX, C4ParticleValueProvider &speedY, C4ParticleValueProvider &lifetime, C4PropList *properties, int amount = 1, C4Object *object=NULL);
+	void Create(C4ParticleDef *of_def, C4ParticleValueProvider &x, C4ParticleValueProvider &y, C4ParticleValueProvider &speedX, C4ParticleValueProvider &speedY, C4ParticleValueProvider &lifetime, C4PropList *properties, int amount = 1, C4Object *object=nullptr);
 
 #endif
 	
