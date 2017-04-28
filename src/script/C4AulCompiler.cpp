@@ -479,14 +479,12 @@ private:
 	{
 	private:
 		C4V_Type valType;
-		llvmValue *llvmVal;
-
-		const ::aul::ast::Node *n;
-
 		llvmValue* buildConversion(C4V_Type t_to) const;
 
 	protected:
 		CodegenAstVisitor const * const compiler;
+		virtual void MakeGettable(C4V_Type) const {}; // I don't want to have to overload all the getters in all of the C4CompiledL* classes
+		mutable llvmValue *llvmVal;
 
 	public:
 		C4CompiledValue(const C4V_Type &valType, llvmValue *llvmVal, const ::aul::ast::Node *n, const CodegenAstVisitor *compiler);
@@ -510,6 +508,7 @@ private:
 		{
 			return make_unique<C4CompiledValue>(type, C4V_Type_LLVM::defaultValue(type), n, compiler);
 		}
+		const ::aul::ast::Node *n;
 	};
 
 	class C4CompiledLValue;
@@ -552,9 +551,10 @@ private:
 	class C4CompiledLStruct : public C4CompiledLValue {
 	private:
 		unique_ptr<C4CompiledValue> strk, idx;
+		void MakeGettable(C4V_Type) const override;
 	public:
-		C4CompiledLStruct(llvmValue *rval, unique_ptr<C4CompiledValue> strk, unique_ptr<C4CompiledValue> idx, const ::aul::ast::Node *n, const CodegenAstVisitor *compiler) :
-			C4CompiledLValue(C4V_Any, rval, n, compiler),
+		C4CompiledLStruct(unique_ptr<C4CompiledValue> strk, unique_ptr<C4CompiledValue> idx, const ::aul::ast::Node *n, const CodegenAstVisitor *compiler) :
+			C4CompiledLValue(C4V_Any, nullptr, n, compiler),
 			strk(move(strk)), idx(move(idx)) { }
 		void store(unique_ptr<C4CompiledValue>& rval) const;
 		virtual ~C4CompiledLStruct() {}
@@ -564,9 +564,10 @@ private:
 	private:
 		unique_ptr<C4CompiledValue> strk;
 		llvmValue* idx1, *idx2;
+		void MakeGettable(C4V_Type) const override;
 	public:
-		C4CompiledLSlice(llvmValue *rval, unique_ptr<C4CompiledValue> strk, llvmValue* idx1, llvmValue* idx2, const ::aul::ast::Node *n, const CodegenAstVisitor *compiler) :
-			C4CompiledLValue(C4V_Any, rval, n, compiler),
+		C4CompiledLSlice(unique_ptr<C4CompiledValue> strk, llvmValue* idx1, llvmValue* idx2, const ::aul::ast::Node *n, const CodegenAstVisitor *compiler) :
+			C4CompiledLValue(C4V_Any, nullptr, n, compiler),
 			strk(move(strk)), idx1(idx1), idx2(idx2) { }
 		void store(unique_ptr<C4CompiledValue>& rval) const;
 		virtual ~C4CompiledLSlice() {}
@@ -685,7 +686,7 @@ private:
 	/* TODO: I'm not so sure I'm happy that these are const */
 
 	C4V_Type_LLVM::UnpackedVariant UnpackValue(llvmValue* packed) const;
-	unique_ptr<C4CompiledValue> PackVariant(C4V_Type_LLVM::UnpackedVariant v, const ::aul::ast::Node *n = nullptr);
+	unique_ptr<C4CompiledValue> PackVariant(C4V_Type_LLVM::UnpackedVariant v, const ::aul::ast::Node *n = nullptr) const;
 	template<typename T>
 	unique_ptr<C4CompiledValue> LoadPackVariant(T v, std::vector<llvmValue*> gep, const ::aul::ast::Node *n = nullptr) {
 		C4V_Type_LLVM::UnpackedVariant upret;
@@ -717,7 +718,7 @@ C4V_Type_LLVM::UnpackedVariant C4AulCompiler::CodegenAstVisitor::UnpackValue(llv
 }
 
 unique_ptr<C4AulCompiler::CodegenAstVisitor::C4CompiledValue>
-C4AulCompiler::CodegenAstVisitor::PackVariant(C4V_Type_LLVM::UnpackedVariant v, const ::aul::ast::Node *n) {
+C4AulCompiler::CodegenAstVisitor::PackVariant(C4V_Type_LLVM::UnpackedVariant v, const ::aul::ast::Node *n) const {
 	llvmValue* packed = checkCompile(C4V_Type_LLVM::defaultVariant(C4V_Nil/*hopefully overwritten*/));
 	for (unsigned int i = 0; i < v.size(); i++)
 		packed = checkCompile(m_builder->CreateInsertValue(packed, v[i], {i}));
@@ -753,10 +754,8 @@ void C4AulCompiler::Compile(C4AulScriptFunc *func, const ::aul::ast::Function *d
 	}
 }
 
-C4AulCompiler::CodegenAstVisitor::C4CompiledValue::C4CompiledValue(const C4V_Type &valType, llvmValue *llvmVal, const ::aul::ast::Node *n, const CodegenAstVisitor *compiler) : valType(valType), llvmVal(llvmVal), n(n), compiler(compiler)
-{
-	compiler->checkCompile(llvmVal);
-}
+C4AulCompiler::CodegenAstVisitor::C4CompiledValue::C4CompiledValue(const C4V_Type &valType, llvmValue *llvmVal, const ::aul::ast::Node *n, const CodegenAstVisitor *compiler) 
+	: valType(valType), llvmVal(llvmVal), n(n), compiler(compiler) {}
 
 C4AulCompiler::CodegenAstVisitor::AulVariable::AulVariable(std::string name, C4V_Type t, ::aul::ast::VarDecl::Scope scope, CodegenAstVisitor* cgv, unique_ptr<C4CompiledValue> defaultVal)
 	: type(t), cgv(cgv)
@@ -838,6 +837,7 @@ llvmValue* C4AulCompiler::CodegenAstVisitor::C4CompiledValue::buildConversion(C4
 
 llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompiledValue::getInt() const
 {
+	MakeGettable(C4V_Int);
 	// TODO: I'd like to annotate the default cases with static_assertions that they actually cannot be.
 	switch(valType) {
 		case C4V_Int: return llvmVal;
@@ -850,6 +850,7 @@ llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompiledValue::getInt() const
 
 llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompiledValue::getBool() const
 {
+	MakeGettable(C4V_Bool);
 	auto zero_comparison = [&](llvmValue *cmp) {
 		return compiler->m_builder->CreateICmp(CmpInst::ICMP_NE,
 				compiler->m_builder->CreateZExt(cmp, C4V_Type_LLVM::getVariantVarLLVMType()),
@@ -866,6 +867,7 @@ llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompiledValue::getBool() const
 
 llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompiledValue::getNil() const
 {
+	MakeGettable(C4V_Nil);
 	switch(valType) {
 		case C4V_Nil:
 			return llvmVal;
@@ -876,6 +878,7 @@ llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompiledValue::getNil() const
 
 llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompiledValue::getIsNil() const
 {
+	MakeGettable(C4V_Any);
 	switch(valType) {
 		case C4V_Nil:
 			return compiler->buildBool(true);
@@ -893,6 +896,7 @@ llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompiledValue::getIsNil() const
 
 llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompiledValue::getVariant() const
 {
+	MakeGettable(C4V_Any);
 	switch(valType) {
 		case C4V_Bool: // fall through
 		case C4V_Int:
@@ -917,6 +921,7 @@ llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompiledValue::getVariant() const
 
 llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompiledValue::getValue(C4V_Type t) const
 {
+	MakeGettable(C4V_Any);
 	switch (t) {
 		case C4V_Int: return getInt();
 		case C4V_Bool: return getBool();
@@ -936,6 +941,7 @@ llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompiledValue::getValue(C4V_Type 
 
 llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompiledValue::getHigher(C4V_Type t) const
 {
+	MakeGettable(t);
 	auto actType = valType;
 	switch (actType) {
 		case C4V_Object:
@@ -1312,23 +1318,9 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::VarExpr *n)
 	if (fn_var_scope.count(n->identifier) > 0) {
 		tmp_expr = AulVariable::get(n->identifier, n, this);
 	} else if (Fn->Parent && interned && Fn->Parent->GetPropertyByS(interned, &dummy)) {
-		// essentially a code dup with subscript
 		auto object = make_unique<C4CompiledValue>(C4V_PropList, context_this->getPropList(), n, this); 
 		auto index = make_unique<C4CompiledValue>(C4V_String, buildString(interned), n, this);
-		std::vector<llvmValue*> args;
-		for (auto upv: UnpackValue(object->getVariant()))
-			args.push_back(upv);
-		for (auto upv: UnpackValue(index->getVariant()))
-			args.push_back(upv);
-		static_assert(C4V_Type_LLVM::variant_member_count == 2, "Next call needs type array to be parameter_array[0].");
-		llvmValue* rettp = m_builder->CreateGEP(parameter_array[0], std::vector<llvmValue*>{buildInt(0), buildInt(1)});
-		args.push_back(rettp);
-		// GetStructIndex is most definitely not read-only, so we can not optimize this call out - thus, we shouldn't generate it in the first place.
-		llvmValue* retd = m_builder->CreateCall(efunc_GetStructIndex, args);
-		llvmValue* rett = m_builder->CreateLoad(rettp);
-		tmp_expr = std::make_unique<C4CompiledLStruct>(
-			PackVariant({{rett, retd}}, n)->getVariant(), move(object), move(index), n, this
-		);
+		tmp_expr = std::make_unique<C4CompiledLStruct>(move(object), move(index), n, this);
 	 } else {
 		 tmp_expr = nullptr; 
 		 throw Error(n, "symbol not found in any symbol table: %s", n->identifier.c_str());
@@ -1580,38 +1572,12 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::AssignmentExpr *n
 
 void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::SubscriptExpr *n)
 {
-	// For now, it's fine to always execute the code generated here, even if the subscript is used as a setter.
-	// However, at some point, I would like to subclass C4CompiledValue to something that only generates the code if the result is actually used and also already converts the type as necessary.
-	// This might also be the solution to the LValue-Problem: That subclass could have a store-method.
-
 	n->object->accept(this);
 	auto object = move(tmp_expr); assert(object);
 	n->index->accept(this);
 	auto index = move(tmp_expr); assert(index);
 
-	std::vector<llvmValue*> args;
-	assert(!C4Value(42).CheckConversion(C4V_String)); // Int is not automatically converted to string, so if the index is an int, the object must be an array.
-	bool use_array_access_fastpath;
-	if (object->getType() == C4V_Array || index->getType() == C4V_Int)
-	{
-		use_array_access_fastpath = true;
-		args.push_back(object->getArray());
-		args.push_back(index->getInt());
-	}
-	else
-	{
-		use_array_access_fastpath = false;
-		for (auto upv: UnpackValue(object->getVariant()))
-			args.push_back(upv);
-		for (auto upv: UnpackValue(index->getVariant()))
-			args.push_back(upv);
-	}
-	static_assert(C4V_Type_LLVM::variant_member_count == 2, "Next call needs type array to be parameter_array[0].");
-	llvmValue* rettp = m_builder->CreateGEP(parameter_array[0], std::vector<llvmValue*>{buildInt(0), buildInt(1)});
-	args.push_back(rettp);
-	llvmValue* retd = m_builder->CreateCall(use_array_access_fastpath ? efunc_GetArrayIndex : efunc_GetStructIndex, args);
-	llvmValue* rett = m_builder->CreateLoad(rettp);
-	tmp_expr = std::make_unique<C4CompiledLStruct>(PackVariant({{rett, retd}}, n)->getVariant(), move(object), move(index), n, this);
+	tmp_expr = std::make_unique<C4CompiledLStruct>(move(object), move(index), n, this);
 }
 
 void C4AulCompiler::CodegenAstVisitor::C4CompiledLStruct::store(unique_ptr<C4CompiledValue> &rval) const
@@ -1638,6 +1604,35 @@ void C4AulCompiler::CodegenAstVisitor::C4CompiledLStruct::store(unique_ptr<C4Com
 	compiler->m_builder->CreateCall(use_array_access_fastpath ? compiler->efunc_SetArrayIndex : compiler->efunc_SetStructIndex, args);
 }
 
+void C4AulCompiler::CodegenAstVisitor::C4CompiledLStruct::MakeGettable(C4V_Type) const
+{
+	// The type is ignored for now, but I'd like to pass that to the efuncs at some point.
+
+	std::vector<llvmValue*> args;
+	assert(!C4Value(42).CheckConversion(C4V_String)); // Int is not automatically converted to string, so if the index is an int, the object must be an array.
+	bool use_array_access_fastpath;
+	if (strk->getType() == C4V_Array || idx->getType() == C4V_Int)
+	{
+		use_array_access_fastpath = true;
+		args.push_back(strk->getArray());
+		args.push_back(idx->getInt());
+	}
+	else
+	{
+		use_array_access_fastpath = false;
+		for (auto upv: compiler->UnpackValue(strk->getVariant()))
+			args.push_back(upv);
+		for (auto upv: compiler->UnpackValue(idx->getVariant()))
+			args.push_back(upv);
+	}
+	static_assert(C4V_Type_LLVM::variant_member_count == 2, "Next call needs type array to be parameter_array[0].");
+	llvmValue* rettp = compiler->m_builder->CreateGEP(compiler->parameter_array[0], std::vector<llvmValue*>{compiler->buildInt(0), compiler->buildInt(1)});
+	args.push_back(rettp);
+	llvmValue* retd = compiler->m_builder->CreateCall(use_array_access_fastpath ? compiler->efunc_GetArrayIndex : compiler->efunc_GetStructIndex, args);
+	llvmValue* rett = compiler->m_builder->CreateLoad(rettp);
+	llvmVal = compiler->checkCompile(compiler->PackVariant({{rett, retd}}, n)->getVariant());
+}
+
 void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::SliceExpr *n)
 {
 	// Remark: Similar r/lvalue trouble to Subscript
@@ -1650,12 +1645,7 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::SliceExpr *n)
 	n->end->accept(this);
 	auto end = move(tmp_expr); assert(end);
 	auto lend = end->getInt();
-	auto crv = m_builder->CreateCall(
-		efunc_GetArraySlice,
-		std::vector<llvmValue*>{object->getArray(), lstart, lend}
-	);
-	auto rval = std::make_unique<C4CompiledValue>(C4V_Array, crv, n, this);
-	tmp_expr = std::make_unique<C4CompiledLSlice>(rval->getVariant(), move(object), lstart, lend, n, this);
+	tmp_expr = std::make_unique<C4CompiledLSlice>(move(object), lstart, lend, n, this);
 }
 
 void C4AulCompiler::CodegenAstVisitor::C4CompiledLSlice::store(unique_ptr<C4CompiledValue> &rval) const
@@ -1664,6 +1654,13 @@ void C4AulCompiler::CodegenAstVisitor::C4CompiledLSlice::store(unique_ptr<C4Comp
 	for (auto upv: compiler->UnpackValue(rval->getVariant()))
 		args.push_back(upv);
 	compiler->m_builder->CreateCall(compiler->efunc_SetArraySlice, args);
+}
+
+void C4AulCompiler::CodegenAstVisitor::C4CompiledLSlice::MakeGettable(C4V_Type) const {
+	llvmVal = compiler->checkCompile(compiler->m_builder->CreateCall(
+		compiler->efunc_GetArraySlice,
+		std::vector<llvmValue*>{strk->getArray(), idx1, idx2}
+	));
 }
 
 
