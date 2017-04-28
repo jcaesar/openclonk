@@ -55,6 +55,8 @@ inline C4Value AulLLVMToC4Value(C4V_Type t, C4V_Data d) {
 			v.Set(dlg->get());
 			break;
 		}
+		case C4V_Nil:
+			v.Set0(); // So apparently, C4Value doesn't like it if you call Set(asdf, C4V_Nil)…
 		default:
 			v.Set(d,t);
 			break;

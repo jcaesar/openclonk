@@ -110,6 +110,7 @@ static std::string FormatCodePosition(const C4ScriptHost *source_host, const cha
 	return s;
 }
 
+// TODO: Isilkor had implmented C4AulWarningId (for pragmas) on master which I just overwrote in the merge.
 template<class... T>
 static void Warn(const C4ScriptHost *target_host, const C4ScriptHost *host, const char *SPos, const C4AulScriptFunc *func, const char *msg, T &&...args)
 {
@@ -260,26 +261,26 @@ void C4AulCompiler::PreparseAstVisitor::visit(const ::aul::ast::VarDecl *n)
 			}
 		case ::aul::ast::VarDecl::Scope::Object:
 			{
-		//		if (host->Engine->GlobalNamedNames.GetItemNr(cname) >= 0 || host->Engine->GlobalConstNames.GetItemNr(cname) >= 0)
-		//			Warn(target_host, host, n, Fn, "object-local variable hides a global variable: %s", cname);
-		//		C4String *s = ::Strings.RegString(cname);
-		//		if (target_host->GetPropList()->HasProperty(s))
-		//			Warn(target_host, host, n, Fn, "object-local variable declared multiple times: %s", cname);
-		//		else
-		//			target_host->GetPropList()->SetPropertyByS(s, C4VNull);
+				if (host->Engine->GlobalNamedNames.GetItemNr(cname) >= 0 || host->Engine->GlobalConstNames.GetItemNr(cname) >= 0)
+					Warn(target_host, host, n, Fn, "object-local variable hides a global variable: %s", cname);
+				C4String *s = ::Strings.RegString(cname);
+				if (target_host->GetPropList()->HasProperty(s))
+					Warn(target_host, host, n, Fn, "object-local variable declared multiple times: %s", cname);
+				else
+					target_host->GetPropList()->SetPropertyByS(s, C4VNull);
 				break;
 			}
 		case ::aul::ast::VarDecl::Scope::Global:
-		//	assert(!Fn && "global var declaration inside function");
-		//	if (Fn)
-		//		throw Error(target_host, host, n, Fn, "internal error: global var declaration inside function");
+			assert(!Fn && "global var declaration inside function");
+			if (Fn)
+				throw Error(target_host, host, n, Fn, "internal error: global var declaration inside function");
 
-		//	if (host->Engine->GlobalNamedNames.GetItemNr(cname) >= 0 || host->Engine->GlobalConstNames.GetItemNr(cname) >= 0)
-		//		Warn(target_host, host, n, Fn, "global variable declared multiple times: %s", cname);
-		//	if (n->constant)
-		//		host->Engine->GlobalConstNames.AddName(cname);
-		//	else
-		//		host->Engine->GlobalNamedNames.AddName(cname);
+			if (host->Engine->GlobalNamedNames.GetItemNr(cname) >= 0 || host->Engine->GlobalConstNames.GetItemNr(cname) >= 0)
+				Warn(target_host, host, n, Fn, "global variable declared multiple times: %s", cname);
+			if (n->constant)
+				host->Engine->GlobalConstNames.AddName(cname);
+			else
+				host->Engine->GlobalNamedNames.AddName(cname);
 			break;
 		}
 		if (var.init)
@@ -668,10 +669,12 @@ private:
 	llvmValue* buildBool(bool b) const {
 		return llvm::ConstantInt::get(llvmcontext, APInt(1, (int) b, true));
 	}
-	llvmValue* buildString(const char* c) const {
-		C4String* str = ::Strings.RegString(c);
+	llvmValue* buildString(const C4String* str) const {
 		return llvm::ConstantInt::get(llvmcontext,
 			APInt(C4V_Type_LLVM::getVariantVarSize(), reinterpret_cast<intptr_t>(str), false));
+	}
+	llvmValue* buildString(const char* c) const {
+		return buildString(::Strings.RegString(c));
 		// TODO: We might need some magic to ensure that this is not deleted early / properly deleted
 	}
 	BasicBlock* CreateBlock(llvmFunction* parent = nullptr) const { return CreateBlock( nullptr , parent ); }
@@ -1303,7 +1306,33 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::Continue *n)
 
 void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::VarExpr *n)
 {
-	tmp_expr = AulVariable::get(n->identifier, n, this);
+	C4String *interned = ::Strings.FindString(n->identifier.c_str());
+	C4Value dummy;
+
+	if (fn_var_scope.count(n->identifier) > 0) {
+		tmp_expr = AulVariable::get(n->identifier, n, this);
+	} else if (Fn->Parent && interned && Fn->Parent->GetPropertyByS(interned, &dummy)) {
+		// essentially a code dup with subscript
+		auto object = make_unique<C4CompiledValue>(C4V_PropList, context_this->getPropList(), n, this); 
+		auto index = make_unique<C4CompiledValue>(C4V_String, buildString(interned), n, this);
+		std::vector<llvmValue*> args;
+		for (auto upv: UnpackValue(object->getVariant()))
+			args.push_back(upv);
+		for (auto upv: UnpackValue(index->getVariant()))
+			args.push_back(upv);
+		static_assert(C4V_Type_LLVM::variant_member_count == 2, "Next call needs type array to be parameter_array[0].");
+		llvmValue* rettp = m_builder->CreateGEP(parameter_array[0], std::vector<llvmValue*>{buildInt(0), buildInt(1)});
+		args.push_back(rettp);
+		// GetStructIndex is most definitely not read-only, so we can not optimize this call out - thus, we shouldn't generate it in the first place.
+		llvmValue* retd = m_builder->CreateCall(efunc_GetStructIndex, args);
+		llvmValue* rett = m_builder->CreateLoad(rettp);
+		tmp_expr = std::make_unique<C4CompiledLStruct>(
+			PackVariant({{rett, retd}}, n)->getVariant(), move(object), move(index), n, this
+		);
+	 } else {
+		 tmp_expr = nullptr; 
+		 throw Error(n, "symbol not found in any symbol table: %s", n->identifier.c_str());
+	 }
 }
 
 void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::UnOpExpr *n)
@@ -1578,7 +1607,7 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::SubscriptExpr *n)
 			args.push_back(upv);
 	}
 	static_assert(C4V_Type_LLVM::variant_member_count == 2, "Next call needs type array to be parameter_array[0].");
-	llvmValue* rettp = m_builder->CreateGEP(parameter_array[0], std::vector<llvmValue*>{buildInt(0), buildInt(0)});
+	llvmValue* rettp = m_builder->CreateGEP(parameter_array[0], std::vector<llvmValue*>{buildInt(0), buildInt(1)});
 	args.push_back(rettp);
 	llvmValue* retd = m_builder->CreateCall(use_array_access_fastpath ? efunc_GetArrayIndex : efunc_GetStructIndex, args);
 	llvmValue* rett = m_builder->CreateLoad(rettp);
@@ -1816,7 +1845,7 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::CallExpr *n)
 	}
 	else
 	{
-		LogF("Calling %s at %p", callee->GetName(), callee);
+		//LogF("Calling %s at %p", callee->GetName(), callee);
 		auto llvm_args = std::vector<llvmValue*>{
 			constLLVMPointer(callee), // TODO: Create named constants or annotate in some other way to ease reading the IR a bit…
 			ConstantInt::get(llvmcontext, APInt(32, arg_vals.size(), false))
@@ -1837,7 +1866,7 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::CallExpr *n)
 		}
 		checkCompile(m_builder->CreateCall(efunc_CallByPFunc, llvm_args));
 		// I'm assuming that Fn->GetRetType() is C4V_Any. If this wasn't the case, we might want to do something more efficient (similarly above).
-		tmp_expr = LoadPackVariant(parameter_array, std::vector<llvmValue*>{buildInt(0), buildInt(0)}, n);
+		tmp_expr = LoadPackVariant(parameter_array, std::vector<llvmValue*>{buildInt(0), buildInt(1)}, n);
 	}
 	assert(tmp_expr);
 
@@ -1881,7 +1910,7 @@ extern "C" {
 		for(uint32_t i = 0; i < std::min<uint32_t>(par_count, func->GetParCount()) + 1; ++i)
 			pars[i] = AulLLVMToC4Value(types[i], data[i]);
 		C4Value rv = func->Exec(pars[0].getPropList(), pars+1, false);
-		std::tie(types[0], data[0]) = C4ValueToAulLLVM(rv);
+		std::tie(types[1], data[1]) = C4ValueToAulLLVM(rv);
 	}
 
 	C4V_Data LLVMAulCreateValueArray(int32_t reserved_size)
@@ -1999,11 +2028,9 @@ void C4AulCompiler::CodegenAstVisitor::ExternDecls() {
 	efunc_CreateValueArray = RegisterEngineFunction(LLVMAulCreateValueArray, "Engine.CreateArray", mod, jit);
 	efunc_CreateProplist = RegisterEngineFunction(LLVMAulCreateProplist, "Engine.CreatePropList", mod, jit);
 	efunc_GetArrayIndex = RegisterEngineFunction(LLVMAulGetArrayElement, "Engine.GetArrayIndex", mod, jit);
-	efunc_GetArrayIndex->addFnAttr(llvm::Attribute::ReadOnly);
 	efunc_GetArraySlice = RegisterEngineFunction(LLVMAulGetArraySlice, "Engine.GetArraySlice", mod, jit);
 	efunc_GetArraySlice->addFnAttr(llvm::Attribute::ReadOnly);
-	efunc_GetStructIndex = RegisterEngineFunction(LLVMAulGetStructElement, "Engine.GetStructIndex", mod, jit);
-	efunc_GetStructIndex->addFnAttr(llvm::Attribute::ReadOnly);
+	efunc_GetStructIndex = RegisterEngineFunction(LLVMAulGetStructElement, "Engine.GetStructIndex", mod, jit); // NOT readonly
 	efunc_SetArrayIndex = RegisterEngineFunction(LLVMAulSetArrayElement, "Engine.SetArrayIndex", mod, jit);
 	efunc_SetArraySlice = RegisterEngineFunction(LLVMAulSetArraySlice, "Engine.SetArraySlice", mod, jit);
 	efunc_SetStructIndex = RegisterEngineFunction(LLVMAulSetStructElement, "Engine.SetStructIndex", mod, jit);

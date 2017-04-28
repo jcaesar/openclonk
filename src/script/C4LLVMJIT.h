@@ -147,7 +147,7 @@ private:
 		PMBuilder.SLPVectorize = true;
 		PMBuilder.VerifyInput = true;
 		PMBuilder.VerifyOutput = true;
-		PMBuilder.OptLevel = 2;
+		PMBuilder.OptLevel = 3;
 
 		llvm::legacy::FunctionPassManager perFunctionPasses(module.get());
 		PMBuilder.populateFunctionPassManager(perFunctionPasses);
