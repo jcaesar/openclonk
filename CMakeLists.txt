@@ -348,6 +348,8 @@ message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
 # To make this succeed, copy the LLVMConfig.cmake from the compiled LLVM
 # library (likely under ${llvm}/lib/cmake/llvm/LLVMConfig.cmake) to
 # cmake/FindLLVM.cmake
+# You also have to avoid the gtest that comes with llvm, you can comment that
+# out in lib/cmake/llvm/LLVMBuildTreeOnlyTargets.cmake. Better fix welcome…
 #
 # If you are changing something about the script engine, it is advisable to
 # compile llvm with assertions enabled -DLLVM_ENABLE_ASSERTIONS=On. Note that you

@@ -19,8 +19,9 @@
 Implementation notes:
 
  1. Passing structs or similar around between C++ and LLVM-generated code was troublesome on tests (even packed).
-    Therefore, parameters are passed as two (pointers to) arrays, one of C4V_Type, the other of C4V_Value.
-	Storing the return value in element 0 of those arrays suggested itself.
+    Therefore, parameters are passed as two (pointers to) arrays of length C4V_MAX_Par+1, one of C4V_Type, the other of C4V_Value.
+	The object context is written to element 0 of these arrays at the start of functions and not touched by anything except the function itself.
+	Storing the return value in element 1 of those arrays suggested itself.
 
 	Some care has to be taken when filling those arrays. After starting to fill the arrays, no other code generation should be invoked.
 	This is because even calls like getVariant might start to generate code, which might want to use the parameter_array(s).
@@ -201,7 +202,7 @@ public:
 	virtual void visit(const ::aul::ast::ArrayLit *n) override { DRVv(n); expr_type = C4V_Array; }
 	virtual void visit(const ::aul::ast::ProplistLit *n) override { DRVv(n); expr_type = C4V_PropList; }
 	virtual void visit(const ::aul::ast::NilLit *n) override { DRVv(n); expr_type = C4V_Nil; }
-	virtual void visit(const ::aul::ast::ThisLit *n) override { DRVv(n); expr_type = C4V_Any; }
+	virtual void visit(const ::aul::ast::ThisLit *n) override { DRVv(n); expr_type = C4V_PropList; }
 	virtual void visit(const ::aul::ast::VarExpr *n) override { DRVv(n); expr_type = C4V_Any; }
 	virtual void visit(const ::aul::ast::UnOpExpr *n) override;
 	virtual void visit(const ::aul::ast::BinOpExpr *n) override;
@@ -595,7 +596,9 @@ private:
 	llvmFunction *efunc_ValueConversionFunc;
 	llvmFunction *efunc_Pow;
 	unique_ptr<C4CompiledValue> tmp_expr; // result from recursive expression code generation
+	unique_ptr<C4CompiledValue> context_this;
 	std::array<llvmValue*,C4V_Type_LLVM::variant_member_count> parameter_array; // place to store parameters and their types when calling an engine function
+
 
 public:
 	CodegenAstVisitor(C4ScriptHost *host, C4ScriptHost *source_host) : target_host(host), host(source_host) { init(); }
@@ -611,7 +614,7 @@ public:
 	virtual void visit(const ::aul::ast::ArrayLit *n) override;
 	virtual void visit(const ::aul::ast::ProplistLit *n) override;
 	virtual void visit(const ::aul::ast::NilLit *n) override;
-	//virtual void visit(const ::aul::ast::ThisLit *n) override;
+	virtual void visit(const ::aul::ast::ThisLit *n) override;
 	virtual void visit(const ::aul::ast::VarExpr *n) override;
 	virtual void visit(const ::aul::ast::UnOpExpr *n) override;
 	virtual void visit(const ::aul::ast::BinOpExpr *n) override;
@@ -680,22 +683,43 @@ private:
 
 	C4V_Type_LLVM::UnpackedVariant UnpackValue(llvmValue* packed) const;
 	unique_ptr<C4CompiledValue> PackVariant(C4V_Type_LLVM::UnpackedVariant v, const ::aul::ast::Node *n = nullptr);
+	template<typename T>
+	unique_ptr<C4CompiledValue> LoadPackVariant(T v, std::vector<llvmValue*> gep, const ::aul::ast::Node *n = nullptr) {
+		C4V_Type_LLVM::UnpackedVariant upret;
+		assert(v.size() == upret.size());
+		for (size_t j = 0; j < upret.size(); j++) {
+			llvmValue* ep = checkCompile(m_builder->CreateGEP(v[j], gep));
+			upret[j] = checkCompile(m_builder->CreateLoad(ep));
+		}
+		return PackVariant(upret, n);
+	}
+
+	template<typename T>
+	void UnpackStoreVariant(llvmValue* v, T to, std::vector<llvmValue*> gep) {
+		auto upret = UnpackValue(v);
+		for (size_t j = 0; j < upret.size(); j++) {
+			llvmValue* ep = m_builder->CreateGEP(to[j], gep);
+			m_builder->CreateStore(upret[j], ep);
+		}
+	}
 };
 
 C4V_Type_LLVM::UnpackedVariant C4AulCompiler::CodegenAstVisitor::UnpackValue(llvmValue* unpacked) const {
 	std::array<llvmValue*,2> ret;
-	for (unsigned int i = 0; i < ret.size(); i++)
+	for (unsigned int i = 0; i < ret.size(); i++) {
+		// if you run into llvm type trouble, an unpacked->dump(); here tends to help.
 		ret[i] = checkCompile(m_builder->CreateExtractValue(unpacked, {i}));
+	}
 	return ret;
 }
 
-unique_ptr<C4AulCompiler::CodegenAstVisitor::C4CompiledValue> C4AulCompiler::CodegenAstVisitor::PackVariant(C4V_Type_LLVM::UnpackedVariant v, const ::aul::ast::Node *n) {
+unique_ptr<C4AulCompiler::CodegenAstVisitor::C4CompiledValue>
+C4AulCompiler::CodegenAstVisitor::PackVariant(C4V_Type_LLVM::UnpackedVariant v, const ::aul::ast::Node *n) {
 	llvmValue* packed = checkCompile(C4V_Type_LLVM::defaultVariant(C4V_Nil/*hopefully overwritten*/));
 	for (unsigned int i = 0; i < v.size(); i++)
 		packed = checkCompile(m_builder->CreateInsertValue(packed, v[i], {i}));
 	return make_unique<C4CompiledValue>(C4V_Any, checkCompile(packed), n, this);
 }
-
 
 void C4AulCompiler::Preparse(C4ScriptHost *host, C4ScriptHost *source_host, const ::aul::ast::Script *script)
 {
@@ -918,7 +942,7 @@ llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompiledValue::getHigher(C4V_Type
 		default: break;
 	}
 	if (valType == t) return llvmVal;
-	if (valType == C4V_Any) return buildConversion(C4V_String);
+	if (valType == C4V_Any) return buildConversion(t);
 	throw compiler->Error(n, "Error: cannot convert %s to %s!", GetC4VName(valType), GetC4VName(t));
 }
 
@@ -989,6 +1013,11 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::ProplistLit *n) {
 
 void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::NilLit *n) {
 	tmp_expr = make_unique<C4CompiledValue>(C4V_Nil, buildBool(false) /* maybe, or maybe not. */, n, this);
+}
+
+void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::ThisLit *n) {
+	assert(context_this); // TODO: Might actually want to throw a proper error
+	tmp_expr = make_unique<C4CompiledValue>(C4V_PropList, context_this->getPropList(), n, this); // TODO… Uh… a copy… this looks like a design flaw
 }
 
 void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::If *n)
@@ -1241,13 +1270,7 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::RangeLoop *n)
 	//
 	
 	// Get current element
-	C4V_Type_LLVM::UnpackedVariant upret;
-	for (size_t j = 0; j < upret.size(); j++) {
-		llvmValue* ep = m_builder->CreateGEP(parameter_array[j], std::vector<llvmValue*>{buildInt(0), buildInt(0)});
-		upret[j] = m_builder->CreateLoad(ep);
-	}
-	
-	auto tmp = PackVariant(upret, n);
+	auto tmp = LoadPackVariant(parameter_array, std::vector<llvmValue*>{buildInt(0), buildInt(0)}, n);
 	AulVariable::get(n->var, n, this)->store(tmp);
 	
 	// Normal Code Here...
@@ -1675,11 +1698,14 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::FunctionDecl *n)
 	}
 	assert(parameter_array.size() == 2);
 	auto create_pa = [&](size_t idx, llvmType* t, const char* tw) {
-		parameter_array[idx] = m_builder->CreateAlloca(llvm::ArrayType::get(t, C4AUL_MAX_Par), nullptr, tw);
+		parameter_array[idx] = m_builder->CreateAlloca(llvm::ArrayType::get(t, C4AUL_MAX_Par+1), nullptr, tw);
 	};
 	create_pa(0, C4V_Type_LLVM::getVariantTypeLLVMType(), "pass_par_types");
 	create_pa(1, C4V_Type_LLVM::getVariantVarLLVMType(), "pass_par_vals");
 	llvmFunction::arg_iterator argit = lf->arg_begin();
+	context_this = make_unique<C4CompiledValue>(C4V_PropList, &*argit, n, this);
+	UnpackStoreVariant(context_this->getVariant(), parameter_array, std::vector<llvmValue*>{buildInt(0), buildInt(0)});
+	argit++;
 	if (Fn->var_type_hints.size() < Fn->GetParCount())
 		Warn(target_host, host, n, Fn, "Internal: function %s has no type inference info.", Fn->GetName());
 	auto getTypeSafe = [&](std::string vname) { try { return Fn->var_type_hints.at(vname); } catch(const std::out_of_range&) { return C4V_Any; } };
@@ -1713,6 +1739,7 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::FunctionDecl *n)
 	Fn = nullptr;
 	fn_var_scope.clear();
 	tmp_expr.reset(); // I'd rather get nullpointer errors than stuff failing inside llvm…
+	context_this.reset();
 	for (auto& pa: parameter_array)
 		pa = nullptr;
 }
@@ -1779,9 +1806,10 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::CallExpr *n)
 		while (arg_vals.size() < static_cast<size_t>(sf->GetParCount()))
 			arg_vals.push_back(C4CompiledValue::defaultVal(sf->GetParType()[arg_vals.size()], n, this));
 		assert(sf->GetParCount() == static_cast<int>(arg_vals.size()));
-		std::vector<llvmValue*> llvm_args(arg_vals.size(), nullptr);
+		std::vector<llvmValue*> llvm_args(arg_vals.size()+1, nullptr);
+		llvm_args[0] = context_this->getPropList();
 		for(int i = 0; i < sf->GetParCount(); i++)
-			llvm_args[i] = arg_vals[i]->getValue(sf->GetParType()[i]);
+			llvm_args[i+1] = arg_vals[i]->getValue(sf->GetParType()[i]);
 		assert(sf->GetRetType() != C4V_Nil); // For now, I don't know how to deal with that
 		auto llvmret = checkCompile(m_builder->CreateCall(sf->llvmFunc, llvm_args));
 		tmp_expr = make_unique<C4CompiledValue>(sf->GetRetType(), llvmret, n, this);
@@ -1803,18 +1831,13 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::CallExpr *n)
 		{
 			for(size_t j = 0; j < unpackeds[i].size(); ++j)
 			{
-				llvmValue* ep = m_builder->CreateGEP(parameter_array[j], std::vector<llvmValue*>{buildInt(0), buildInt(i)});
+				llvmValue* ep = m_builder->CreateGEP(parameter_array[j], std::vector<llvmValue*>{buildInt(0), buildInt(i+1)});
 				m_builder->CreateStore(unpackeds[i][j], ep);
 			}
 		}
 		checkCompile(m_builder->CreateCall(efunc_CallByPFunc, llvm_args));
 		// I'm assuming that Fn->GetRetType() is C4V_Any. If this wasn't the case, we might want to do something more efficient (similarly above).
-		C4V_Type_LLVM::UnpackedVariant upret;
-		for (size_t j = 0; j < upret.size(); j++) {
-			llvmValue* ep = m_builder->CreateGEP(parameter_array[j], std::vector<llvmValue*>{buildInt(0), buildInt(0)});
-			upret[j] = m_builder->CreateLoad(ep);
-		}
-		tmp_expr = PackVariant(upret, n);
+		tmp_expr = LoadPackVariant(parameter_array, std::vector<llvmValue*>{buildInt(0), buildInt(0)}, n);
 	}
 	assert(tmp_expr);
 
@@ -1854,10 +1877,10 @@ extern "C" {
 	{
 		C4AulFunc *func = reinterpret_cast<C4AulFunc *>(func_i8);
 
-		C4Value pars[C4AUL_MAX_Par];
-		for(uint32_t i = 0; i < std::min<uint32_t>(par_count, func->GetParCount()); ++i)
+		C4Value pars[C4AUL_MAX_Par+1];
+		for(uint32_t i = 0; i < std::min<uint32_t>(par_count, func->GetParCount()) + 1; ++i)
 			pars[i] = AulLLVMToC4Value(types[i], data[i]);
-		C4Value rv = func->Exec(nullptr /* TODO: Context. */, pars, false);
+		C4Value rv = func->Exec(pars[0].getPropList(), pars+1, false);
 		std::tie(types[0], data[0]) = C4ValueToAulLLVM(rv);
 	}
 
@@ -1999,45 +2022,41 @@ void C4AulCompiler::CodegenAstVisitor::FnDecls() {
 		C4AulScriptFunc *sf = func->SFunc();
 		if(!sf)
 			continue;
-		std::vector<llvmType*> parTypes;
-		for(int i = 0; i < sf->GetParCount(); ++i)
-			parTypes.push_back(C4V_Type_LLVM::get(sf->GetParType()[i]));
-		FunctionType *ft = FunctionType::get(C4V_Type_LLVM::get(sf->GetRetType()), parTypes, false);
-		sf->llvmFunc = checkCompile(llvmFunction::Create(ft, llvmFunction::PrivateLinkage, func->GetName(), mod.get()));
-		int i = 0;
-		for (llvmFunction::arg_iterator argit = sf->llvmFunc->arg_begin(); i < sf->ParNamed.iSize; ++argit, ++i) {
-			argit->setName(std::string(sf->ParNamed.GetItemUnsafe(i)) + ".par");
-		}
-		sf->llvmImpl = LLVMAulDummyFunc; // Hopefully overwritten…
-
-		//also add a delegate with simple parameter types for easy external calls
-		FunctionType *dft = FunctionType::get(llvmType::getVoidTy(llvmcontext), std::vector<llvmType*>{
-			llvm::PointerType::getUnqual(C4V_Type_LLVM::getVariantTypeLLVMType()),
-			llvm::PointerType::getUnqual(C4V_Type_LLVM::getVariantVarLLVMType())
-		},false);
-		auto llvmDelegate = checkCompile(llvmFunction::Create(dft, llvmFunction::ExternalLinkage, std::string(func->GetName()) + ".delegate", mod.get()));
-		m_builder = make_unique<IRBuilder<>>(llvmcontext);
-		SetInsertPoint(CreateBlock(llvmDelegate));
-		std::vector<llvmValue*> delegate_args;
-		for (int i = 0; i < func->GetParCount(); ++i) {
-			C4V_Type_LLVM::UnpackedVariant upv;
-			auto argit = llvmDelegate->arg_begin();
-			for (size_t j = 0; j < upv.size(); j++, argit++) {
-				llvmValue* ep = m_builder->CreateGEP(&*argit, std::vector<llvmValue*>{buildInt(i)});
-				upv[j] = m_builder->CreateLoad(ep);
+		{
+			std::vector<llvmType*> parTypes{C4V_Type_LLVM::get(C4V_PropList)};
+			for(int i = 0; i < sf->GetParCount(); ++i)
+				parTypes.push_back(C4V_Type_LLVM::get(sf->GetParType()[i]));
+			FunctionType *ft = FunctionType::get(C4V_Type_LLVM::get(sf->GetRetType()), parTypes, false);
+			sf->llvmFunc = checkCompile(llvmFunction::Create(ft, llvmFunction::PrivateLinkage, func->GetName(), mod.get()));
+			llvmFunction::arg_iterator argit = sf->llvmFunc->arg_begin();
+			argit->setName("Engine.this");
+			argit++;
+			for (int i = 0; i < sf->ParNamed.iSize; ++argit, ++i) {
+				argit->setName(std::string(sf->ParNamed.GetItemUnsafe(i)) + ".par");
 			}
-			delegate_args.push_back(PackVariant(upv)->getValue(sf->GetParType()[i]));
+			sf->llvmImpl = LLVMAulDummyFunc; // Hopefully overwritten…
 		}
-		auto dlgret = make_unique<C4CompiledValue>(sf->GetRetType(), m_builder->CreateCall(sf->llvmFunc, delegate_args), nullptr, this);
-		auto upret = UnpackValue(dlgret->getVariant());
-		auto argit = llvmDelegate->arg_begin();
-		for (size_t j = 0; j < upret.size(); j++, argit++) {
-			llvmValue* ep = m_builder->CreateGEP(&*argit, std::vector<llvmValue*>{buildInt(0)});
-			m_builder->CreateStore(upret[j], ep);
+
+		{
+			//also add a delegate with simple parameter types for easy external calls
+			FunctionType *dft = FunctionType::get(llvmType::getVoidTy(llvmcontext), std::vector<llvmType*>{
+				llvm::PointerType::getUnqual(C4V_Type_LLVM::getVariantTypeLLVMType()),
+				llvm::PointerType::getUnqual(C4V_Type_LLVM::getVariantVarLLVMType())
+			},false);
+			auto llvmDelegate = checkCompile(llvmFunction::Create(dft, llvmFunction::ExternalLinkage, std::string(func->GetName()) + ".delegate", mod.get()));
+			m_builder = make_unique<IRBuilder<>>(llvmcontext);
+			SetInsertPoint(CreateBlock(llvmDelegate));
+			auto argv = make_value_vector(llvmDelegate->args());
+			std::vector<llvmValue*> delegate_args{LoadPackVariant(argv, std::vector<llvmValue*>{buildInt(0)})->getPropList()};
+			for (int i = 0; i < func->GetParCount(); ++i) {
+				delegate_args.push_back(LoadPackVariant(argv, std::vector<llvmValue*>{buildInt(i+1)})->getValue(sf->GetParType()[i]));
+			}
+			auto dlgret = make_unique<C4CompiledValue>(sf->GetRetType(), m_builder->CreateCall(sf->llvmFunc, delegate_args), nullptr, this);
+			UnpackStoreVariant(dlgret->getVariant(), argv, std::vector<llvmValue*>{buildInt(0)});
+			m_builder->CreateRet(nullptr);
+			sf->llvmDlgName = llvmDelegate->getName();
+			assert(sf->llvmDlgName != "");
 		}
-		m_builder->CreateRet(nullptr);
-		sf->llvmDlgName = llvmDelegate->getName();
-		assert(sf->llvmDlgName != "");
 	}
 }
 

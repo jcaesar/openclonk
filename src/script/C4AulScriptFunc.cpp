@@ -76,10 +76,11 @@ void C4AulScriptFunc::ClearCode()
 C4Value C4AulScriptFunc::Exec(C4PropList * p, C4Value pPars[], bool fPassErrors)
 {
 	// TODO: Handle context p
-	C4V_Type retpar_types[C4AUL_MAX_Par];
-	C4V_Data retpar_data [C4AUL_MAX_Par];
+	C4V_Type retpar_types[C4AUL_MAX_Par+1];
+	C4V_Data retpar_data [C4AUL_MAX_Par+1];
+	std::tie(retpar_types[0], retpar_data[0]) = C4ValueToAulLLVM(C4Value(p));
 	for (int i = 0; i < GetParCount(); i++)
-		std::tie(retpar_types[i], retpar_data[i]) = C4ValueToAulLLVM(pPars[i]);
+		std::tie(retpar_types[i+1], retpar_data[i+1]) = C4ValueToAulLLVM(pPars[i]);
 	// TODO: Catch errors on fPassErrors
 	assert(llvmImpl);
 	llvmImpl(retpar_types, retpar_data);

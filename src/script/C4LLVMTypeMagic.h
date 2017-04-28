@@ -39,4 +39,20 @@ inline llvm::Function* RegisterEngineFunction(
 	return rv;
 }
 
+template<typename Z, typename X>
+typename std::enable_if<std::is_convertible<X,Z>::value || std::is_assignable<Z,X>::value, Z>::type
+deref_to(X && x) { return x; }
+template<typename Z, typename X>
+typename std::enable_if<!std::is_convertible<X,Z>::value && !std::is_assignable<Z,X>::value, Z>::type
+deref_to(X && x) { return deref_to<Z>(*std::forward<X>(x)); }
+
+template<typename T> std::vector<llvm::Value*> make_value_vector(T&& t) {
+	std::vector<llvm::Value*> r;
+	auto it = t.begin();
+	while (it != t.end())
+		r.push_back(&*(it++));
+	return r;
+}
+
+
 #endif
