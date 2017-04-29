@@ -19,7 +19,7 @@
 Implementation notes:
 
  1. Passing structs or similar around between C++ and LLVM-generated code was troublesome on tests (even packed).
-    Therefore, parameters are passed as two (pointers to) arrays of length C4V_MAX_Par+1, one of C4V_Type, the other of C4V_Value.
+    Therefore, parameters are passed as two (pointers to) arrays of length C4V_MAX_Par+1, one of C4V_Type, the other of C4V_Value (always in that order).
 	The object context is written to element 0 of these arrays at the start of functions and not touched by anything except the function itself.
 	Storing the return value in element 1 of those arrays suggested itself.
 
@@ -33,6 +33,7 @@ Implementation notes:
 
  3. The Preparse AST visitor runs a local type inference, disregarding any separation of the variable by different areas or learned types of other variables.
     Running something like the w-Algorithm or Abstract Interpretation would be nice.
+
 
  */
 
@@ -573,6 +574,17 @@ private:
 		virtual ~C4CompiledLSlice() {}
 	};
 
+	class C4CompiledLGlobalN : public C4CompiledLValue {
+	private:
+		int32_t num;
+		void MakeGettable(C4V_Type) const override;
+	public:
+		C4CompiledLGlobalN(int32_t num, const ::aul::ast::Node *n, const CodegenAstVisitor *compiler) :
+			C4CompiledLValue(C4V_Any, nullptr, n, compiler), num(num) { }
+		void store(unique_ptr<C4CompiledValue>& rval) const;
+		virtual ~C4CompiledLGlobalN() {}
+	};
+
 	C4AulScriptFunc *Fn = nullptr;
 	// target_host: The C4ScriptHost on which compilation is done
 	C4ScriptHost *target_host = nullptr;
@@ -585,18 +597,13 @@ private:
 	std::shared_ptr<C4JIT> jit;
 
 	llvmFunction *efunc_CallByPFunc;
+	llvmFunction *efunc_CompareEquals, *efunc_Pow;
+	llvmFunction *efunc_CreateProplist, *efunc_CreateValueArray;
 	llvmFunction *efunc_CheckArrayIndex;
-	llvmFunction *efunc_CompareEquals;
-	llvmFunction *efunc_CreateProplist;
-	llvmFunction *efunc_CreateValueArray;
-	llvmFunction *efunc_GetArrayIndex;
-	llvmFunction *efunc_GetArraySlice;
-	llvmFunction *efunc_GetStructIndex;
-	llvmFunction *efunc_SetArrayIndex;
-	llvmFunction *efunc_SetArraySlice;
-	llvmFunction *efunc_SetStructIndex;
+	llvmFunction *efunc_GetArrayIndex, *efunc_GetArraySlice, *efunc_GetStructIndex;
+	llvmFunction *efunc_SetArrayIndex, *efunc_SetArraySlice, *efunc_SetStructIndex;
+	llvmFunction *efunc_GetGlobalN, *efunc_SetGlobalN;
 	llvmFunction *efunc_ValueConversionFunc;
-	llvmFunction *efunc_Pow;
 	unique_ptr<C4CompiledValue> tmp_expr; // result from recursive expression code generation
 	unique_ptr<C4CompiledValue> context_this;
 	std::array<llvmValue*,C4V_Type_LLVM::variant_member_count> parameter_array; // place to store parameters and their types when calling an engine function
@@ -1314,6 +1321,11 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::VarExpr *n)
 {
 	C4String *interned = ::Strings.FindString(n->identifier.c_str());
 	C4Value dummy;
+	int32_t global_n = -1;
+
+	// Lookup order: Parameters > var > local > global > global const
+	// TODO: Parameters > var used to be ensured here, now it's ensured elsewhere. 
+	// Check and make sure that's still the case, or change variable_shadows_variable
 
 	if (fn_var_scope.count(n->identifier) > 0) {
 		tmp_expr = AulVariable::get(n->identifier, n, this);
@@ -1321,6 +1333,8 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::VarExpr *n)
 		auto object = make_unique<C4CompiledValue>(C4V_PropList, context_this->getPropList(), n, this); 
 		auto index = make_unique<C4CompiledValue>(C4V_String, buildString(interned), n, this);
 		tmp_expr = std::make_unique<C4CompiledLStruct>(move(object), move(index), n, this);
+	} else if ((global_n = ScriptEngine.GlobalNamedNames.GetItemNr(n->identifier.c_str())) != -1){
+		tmp_expr = std::make_unique<C4CompiledLGlobalN>(global_n, n, this);
 	 } else {
 		 tmp_expr = nullptr; 
 		 throw Error(n, "symbol not found in any symbol table: %s", n->identifier.c_str());
@@ -1663,6 +1677,24 @@ void C4AulCompiler::CodegenAstVisitor::C4CompiledLSlice::MakeGettable(C4V_Type) 
 	));
 }
 
+void C4AulCompiler::CodegenAstVisitor::C4CompiledLGlobalN::store(unique_ptr<C4CompiledValue> &rval) const
+{
+	std::vector<llvmValue*> args { compiler->buildInt(num) };
+	for (auto upv: compiler->UnpackValue(rval->getVariant()))
+		args.push_back(upv);
+	compiler->m_builder->CreateCall(compiler->efunc_SetGlobalN, args);
+}
+
+void C4AulCompiler::CodegenAstVisitor::C4CompiledLGlobalN::MakeGettable(C4V_Type) const {
+	llvmValue* rettp = compiler->m_builder->CreateGEP(compiler->parameter_array[0], std::vector<llvmValue*>{compiler->buildInt(0), compiler->buildInt(1)});
+	llvmValue* retd = compiler->checkCompile(compiler->m_builder->CreateCall(
+		compiler->efunc_GetGlobalN,
+		std::vector<llvmValue*>{compiler->buildInt(num), rettp}
+	));
+	llvmValue* rett = compiler->m_builder->CreateLoad(rettp);
+	llvmVal = compiler->checkCompile(compiler->PackVariant({{rett, retd}}, n)->getVariant());
+}
+
 
 void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::VarDecl *n)
 {
@@ -1772,7 +1804,7 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::FunctionDecl *n)
 
 llvmValue* C4AulCompiler::CodegenAstVisitor::constLLVMPointer(void * ptr)
 {
-	llvmValue* ic = ConstantInt::get(llvmcontext, APInt(sizeof(ptr) * CHAR_BIT, reinterpret_cast<size_t>(ptr), false));
+	llvmValue* ic = ConstantInt::get(llvmcontext, APInt(sizeof(ptr) * CHAR_BIT, reinterpret_cast<intptr_t>(ptr), false));
 	return m_builder->CreateIntToPtr(ic, llvmType::getInt8PtrTy(llvmcontext));
 }
 
@@ -2016,6 +2048,16 @@ extern "C" {
 		C4Value v; v.Set0();
 		std::tie(t[0], d[0]) = C4ValueToAulLLVM(v);
 	}
+
+	C4V_Data LLVMAulGetGlobalN(int32_t num, C4V_Type* tret) {
+		C4V_Data rv;
+		std::tie(*tret, rv) = C4ValueToAulLLVM(*::ScriptEngine.GlobalNamed.GetItem(num));
+		return rv;
+	}
+
+	void LLVMAulSetGlobalN(int32_t num, C4V_Type t, C4V_Data d) {
+		::ScriptEngine.GlobalNamed.GetItem(num)->Set(AulLLVMToC4Value(t,d));
+	}
 }
 
 void C4AulCompiler::CodegenAstVisitor::ExternDecls() {
@@ -2026,7 +2068,7 @@ void C4AulCompiler::CodegenAstVisitor::ExternDecls() {
 	efunc_CreateProplist = RegisterEngineFunction(LLVMAulCreateProplist, "Engine.CreatePropList", mod, jit);
 	efunc_GetArrayIndex = RegisterEngineFunction(LLVMAulGetArrayElement, "Engine.GetArrayIndex", mod, jit);
 	efunc_GetArraySlice = RegisterEngineFunction(LLVMAulGetArraySlice, "Engine.GetArraySlice", mod, jit);
-	efunc_GetArraySlice->addFnAttr(llvm::Attribute::ReadOnly);
+	efunc_GetArraySlice->addFnAttr(llvm::Attribute::ReadOnly); // "readonly", but it may still throw sync-relevant exceptions. So no idea whether this is actually safe…
 	efunc_GetStructIndex = RegisterEngineFunction(LLVMAulGetStructElement, "Engine.GetStructIndex", mod, jit); // NOT readonly
 	efunc_SetArrayIndex = RegisterEngineFunction(LLVMAulSetArrayElement, "Engine.SetArrayIndex", mod, jit);
 	efunc_SetArraySlice = RegisterEngineFunction(LLVMAulSetArraySlice, "Engine.SetArraySlice", mod, jit);
@@ -2036,6 +2078,8 @@ void C4AulCompiler::CodegenAstVisitor::ExternDecls() {
 	efunc_CompareEquals->addFnAttr(llvm::Attribute::ReadOnly);
 	efunc_Pow = RegisterEngineFunction(Pow, "EngineCPP.Pow", mod, jit); // TODO: Check linkage/calling convention accross platforms
 	efunc_Pow->addFnAttr(llvm::Attribute::ReadNone);
+	efunc_GetGlobalN = RegisterEngineFunction(LLVMAulGetGlobalN, "Engine.GetGlobalN", mod, jit);
+	efunc_SetGlobalN = RegisterEngineFunction(LLVMAulSetGlobalN, "Engine.SetGlobalN", mod, jit);
 }
 
 void C4AulCompiler::CodegenAstVisitor::FnDecls() {
