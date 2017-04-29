@@ -665,6 +665,7 @@ private:
 			throw Error("Internal Error: unexpected empty llvm result");
 		return t;
 	}
+	template<typename... T> void ensure_cond(const ::aul::ast::Node *n, bool cond, T &&...failmsg)  { if (!(cond)) throw Error(n, std::forward<T>(failmsg)...); }
 
 	void init();
 	void FnDecls();
@@ -1009,7 +1010,6 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::ArrayLit *n)
 	tmp_expr = make_unique<C4CompiledValue>(C4V_Array, array, n, this);
 }
 void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::ProplistLit *n) {
-	// TODO: Prototypes
 	llvmValue* pl = m_builder->CreateCall(efunc_CreateProplist);
 	for (auto& el: n->values)
 	{
@@ -1305,14 +1305,14 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::RangeLoop *n)
 
 void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::Break *n)
 {
-	assert( break_dest );
+	ensure_cond(n, break_dest, "'break' outside loop");
 	m_builder->CreateBr( break_dest );
 	SetInsertPoint(CreateBlock("deadcode")); // To not generate the error "Terminator found in the middle of a basic block!"
 }
 
 void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::Continue *n)
 {
-	assert( continue_dest );
+	ensure_cond(n, continue_dest, "'continue' outside loop");
 	m_builder->CreateBr( continue_dest );
 	SetInsertPoint(CreateBlock("deadcode")); // To not generate the error "Terminator found in the middle of a basic block!"
 }
