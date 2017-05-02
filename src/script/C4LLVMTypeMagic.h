@@ -14,13 +14,14 @@ template<> llvm::Type* CPPTypeToLLVM<bool>() { return llvm::Type::getIntNTy(llvm
 template<> llvm::Type* CPPTypeToLLVM<int32_t>() { return llvm::Type::getIntNTy(llvmcontext, 32); };
 template<> llvm::Type* CPPTypeToLLVM<uint32_t>() { return CPPTypeToLLVM<int32_t>(); };
 template<> llvm::Type* CPPTypeToLLVM<int64_t>() { return llvm::Type::getIntNTy(llvmcontext, 64); };
+template<> llvm::Type* CPPTypeToLLVM<uint8_t*>() { return llvm::Type::getInt8PtrTy(llvmcontext); };
+template<> llvm::Type* CPPTypeToLLVM<void*>() { return llvm::Type::getInt8PtrTy(llvmcontext); } // "Note that LLVM does not permit pointers to void (void*) [...]. Use i8* instead."
+template<> llvm::Type* CPPTypeToLLVM<void>() { return llvm::Type::getVoidTy(llvmcontext); }
 template<> llvm::Type* CPPTypeToLLVM<C4V_Type>() { return llvm::Type::getIntNTy(llvmcontext, CHAR_BIT * sizeof(C4V_Type)); };
 template<> llvm::Type* CPPTypeToLLVM<C4V_Data>() { return llvm::Type::getIntNTy(llvmcontext, CHAR_BIT * sizeof(C4V_Data)); };
 template<> llvm::Type* CPPTypeToLLVM<C4V_Type*>() { return llvm::PointerType::getUnqual(CPPTypeToLLVM<C4V_Type>()); };
 template<> llvm::Type* CPPTypeToLLVM<C4V_Data*>() { return llvm::PointerType::getUnqual(CPPTypeToLLVM<C4V_Data>()); };
-template<> llvm::Type* CPPTypeToLLVM<uint8_t*>() { return llvm::Type::getInt8PtrTy(llvmcontext); };
-template<> llvm::Type* CPPTypeToLLVM<void*>() { return llvm::Type::getInt8PtrTy(llvmcontext); } // "Note that LLVM does not permit pointers to void (void*) [...]. Use i8* instead."
-template<> llvm::Type* CPPTypeToLLVM<void>() { return llvm::Type::getVoidTy(llvmcontext); }
+template<> llvm::Type* CPPTypeToLLVM<C4String*>() { return CPPTypeToLLVM<void*>(); };
 
 template<typename RetType, typename... ArgTypes>
 inline llvm::Function* RegisterEngineFunction(
