@@ -211,7 +211,7 @@ public:
 	virtual void visit(const ::aul::ast::AssignmentExpr *n) override;
 	virtual void visit(const ::aul::ast::SubscriptExpr *n) override { DRVv(n); expr_type = C4V_Any; }
 	virtual void visit(const ::aul::ast::SliceExpr *n) override { DRVv(n); expr_type = C4V_Array; }
-	virtual void visit(const ::aul::ast::FunctionExpr *n) override { DRVv(n); expr_type = C4V_Function; /* TODO: test */ }
+	virtual void visit(const ::aul::ast::FunctionExpr *n) override { DRVv(n); expr_type = C4V_Function; }
 };
 
 void C4AulCompiler::PreparseAstVisitor::visit(const ::aul::ast::RangeLoop *n)
@@ -284,7 +284,12 @@ void C4AulCompiler::PreparseAstVisitor::visit(const ::aul::ast::VarDecl *n)
 				host->Engine->GlobalNamedNames.AddName(cname);
 			break;
 		}
-		if (var.init)
+        // Only func-scoped variables can potentially have initializers we care
+        // about in the pre-parsing stage: they may have calls that pass
+        // unnamed parameters, and their type matters.
+		// Beware that initializers for object/global variables will get their 
+		// own Preparse AST visitor during Constant Resolution
+		if (var.init && n->scope == ::aul::ast::VarDecl::Scope::Func)
 			var.init->accept(this);
 		else
 			expr_type = C4V_Any;
@@ -400,6 +405,120 @@ void C4AulCompiler::PreparseAstVisitor::visit(const ::aul::ast::AssignmentExpr *
 
 }
 
+class C4AulCompiler::ConstexprEvaluator : public ::aul::AstVisitor
+{
+public:
+	enum EvalFlag
+	{
+		// If this flag is set, ConstexprEvaluator will assume unset values
+		// are nil. If it is not set, evaluation of unset values will send an
+		// ExpressionNotConstant to the error handler.
+		IgnoreUnset = 1<<0,
+		// If this flag is set, ConstexprEvaluator will not send exceptions to
+		// the error handler (so it doesn't report them twice: once from the
+		// preparsing step, then again from the compile step).
+		SuppressErrors = 1<<1
+	};
+	typedef int EvalFlags;
+
+	// Evaluates constant AST subtrees and returns the final C4Value.
+	// Flags ExpressionNotConstant if evaluation fails.
+	static C4Value eval(C4ScriptHost *host, const ::aul::ast::Expr *e, EvalFlags flags = 0);
+	static C4Value eval_static(C4ScriptHost *host, C4PropListStatic *parent, const std::string &parent_key, const ::aul::ast::Expr *e, EvalFlags flags = 0, LLVMState *ls = nullptr);
+
+private:
+	C4ScriptHost *host = nullptr;
+	LLVMState *llvmstate;
+	C4Value v;
+	bool ignore_unset_values = false;
+	bool quiet = false;
+
+	struct ProplistMagic
+	{
+		bool active = false;
+		C4PropListStatic *parent = nullptr;
+		std::string key;
+
+		ProplistMagic() = default;
+		ProplistMagic(bool active, C4PropListStatic *parent, std::string key) : active(active), parent(parent), key(std::move(key)) {}
+	} proplist_magic;
+
+	explicit ConstexprEvaluator(C4ScriptHost *host, LLVMState *ls) : host(host), llvmstate(ls) {}
+
+	NORETURN void nonconst(const ::aul::ast::Node *n) const
+	{
+		throw ExpressionNotConstant(host, n, nullptr, nullptr);
+	}
+
+	void AssertValueType(const C4Value &v, C4V_Type Type1, const char *opname, const ::aul::ast::Node *n)
+	{
+		// Typecheck parameter
+		if (!v.CheckParConversion(Type1))
+			throw Error(host, host, n, nullptr, R"(operator "%s": got %s, but expected %s)", opname, v.GetTypeName(), GetC4VName(Type1));
+	}
+public:
+	class ExpressionNotConstant : public C4AulParseError
+	{
+	public:
+		ExpressionNotConstant(const C4ScriptHost *host, const ::aul::ast::Node *n, C4AulScriptFunc *Fn, const char *expr) :
+			C4AulParseError(Error(host, host, n, Fn, "expression not constant: %s", expr)) {}
+	};
+
+	using AstVisitor::visit;
+	void visit(const ::aul::ast::StringLit *n) override;
+	void visit(const ::aul::ast::IntLit *n) override;
+	void visit(const ::aul::ast::BoolLit *n) override;
+	void visit(const ::aul::ast::ArrayLit *n) override;
+	void visit(const ::aul::ast::ProplistLit *n) override;
+	void visit(const ::aul::ast::NilLit *) override;
+	void visit(const ::aul::ast::ThisLit *n) override;
+	void visit(const ::aul::ast::VarExpr *n) override;
+	void visit(const ::aul::ast::UnOpExpr *n) override;
+	void visit(const ::aul::ast::BinOpExpr *n) override;
+	void visit(const ::aul::ast::AssignmentExpr *n) override;
+	void visit(const ::aul::ast::SubscriptExpr *n) override;
+	void visit(const ::aul::ast::SliceExpr *n) override;
+	void visit(const ::aul::ast::CallExpr *n) override;
+	void visit(const ::aul::ast::FunctionExpr *n) override;
+};
+
+class C4AulCompiler::ConstantResolver : public ::aul::DefaultRecursiveVisitor
+{
+	C4ScriptHost *host;
+	bool quiet = false;
+	LLVMState *llvmstate;
+
+	explicit ConstantResolver(C4ScriptHost *host, LLVMState *ls) : host(host), llvmstate(ls) {}
+
+public:
+	static void resolve_quiet(C4ScriptHost *host, const ::aul::ast::Script *script)
+	{
+		// Does the same as resolve, but doesn't emit errors/warnings
+		// (because we'll emit them again later).
+		ConstantResolver r(host, nullptr);
+		r.quiet = true;
+		r.visit(script);
+	}
+	static void resolve(C4ScriptHost *host, const ::aul::ast::Script *script, LLVMState *llvmstate)
+	{
+		// We resolve constants *twice*; this allows people to create circular
+		// references in proplists or arrays.
+		// Unfortunately it also results in unexpected behaviour in code like
+		// this:
+		//     static const c1 = c2, c2 = c3, c3 = 1;
+		// which will set c1 to nil, and both c2 and c3 to 1.
+		// While this is unlikely to happen often, we should fix that so it
+		// resolves all three constants to 1.
+		ConstantResolver r(host, llvmstate);
+		r.visit(script);
+	}
+	~ConstantResolver() override = default;
+
+	using DefaultRecursiveVisitor::visit;
+	void visit(const ::aul::ast::Script *n) override;
+	void visit(const ::aul::ast::VarDecl *n) override;
+};
+
 namespace C4V_Type_LLVM {
 	static const size_t int_len = 32;
 	static const size_t bool_len = 1;
@@ -465,6 +584,24 @@ namespace C4V_Type_LLVM {
 	}
 	typedef std::array<llvmValue*,variant_member_count> UnpackedVariant;
 }
+
+class C4AulCompiler::LLVMState {
+	void init();
+	void FnDecls();
+	void ExternDecls();
+public:
+	llvmFunction *efunc_CallByPFunc, *efunc_CallBySFunc;
+	llvmFunction *efunc_CompareEquals, *efunc_Pow;
+	llvmFunction *efunc_CreateProplist, *efunc_CreateValueArray;
+	llvmFunction *efunc_CheckArrayIndex;
+	llvmFunction *efunc_GetArrayIndex, *efunc_GetArraySlice, *efunc_GetStructIndex;
+	llvmFunction *efunc_SetArrayIndex, *efunc_SetArraySlice, *efunc_SetStructIndex;
+	llvmFunction *efunc_GetGlobalN, *efunc_SetGlobalN;
+	llvmFunction *efunc_ValueConversionFunc;
+	unique_ptr<llvm::Module> mod;
+	std::shared_ptr<C4JIT> jit;
+	LLVMState() { init(); }
+};
 
 class C4AulCompiler::CodegenAstVisitor : public ::aul::DefaultRecursiveVisitor
 {
@@ -591,27 +728,19 @@ private:
 	// host: The C4ScriptHost where the script actually resides in
 	C4ScriptHost *host = nullptr;
 
-	// LLVM stuff necessary for compilations
-	unique_ptr<llvm::Module> mod;
+	// LLVM builder. only used when compiling functions, and compiling functions is the job of CodegenAstVisitor, so it's here and not in LLVMState
 	unique_ptr<IRBuilder<>> m_builder;
-	std::shared_ptr<C4JIT> jit;
+	
+	LLVMState &llvmstate;
 
-	llvmFunction *efunc_CallByPFunc, *efunc_CallBySFunc;
-	llvmFunction *efunc_CompareEquals, *efunc_Pow;
-	llvmFunction *efunc_CreateProplist, *efunc_CreateValueArray;
-	llvmFunction *efunc_CheckArrayIndex;
-	llvmFunction *efunc_GetArrayIndex, *efunc_GetArraySlice, *efunc_GetStructIndex;
-	llvmFunction *efunc_SetArrayIndex, *efunc_SetArraySlice, *efunc_SetStructIndex;
-	llvmFunction *efunc_GetGlobalN, *efunc_SetGlobalN;
-	llvmFunction *efunc_ValueConversionFunc;
 	unique_ptr<C4CompiledValue> tmp_expr; // result from recursive expression code generation
 	unique_ptr<C4CompiledValue> context_this;
 	std::array<llvmValue*,C4V_Type_LLVM::variant_member_count> parameter_array; // place to store parameters and their types when calling an engine function
 
 
 public:
-	CodegenAstVisitor(C4ScriptHost *host, C4ScriptHost *source_host) : target_host(host), host(source_host) { init(); }
-	explicit CodegenAstVisitor(C4AulScriptFunc *func) : Fn(func), target_host(func->pOrgScript), host(target_host) { init(); }
+	CodegenAstVisitor(C4ScriptHost *host, C4ScriptHost *source_host, LLVMState *ls) : target_host(host), host(source_host), llvmstate(*checkCompile(ls)) { }
+	explicit CodegenAstVisitor(C4AulScriptFunc *func, LLVMState *ls) : Fn(func), target_host(func->pOrgScript), host(target_host), llvmstate(*checkCompile(ls)) { }
 
 	virtual ~CodegenAstVisitor() {}
 
@@ -644,11 +773,24 @@ public:
 	virtual void visit(const ::aul::ast::VarDecl *n) override;
 	virtual void visit(const ::aul::ast::FunctionDecl *n) override;
 
-	void DumpLLVM() const { mod->dump(); }
+	void DumpLLVM() const { llvmstate.mod->dump(); }
 	void StandaloneCompile(C4AulScriptFunc *func, const ::aul::ast::Function *def);
 
 	void finalize();
+
+	template<class T>
+	void EmitFunctionCode(const T *n)
+	{
+		// This dynamic_cast resolves the problem where we have a Function*
+		// and want to emit code to it. All classes derived from Function
+		// are also ultimately derived from Node, so this call is fine
+		// without any additional checking.
+		EmitFunctionCode(n, dynamic_cast<const ::aul::ast::Node*>(n));
+	}
+
 private:
+	void EmitFunctionCode(const ::aul::ast::Function *f, const ::aul::ast::Node *n);
+
 	template<class... T>
 	C4AulParseError Error(const std::string msg, T &&...args) const
 	{
@@ -667,9 +809,6 @@ private:
 	}
 	template<typename... T> void ensure_cond(const ::aul::ast::Node *n, bool cond, T &&...failmsg)  { if (!(cond)) throw Error(n, std::forward<T>(failmsg)...); }
 
-	void init();
-	void FnDecls();
-	void ExternDecls();
 	void FinalizeFunc(C4AulScriptFunc *func, const std::string&);
 	llvmValue* constLLVMPointer(void * ptr);
 	llvmValue* buildInt(int i) const {
@@ -687,7 +826,10 @@ private:
 		// TODO: We might need some magic to ensure that this is not deleted early / properly deleted
 	}
 	BasicBlock* CreateBlock(llvmFunction* parent = nullptr) const { return CreateBlock( nullptr , parent ); }
-	BasicBlock* CreateBlock( const char* name , llvmFunction* parent = nullptr) const { assert((m_builder && CurrentBlock()) || parent); return BasicBlock::Create(llvmcontext, name ? name : "anon" , parent ? parent : CurrentBlock()->getParent()); }
+	BasicBlock* CreateBlock( const char* name , llvmFunction* parent = nullptr) const { 
+		assert((m_builder && CurrentBlock()) || parent); 
+		return BasicBlock::Create(llvmcontext, name ? name : "anon" , parent ? parent : CurrentBlock()->getParent()); 
+	}
 	BasicBlock* CurrentBlock() const { return m_builder->GetInsertBlock(); }
 	void SetInsertPoint(BasicBlock* bb) const { return m_builder->SetInsertPoint(bb); }
 	void SetInsertPoint(BasicBlock* bb, BasicBlock::iterator it) const { return m_builder->SetInsertPoint(bb, it); }
@@ -736,12 +878,18 @@ void C4AulCompiler::Preparse(C4ScriptHost *host, C4ScriptHost *source_host, cons
 {
 	PreparseAstVisitor v(host, source_host);
 	v.visit(script);
+
+	ConstantResolver::resolve_quiet(host, script);
 }
 
 void C4AulCompiler::Compile(C4ScriptHost *host, C4ScriptHost *source_host, const ::aul::ast::Script *script)
 {
 	fprintf(stderr, "parsing %s...\n", source_host->FilePath.getData());
-	CodegenAstVisitor v(host, source_host);
+	LLVMState ls;
+
+	ConstantResolver::resolve(host, script, &ls);
+
+	CodegenAstVisitor v(host, source_host, &ls);
 	v.visit(script);
 	v.DumpLLVM();
 	v.finalize();
@@ -756,7 +904,8 @@ void C4AulCompiler::Compile(C4AulScriptFunc *func, const ::aul::ast::Function *d
 		def->body->accept(&v);
 	}
 	{
-		CodegenAstVisitor v(func);
+		LLVMState ls;
+		CodegenAstVisitor v(func, &ls);
 		v.StandaloneCompile(func, def);
 	}
 }
@@ -833,7 +982,7 @@ llvmValue* C4AulCompiler::CodegenAstVisitor::C4CompiledValue::buildConversion(C4
 	// Yay, we need to pack the struct…
 	auto unpacked = compiler->UnpackValue(llvmVal);
 	static_assert(unpacked.size() == 2, "Next call needs all args.");
-	llvmValue* convd = compiler->checkCompile(bld.CreateCall(compiler->efunc_ValueConversionFunc, std::vector<llvmValue*>{unpacked[0], unpacked[1], ttt}));
+	llvmValue* convd = compiler->checkCompile(bld.CreateCall(compiler->llvmstate.efunc_ValueConversionFunc, std::vector<llvmValue*>{unpacked[0], unpacked[1], ttt}));
 	bld.CreateBr(cont);
 	compiler->SetInsertPoint(cont);
 	llvm::PHINode *pn = bld.CreatePHI(C4V_Type_LLVM::getVariantVarLLVMType(), 2);
@@ -970,7 +1119,7 @@ unique_ptr<C4AulCompiler::CodegenAstVisitor::C4CompiledLValue> C4AulCompiler::Co
 }
 
 
-void C4AulCompiler::CodegenAstVisitor::init()
+void C4AulCompiler::LLVMState::init()
 {
 	jit = std::make_shared<C4JIT>();
 	mod = jit->makeModule("c4aulllvm", llvmcontext);
@@ -994,7 +1143,7 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::BoolLit *n)
 
 void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::ArrayLit *n)
 {
-	llvmValue* array = m_builder->CreateCall(efunc_CreateValueArray, std::vector<llvmValue*>{ buildInt(n->values.size()) });
+	llvmValue* array = m_builder->CreateCall(llvmstate.efunc_CreateValueArray, std::vector<llvmValue*>{ buildInt(n->values.size()) });
 	int32_t idx = 0;
 	for (auto& val: n->values)
 	{
@@ -1003,13 +1152,13 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::ArrayLit *n)
 		auto params = std::vector<llvmValue*>{array, buildInt(idx)};
 		auto unpacked = UnpackValue(tmp_expr->getVariant());
 		params.insert(params.end(), unpacked.begin(), unpacked.end());
-		m_builder->CreateCall(efunc_SetArrayIndex, params);
+		m_builder->CreateCall(llvmstate.efunc_SetArrayIndex, params);
 		idx++;
 	}
 	tmp_expr = make_unique<C4CompiledValue>(C4V_Array, array, n, this);
 }
 void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::ProplistLit *n) {
-	llvmValue* pl = m_builder->CreateCall(efunc_CreateProplist);
+	llvmValue* pl = m_builder->CreateCall(llvmstate.efunc_CreateProplist);
 	for (auto& el: n->values)
 	{
 		llvmValue* key = buildString(el.first.c_str());
@@ -1021,7 +1170,7 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::ProplistLit *n) {
 		auto unpacked = UnpackValue(tmp_expr->getVariant());
 		assert(unpacked.size() == 2); // needed above
 		args.insert(args.end(), unpacked.begin(), unpacked.end());
-		m_builder->CreateCall(efunc_SetStructIndex, args);
+		m_builder->CreateCall(llvmstate.efunc_SetStructIndex, args);
 	}
 	tmp_expr = make_unique<C4CompiledValue>(C4V_PropList, pl, n, this);
 }
@@ -1268,7 +1417,7 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::RangeLoop *n)
 	// if the index is within the array and,
 	// if yes, read the nth element out of the list
 	llvmValue* index_within_range = m_builder->CreateCall(
-		efunc_CheckArrayIndex,
+		llvmstate.efunc_CheckArrayIndex,
 		llvm_args
 	);
 	
@@ -1418,7 +1567,7 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::BinOpExpr *n)
 		{
 			std::vector<llvmValue*> args;
 			args << UnpackValue(left->getVariant()) << UnpackValue(right->getVariant());
-			llvmValue* val = m_builder->CreateCall(efunc_CompareEquals, args);
+			llvmValue* val = m_builder->CreateCall(llvmstate.efunc_CompareEquals, args);
 			if (!positive)
 				val = m_builder->CreateXor(val, buildBool(true));
 			tmp_expr = make_unique<C4CompiledValue>(C4V_Bool, val, n, this);
@@ -1478,7 +1627,7 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::BinOpExpr *n)
 			tmp_expr = make_unique<C4CompiledValue>(C4V_Int, m_builder->CreateSRem(left->getInt(), right->getInt(), "tmp_mod"), n, this);
 			break;
 		case AB_Pow:
-			tmp_expr = make_unique<C4CompiledValue>(C4V_Int, m_builder->CreateCall(efunc_Pow, std::vector<llvmValue*>{left->getInt(), right->getInt()}), n, this);
+			tmp_expr = make_unique<C4CompiledValue>(C4V_Int, m_builder->CreateCall(llvmstate.efunc_Pow, std::vector<llvmValue*>{left->getInt(), right->getInt()}), n, this);
 			break;
 		case AB_LeftShift:
 			tmp_expr = make_unique<C4CompiledValue>(C4V_Int, m_builder->CreateShl(left->getInt(), right->getInt(), "tmp_shl"), n, this);
@@ -1614,7 +1763,7 @@ void C4AulCompiler::CodegenAstVisitor::C4CompiledLStruct::store(unique_ptr<C4Com
 	}
 	for (auto upv: compiler->UnpackValue(rval->getVariant()))
 		args.push_back(upv);
-	compiler->m_builder->CreateCall(use_array_access_fastpath ? compiler->efunc_SetArrayIndex : compiler->efunc_SetStructIndex, args);
+	compiler->m_builder->CreateCall(use_array_access_fastpath ? compiler->llvmstate.efunc_SetArrayIndex : compiler->llvmstate.efunc_SetStructIndex, args);
 }
 
 void C4AulCompiler::CodegenAstVisitor::C4CompiledLStruct::MakeGettable(C4V_Type) const
@@ -1641,7 +1790,7 @@ void C4AulCompiler::CodegenAstVisitor::C4CompiledLStruct::MakeGettable(C4V_Type)
 	static_assert(C4V_Type_LLVM::variant_member_count == 2, "Next call needs type array to be parameter_array[0].");
 	llvmValue* rettp = compiler->m_builder->CreateGEP(compiler->parameter_array[0], std::vector<llvmValue*>{compiler->buildInt(0), compiler->buildInt(1)});
 	args.push_back(rettp);
-	llvmValue* retd = compiler->m_builder->CreateCall(use_array_access_fastpath ? compiler->efunc_GetArrayIndex : compiler->efunc_GetStructIndex, args);
+	llvmValue* retd = compiler->m_builder->CreateCall(use_array_access_fastpath ? compiler->llvmstate.efunc_GetArrayIndex : compiler->llvmstate.efunc_GetStructIndex, args);
 	llvmValue* rett = compiler->m_builder->CreateLoad(rettp);
 	llvmVal = compiler->checkCompile(compiler->PackVariant({{rett, retd}}, n)->getVariant());
 }
@@ -1666,12 +1815,12 @@ void C4AulCompiler::CodegenAstVisitor::C4CompiledLSlice::store(unique_ptr<C4Comp
 	std::vector<llvmValue*> args { strk->getArray(), idx1, idx2 };
 	for (auto upv: compiler->UnpackValue(rval->getVariant()))
 		args.push_back(upv);
-	compiler->m_builder->CreateCall(compiler->efunc_SetArraySlice, args);
+	compiler->m_builder->CreateCall(compiler->llvmstate.efunc_SetArraySlice, args);
 }
 
 void C4AulCompiler::CodegenAstVisitor::C4CompiledLSlice::MakeGettable(C4V_Type) const {
 	llvmVal = compiler->checkCompile(compiler->m_builder->CreateCall(
-		compiler->efunc_GetArraySlice,
+		compiler->llvmstate.efunc_GetArraySlice,
 		std::vector<llvmValue*>{strk->getArray(), idx1, idx2}
 	));
 }
@@ -1681,13 +1830,13 @@ void C4AulCompiler::CodegenAstVisitor::C4CompiledLGlobalN::store(unique_ptr<C4Co
 	std::vector<llvmValue*> args { compiler->buildInt(num) };
 	for (auto upv: compiler->UnpackValue(rval->getVariant()))
 		args.push_back(upv);
-	compiler->m_builder->CreateCall(compiler->efunc_SetGlobalN, args);
+	compiler->m_builder->CreateCall(compiler->llvmstate.efunc_SetGlobalN, args);
 }
 
 void C4AulCompiler::CodegenAstVisitor::C4CompiledLGlobalN::MakeGettable(C4V_Type) const {
 	llvmValue* rettp = compiler->m_builder->CreateGEP(compiler->parameter_array[0], std::vector<llvmValue*>{compiler->buildInt(0), compiler->buildInt(1)});
 	llvmValue* retd = compiler->checkCompile(compiler->m_builder->CreateCall(
-		compiler->efunc_GetGlobalN,
+		compiler->llvmstate.efunc_GetGlobalN,
 		std::vector<llvmValue*>{compiler->buildInt(num), rettp}
 	));
 	llvmValue* rett = compiler->m_builder->CreateLoad(rettp);
@@ -1697,25 +1846,28 @@ void C4AulCompiler::CodegenAstVisitor::C4CompiledLGlobalN::MakeGettable(C4V_Type
 
 void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::VarDecl *n)
 {
-	for (const auto &decl: n->decls)
+	if (n->scope == ::aul::ast::VarDecl::Scope::Func)
 	{
-		// Essentially, this is treated like an assignment since the space has been allocated long before.
-		if (!decl.init)
-			continue;
+		for (const auto &decl: n->decls)
+		{
+			// Essentially, this is treated like an assignment since the space has been allocated long before.
+			if (!decl.init)
+				continue;
 
-		auto lhs = AulVariable::get(decl.name, n, this);
-		decl.init->accept(this);
-		auto rhs = move(tmp_expr);
+			auto lhs = AulVariable::get(decl.name, n, this);
+			decl.init->accept(this);
+			auto rhs = move(tmp_expr);
 
-		assert(lhs);
-		auto assignable = dynamic_cast<const C4CompiledLValue*>(&*lhs);
-		if (!assignable)
-			throw Error("RValue on the left hand side of =", n);
-		assignable->store(rhs);
-		tmp_expr = move(lhs);
-		/* Code dup with AssignmentExpr */
-	}
-	tmp_expr.reset();
+			assert(lhs);
+			auto assignable = dynamic_cast<const C4CompiledLValue*>(&*lhs);
+			if (!assignable)
+				throw Error("RValue on the left hand side of =", n);
+			assignable->store(rhs);
+			tmp_expr = move(lhs);
+			/* Code dup with AssignmentExpr */
+		}
+		tmp_expr.reset();
+	} else { /* is handled by the ConstantResolver */ }
 }
 void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::FunctionDecl *n)
 {
@@ -1736,14 +1888,6 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::FunctionDecl *n)
 	if (!Fn)
 		throw Error(n, "internal error: unable to find function definition for %s", n->name.c_str());
 
-	m_builder = make_unique<IRBuilder<>>(llvmcontext);
-	llvmFunction* lf = Fn->llvmFunc;
-	assert(lf);
-	if(!lf)
-		throw Error(n, "internal error: unable to find LLVM function definition for %s", n->name.c_str());
-	BasicBlock* bb = BasicBlock::Create(llvmcontext, "entrybb", lf);
-	m_builder->SetInsertPoint(bb);
-
 	// If this isn't a global function, but there is a global one with
 	// the same name, and this function isn't overloading a different
 	// one, add the global function to the overload chain
@@ -1753,6 +1897,40 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::FunctionDecl *n)
 		if (global_parent)
 			Fn->SetOverloaded(global_parent);
 	}
+
+	EmitFunctionCode(n);
+}
+
+void C4AulCompiler::CodegenAstVisitor::EmitFunctionCode(const ::aul::ast::Function *f, const ::aul::ast::Node *n)
+{
+	assert(Fn);
+	m_builder = make_unique<IRBuilder<>>(llvmcontext);
+
+	// also add a delegate with "simple" parameter types for easy external calls
+	FunctionType *dft = FunctionType::get(llvmType::getVoidTy(llvmcontext), std::vector<llvmType*>{
+		llvm::PointerType::getUnqual(C4V_Type_LLVM::getVariantTypeLLVMType()),
+		llvm::PointerType::getUnqual(C4V_Type_LLVM::getVariantVarLLVMType())
+	},false);
+	auto llvmDelegate = llvmFunction::Create(dft, llvmFunction::ExternalLinkage, std::string(Fn->GetName()) + ".delegate", llvmstate.mod.get());
+	assert(llvmDelegate);
+	Fn->llvmDlgName = llvmDelegate->getName();
+	assert(Fn->llvmDlgName != "");
+	SetInsertPoint(CreateBlock("parconvhere", llvmDelegate));
+	auto argv = make_value_vector(llvmDelegate->args());
+	std::vector<llvmValue*> delegate_args{LoadPackVariant(argv, std::vector<llvmValue*>{buildInt(0)})->getPropList()};
+	for (int i = 0; i < Fn->GetParCount(); ++i) {
+		delegate_args.push_back(LoadPackVariant(argv, std::vector<llvmValue*>{buildInt(i+1)})->getValue(Fn->GetParType()[i]));
+	}
+	auto dlgret = make_unique<C4CompiledValue>(Fn->GetRetType(), m_builder->CreateCall(Fn->llvmFunc, delegate_args), nullptr, this);
+	StoreUnpacked(UnpackValue(dlgret->getVariant()), argv, std::vector<llvmValue*>{buildInt(0)});
+	m_builder->CreateRet(nullptr);
+
+	llvmFunction* lf = Fn->llvmFunc;
+	assert(lf);
+	if(!lf)
+		throw Error(n, "internal error: unable to find LLVM function declaration for function");
+	SetInsertPoint(CreateBlock("entrybb", lf));
+
 	assert(parameter_array.size() == 2);
 	auto create_pa = [&](size_t idx, llvmType* t, const char* tw) {
 		parameter_array[idx] = m_builder->CreateAlloca(llvm::ArrayType::get(t, C4AUL_MAX_Par+1), nullptr, tw);
@@ -1785,13 +1963,13 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::FunctionDecl *n)
 	assert(argit == lf->arg_end());
 	Fn->var_type_hints.clear();
 
-	n->body->accept(this);
+	f->body->accept(this);
 
 	// TODO: nil return with correct return type
 	m_builder->CreateRet(C4V_Type_LLVM::defaultValue(Fn->GetRetType()));
 
 	//f->dump();
-	llvm::verifyFunction(*lf); // the optimizer should also verify it, but…
+	llvm::verifyFunction(*lf); // the optimizer should also verify it, but… fail early, or so.
 
 	Fn = nullptr;
 	fn_var_scope.clear();
@@ -1898,7 +2076,7 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::CallExpr *n)
 			unpackeds.push_back(UnpackValue(arg_val->getVariant()));
 		for (size_t i = 0; i < std::min<size_t>(unpackeds.size(), callee->GetParCount()); ++i)
 			StoreUnpacked(unpackeds[i], parameter_array, std::vector<llvmValue*>{buildInt(0), buildInt(i+1)});
-		checkCompile(m_builder->CreateCall(efunc_CallByPFunc, llvm_args));
+		checkCompile(m_builder->CreateCall(llvmstate.efunc_CallByPFunc, llvm_args));
 		// I'm assuming that Fn->GetRetType() is C4V_Any. If this wasn't the case, we might want to do something more efficient (similarly above).
 		tmp_expr = LoadPackVariant(parameter_array, std::vector<llvmValue*>{buildInt(0), buildInt(1)}, n);
 	}
@@ -1917,7 +2095,7 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::CallExpr *n)
 			unpackeds.push_back(UnpackValue(arg_val->getVariant()));
 		for (size_t i = 0; i < std::min<size_t>(unpackeds.size(), C4AUL_MAX_Par + 1); ++i)
 			StoreUnpacked(unpackeds[i], parameter_array, std::vector<llvmValue*>{buildInt(0), buildInt(i)});
-		checkCompile(m_builder->CreateCall(efunc_CallBySFunc, llvm_args));
+		checkCompile(m_builder->CreateCall(llvmstate.efunc_CallBySFunc, llvm_args));
 		tmp_expr = LoadPackVariant(parameter_array, std::vector<llvmValue*>{buildInt(0), buildInt(1)}, n);
 		// we modified element 0 of the parameter arrays, restore that:
 		StoreUnpacked(UnpackValue(context_this->getVariant()), parameter_array, std::vector<llvmValue*>{buildInt(0), buildInt(0)});
@@ -2114,7 +2292,7 @@ extern "C" {
 	}
 }
 
-void C4AulCompiler::CodegenAstVisitor::ExternDecls() {
+void C4AulCompiler::LLVMState::ExternDecls() {
 	efunc_CallByPFunc = RegisterEngineFunction(LLVMAulPFuncCall, "Engine.LLVMAulPFuncCall", mod, jit); // Calling engine functions
 	efunc_CallBySFunc = RegisterEngineFunction(LLVMAulSFuncCall, "Engine.LLVMAulSFuncCall", mod, jit); // Calling any function, by name
 	efunc_ValueConversionFunc = RegisterEngineFunction(InternalValueConversionFunc, "Engine.LLVMVarTypeConv", mod, jit); // Converting between runtime types
@@ -2137,7 +2315,7 @@ void C4AulCompiler::CodegenAstVisitor::ExternDecls() {
 	efunc_SetGlobalN = RegisterEngineFunction(LLVMAulSetGlobalN, "Engine.SetGlobalN", mod, jit);
 }
 
-void C4AulCompiler::CodegenAstVisitor::FnDecls() {
+void C4AulCompiler::LLVMState::FnDecls() {
 	ExternDecls();
 
 	// Declarations for script functions
@@ -2150,7 +2328,10 @@ void C4AulCompiler::CodegenAstVisitor::FnDecls() {
 			for(int i = 0; i < sf->GetParCount(); ++i)
 				parTypes.push_back(C4V_Type_LLVM::get(sf->GetParType()[i]));
 			FunctionType *ft = FunctionType::get(C4V_Type_LLVM::get(sf->GetRetType()), parTypes, false);
-			sf->llvmFunc = checkCompile(llvmFunction::Create(ft, llvmFunction::PrivateLinkage, func->GetName(), mod.get()));
+			sf->llvmFunc = llvmFunction::Create(ft, llvmFunction::PrivateLinkage, func->GetName(), mod.get());
+			assert(sf->llvmFunc);
+			if(!sf->llvmFunc)
+				throw("Internal error: could not create llvm function");
 			llvmFunction::arg_iterator argit = sf->llvmFunc->arg_begin();
 			argit->setName("Engine.this");
 			argit++;
@@ -2159,34 +2340,13 @@ void C4AulCompiler::CodegenAstVisitor::FnDecls() {
 			}
 			sf->llvmImpl = LLVMAulDummyFunc; // Hopefully overwritten…
 		}
-
-		{
-			//also add a delegate with simple parameter types for easy external calls
-			FunctionType *dft = FunctionType::get(llvmType::getVoidTy(llvmcontext), std::vector<llvmType*>{
-				llvm::PointerType::getUnqual(C4V_Type_LLVM::getVariantTypeLLVMType()),
-				llvm::PointerType::getUnqual(C4V_Type_LLVM::getVariantVarLLVMType())
-			},false);
-			auto llvmDelegate = checkCompile(llvmFunction::Create(dft, llvmFunction::ExternalLinkage, std::string(func->GetName()) + ".delegate", mod.get()));
-			m_builder = make_unique<IRBuilder<>>(llvmcontext);
-			SetInsertPoint(CreateBlock(llvmDelegate));
-			auto argv = make_value_vector(llvmDelegate->args());
-			std::vector<llvmValue*> delegate_args{LoadPackVariant(argv, std::vector<llvmValue*>{buildInt(0)})->getPropList()};
-			for (int i = 0; i < func->GetParCount(); ++i) {
-				delegate_args.push_back(LoadPackVariant(argv, std::vector<llvmValue*>{buildInt(i+1)})->getValue(sf->GetParType()[i]));
-			}
-			auto dlgret = make_unique<C4CompiledValue>(sf->GetRetType(), m_builder->CreateCall(sf->llvmFunc, delegate_args), nullptr, this);
-			StoreUnpacked(UnpackValue(dlgret->getVariant()), argv, std::vector<llvmValue*>{buildInt(0)});
-			m_builder->CreateRet(nullptr);
-			sf->llvmDlgName = llvmDelegate->getName();
-			assert(sf->llvmDlgName != "");
-		}
 	}
 }
 
 void C4AulCompiler::CodegenAstVisitor::finalize()
 {
-	assert(jit);
-	jit->addModule(move(mod));
+	assert(llvmstate.jit);
+	llvmstate.jit->addModule(move(llvmstate.mod));
 	for(const auto& func: ::ScriptEngine.FuncLookUp) {
 		C4AulScriptFunc *sf = func->SFunc();
 		if(!sf)
@@ -2197,8 +2357,8 @@ void C4AulCompiler::CodegenAstVisitor::finalize()
 	
 void C4AulCompiler::CodegenAstVisitor::FinalizeFunc(C4AulScriptFunc *sf, const std::string& name) {
 	sf->llvmFunc = nullptr; // now that we moved the module, who knows what will happen to the pointer
-	sf->jit = jit;
-	auto symbol = jit->findSymbol(name);
+	sf->jit = llvmstate.jit;
+	auto symbol = llvmstate.jit->findSymbol(name);
 	assert(symbol);
 	sf->llvmImpl = reinterpret_cast<decltype(sf->llvmImpl)>(symbol.getAddress());
 	assert(sf->llvmImpl);
@@ -2215,15 +2375,418 @@ void C4AulCompiler::CodegenAstVisitor::StandaloneCompile(C4AulScriptFunc *func, 
 	std::string name = func->GetName();
 	m_builder = make_unique<IRBuilder<>>(llvmcontext);
 	FunctionType *ft = FunctionType::get(llvmType::getVoidTy(llvmcontext), std::vector<llvmType*>{},false);
-	auto lf = checkCompile(llvmFunction::Create(ft, llvmFunction::ExternalLinkage, name, mod.get()));
+	auto lf = checkCompile(llvmFunction::Create(ft, llvmFunction::ExternalLinkage, name, llvmstate.mod.get()));
 	BasicBlock* bb = BasicBlock::Create(llvmcontext, "entrybb", lf);
 	SetInsertPoint(bb);
 	def->body->accept(this);
 	DumpLLVM();
-	assert(jit);
-	jit->addModule(move(mod));
+	assert(llvmstate.jit);
+	llvmstate.jit->addModule(move(llvmstate.mod));
 	FinalizeFunc(func, func->GetName());
 }
 
 static_assert(C4AUL_MAX_Par <= std::numeric_limits<int>::max(), "Use of int in loops iterating over parameters."); // I mean… yeah. This is pretty much given.
 llvm::LLVMContext llvmcontext;
+
+// Evaluates constant AST subtrees and returns the final C4Value.
+// Throws ExpressionNotConstant if evaluation fails.
+
+#define ENSURE_COND(cond, failmsg) do { if (!(cond)) throw Error(host, host, n, nullptr, failmsg); } while (0)
+
+C4Value C4AulCompiler::ConstexprEvaluator::eval(C4ScriptHost *host, const ::aul::ast::Expr *e, EvalFlags flags)
+{
+	ConstexprEvaluator ce(host, nullptr);
+	ce.ignore_unset_values = (flags & IgnoreUnset) == IgnoreUnset;
+	try
+	{
+		e->accept(&ce);
+		return ce.v;
+	}
+	catch (C4AulParseError &e)
+	{
+		if ((flags & SuppressErrors) == 0)
+			host->Engine->ErrorHandler->OnError(e.what());
+		return C4VNull;
+	}
+}
+
+C4Value C4AulCompiler::ConstexprEvaluator::eval_static(C4ScriptHost *host, C4PropListStatic *parent, const std::string &parent_key, const ::aul::ast::Expr *e, EvalFlags flags, LLVMState *ls)
+{
+	ConstexprEvaluator ce(host, ls);
+	ce.proplist_magic = ConstexprEvaluator::ProplistMagic{ true, parent, parent_key };
+	ce.ignore_unset_values = (flags & IgnoreUnset) == IgnoreUnset;
+	try
+	{
+		e->accept(&ce);
+		return ce.v;
+	}
+	catch (C4AulParseError &e)
+	{
+		if ((flags & SuppressErrors) == 0)
+			host->Engine->ErrorHandler->OnError(e.what());
+		return C4VNull;
+	}
+}
+
+void C4AulCompiler::ConstexprEvaluator::visit(const ::aul::ast::StringLit *n) { v = C4VString(n->value.c_str()); }
+
+void C4AulCompiler::ConstexprEvaluator::visit(const ::aul::ast::IntLit *n) { v = C4VInt(n->value); }
+
+void C4AulCompiler::ConstexprEvaluator::visit(const ::aul::ast::BoolLit *n) { v = C4VBool(n->value); }
+
+void C4AulCompiler::ConstexprEvaluator::visit(const ::aul::ast::ArrayLit *n)
+{
+	auto a = std::make_unique<C4ValueArray>(n->values.size());
+	for (size_t i = 0; i < n->values.size(); ++i)
+	{
+		n->values[i]->accept(this);
+		a->SetItem(i, v);
+	}
+	v = C4VArray(a.release());
+}
+
+void C4AulCompiler::ConstexprEvaluator::visit(const ::aul::ast::ProplistLit *n)
+{
+	std::unique_ptr<C4PropList> new_proplist;
+	C4PropList *p = nullptr;
+
+	bool first_pass = true;
+
+	if (proplist_magic.active)
+	{
+		// Check if there's already a proplist available
+		C4String *key = ::Strings.RegString(proplist_magic.key.c_str());
+		C4Value old;
+		if (proplist_magic.parent)
+		{
+			proplist_magic.parent->GetPropertyByS(key, &old);
+		}
+		else
+		{
+			// If proplist_magic.parent is nullptr, we're handling a global constant.
+			host->Engine->GetGlobalConstant(key->GetCStr(), &old);
+		}
+		if (old.getPropList())
+		{
+			p = old.getPropList();
+			first_pass = false;
+		}
+		else
+		{
+			p = C4PropList::NewStatic(nullptr, proplist_magic.parent, key);
+			new_proplist.reset(p);
+		}
+	}
+	else
+	{
+		p = C4PropList::New();
+		new_proplist.reset(p);
+	}
+
+	// Since the values may be functions that refer to other values in the
+	// proplist, pre-populate the new proplist with dummy values until the
+	// real ones are set
+	if (first_pass)
+	{
+		for (const auto &kv : n->values)
+		{
+			p->SetPropertyByS(::Strings.RegString(kv.first.c_str()), C4VNull);
+		}
+	}
+
+	auto saved_magic = std::move(proplist_magic);
+	for (const auto &kv : n->values)
+	{
+		proplist_magic = ProplistMagic { saved_magic.active, p->IsStatic(), kv.first };
+		kv.second->accept(this);
+		p->SetPropertyByS(::Strings.RegString(kv.first.c_str()), v);
+	}
+	proplist_magic = std::move(saved_magic);
+	v = C4VPropList(p);
+	new_proplist.release();
+}
+
+void C4AulCompiler::ConstexprEvaluator::visit(const ::aul::ast::NilLit *) { v = C4VNull; }
+
+void C4AulCompiler::ConstexprEvaluator::visit(const ::aul::ast::ThisLit *n) { nonconst(n); }
+
+void C4AulCompiler::ConstexprEvaluator::visit(const ::aul::ast::VarExpr *n)
+{
+	const char *cname = n->identifier.c_str();
+	C4String *interned = ::Strings.FindString(cname);
+	if (interned && host->GetPropList()->GetPropertyByS(interned, &v))
+		return;
+	if (host->Engine->GetGlobalConstant(cname, &v))
+		return;
+
+	if (ignore_unset_values)
+	{
+		v = C4VNull;
+		return;
+	}
+
+	nonconst(n);
+}
+
+void C4AulCompiler::ConstexprEvaluator::visit(const ::aul::ast::UnOpExpr *n)
+{
+	n->operand->accept(this);
+	assert(n->op > 0);
+	const auto &op = C4ScriptOpMap[n->op];
+	if (op.Changer)
+		nonconst(n);
+	AssertValueType(v, op.Type1, op.Identifier, n);
+	switch (op.Code)
+	{
+	case AB_BitNot:
+		v.SetInt(~v._getInt());
+		break;
+	case AB_Not:
+		v.SetBool(!v.getBool());
+		break;
+	case AB_Neg:
+		v.SetInt(-v._getInt());
+		break;
+	default:
+		assert(!"ConstexprEvaluator: Unexpected unary operator");
+		throw Error(host, host, n, nullptr, "internal error: unary operator not found in operator table");
+	}
+}
+
+void C4AulCompiler::ConstexprEvaluator::visit(const ::aul::ast::BinOpExpr *n)
+{
+	assert(n->op > 0);
+	const auto &op = C4ScriptOpMap[n->op];
+	if (op.Changer)
+		nonconst(n);
+
+	n->lhs->accept(this);
+	C4Value lhs = v;
+	// Evaluate the short-circuiting operators here
+	if ((op.Code == AB_JUMPAND && !lhs) || (op.Code == AB_JUMPOR && lhs) || (op.Code == AB_JUMPNNIL && lhs.GetType() != C4V_Nil))
+	{
+		v = lhs;
+		return;
+	}
+	n->rhs->accept(this);
+	C4Value &rhs = v;
+
+	AssertValueType(lhs, op.Type1, op.Identifier, n);
+	AssertValueType(rhs, op.Type2, op.Identifier, n);
+
+	switch (op.Code)
+	{
+	case AB_Pow:
+		v.SetInt(Pow(lhs._getInt(), rhs._getInt()));
+		break;
+	case AB_Div:
+		ENSURE_COND(rhs._getInt() != 0, "division by zero");
+		ENSURE_COND(lhs._getInt() != INT32_MIN || rhs._getInt() != -1, "division overflow");
+		v.SetInt(lhs._getInt() / rhs._getInt());
+		break;
+	case AB_Mul:
+		v.SetInt(lhs._getInt() * rhs._getInt());
+		break;
+	case AB_Mod:
+		ENSURE_COND(rhs._getInt() != 0, "division by zero");
+		ENSURE_COND(lhs._getInt() != INT32_MIN || rhs._getInt() != -1, "division overflow");
+		v.SetInt(lhs._getInt() / rhs._getInt());
+		break;
+#define INT_BINOP(code, op) case code: v.SetInt(lhs._getInt() op rhs._getInt()); break
+		INT_BINOP(AB_Sum, +);
+		INT_BINOP(AB_Sub, -);
+		INT_BINOP(AB_LeftShift, << );
+		INT_BINOP(AB_RightShift, >> );
+		INT_BINOP(AB_BitAnd, &);
+		INT_BINOP(AB_BitXOr, ^);
+		INT_BINOP(AB_BitOr, | );
+#undef INT_BINOP
+#define BOOL_BINOP(code, op) case code: v.SetBool(lhs._getInt() op rhs._getInt()); break
+		BOOL_BINOP(AB_LessThan, <);
+		BOOL_BINOP(AB_LessThanEqual, <= );
+		BOOL_BINOP(AB_GreaterThan, >);
+		BOOL_BINOP(AB_GreaterThanEqual, >= );
+#undef BOOL_BINOP
+	case AB_Equal:
+		v.SetBool(lhs.IsIdenticalTo(rhs));
+		break;
+	case AB_NotEqual:
+		v.SetBool(!lhs.IsIdenticalTo(rhs));
+		break;
+	case AB_JUMPAND:
+	case AB_JUMPOR:
+	case AB_JUMPNNIL:
+		// If we hit this, then the short-circuit above failed
+		v = rhs;
+		break;
+	default:
+		assert(!"ConstexprEvaluator: Unexpected binary operator");
+		throw Error(host, host, n, nullptr, "internal error: binary operator not found in operator table");
+		break;
+	}
+}
+
+void C4AulCompiler::ConstexprEvaluator::visit(const ::aul::ast::AssignmentExpr *n)
+{
+	nonconst(n);
+}
+
+void C4AulCompiler::ConstexprEvaluator::visit(const ::aul::ast::SubscriptExpr *n)
+{
+	n->object->accept(this);
+	C4Value obj = v;
+	n->index->accept(this);
+	C4Value &index = v;
+
+	if (obj.CheckConversion(C4V_Array))
+	{
+		ENSURE_COND(index.CheckConversion(C4V_Int), FormatString("array access: index of type %s, but expected int", index.GetTypeName()).getData());
+		v = obj.getArray()->GetItem(index.getInt());
+	}
+	else if (obj.CheckConversion(C4V_PropList))
+	{
+		ENSURE_COND(index.CheckConversion(C4V_String), FormatString("proplist access: index of type %s, but expected string", index.GetTypeName()).getData());
+		if (!obj.getPropList()->GetPropertyByS(index.getStr(), &v))
+			v.Set0();
+	}
+	else
+	{
+		ENSURE_COND(false, FormatString("can't access %s as array or proplist", obj.GetTypeName()).getData());
+	}
+}
+
+void C4AulCompiler::ConstexprEvaluator::visit(const ::aul::ast::SliceExpr *n)
+{
+	n->object->accept(this);
+	C4Value obj = v;
+	n->start->accept(this);
+	C4Value start = v;
+	n->end->accept(this);
+	C4Value &end = v;
+
+	ENSURE_COND(obj.CheckConversion(C4V_Array), FormatString("array slice: can't access %s as an array", obj.GetTypeName()).getData());
+	ENSURE_COND(start.CheckConversion(C4V_Int), FormatString("array slice: start index of type %s, int expected", start.GetTypeName()).getData());
+	ENSURE_COND(end.CheckConversion(C4V_Int), FormatString("array slice: end index of type %s, int expected", end.GetTypeName()).getData());
+
+	v.SetArray(obj.getArray()->GetSlice(start.getInt(), end.getInt()));
+}
+
+void C4AulCompiler::ConstexprEvaluator::visit(const ::aul::ast::CallExpr *n)
+{
+	// TODO: allow side-effect-free calls here
+	nonconst(n);
+}
+
+void C4AulCompiler::ConstexprEvaluator::visit(const ::aul::ast::FunctionExpr *n)
+{
+	// Function expressions can only occur inside static proplists.
+	ENSURE_COND(proplist_magic.active, "internal error: function expression outside of static proplist");
+
+	C4AulScriptFunc *sfunc = nullptr;
+	bool first_pass = true;
+
+	if (auto func = proplist_magic.parent->GetFunc(proplist_magic.key.c_str()))
+	{
+		sfunc = func->SFunc();
+		first_pass = false;
+	}
+	else
+	{
+		sfunc = new C4AulScriptFunc(proplist_magic.parent, host, proplist_magic.key.c_str(), n->loc);
+	}
+
+	ENSURE_COND(sfunc != nullptr, "internal error: function expression target resolved to non-function value");
+
+	if (first_pass)
+	{
+		for (const auto &param : n->params)
+		{
+			sfunc->AddPar(param.name.c_str());
+		}
+		if (n->has_unnamed_params)
+			sfunc->ParCount = C4AUL_MAX_Par;
+
+		PreparseAstVisitor preparser(host, host, sfunc);
+		preparser.visit(n->body.get());
+	}
+	else
+	{
+		CodegenAstVisitor cgv(sfunc, llvmstate);
+		cgv.EmitFunctionCode(n);
+	}
+
+	v.SetFunction(sfunc);
+}
+
+void C4AulCompiler::ConstantResolver::visit(const::aul::ast::Script *n)
+{
+	for (const auto &d : n->declarations)
+	{
+		try
+		{
+			d->accept(this);
+		}
+		catch (C4AulParseError &e)
+		{
+			host->Engine->GetErrorHandler()->OnError(e.what());
+		}
+	}
+}
+
+void C4AulCompiler::ConstantResolver::visit(const ::aul::ast::VarDecl *n)
+{
+	const int quiet_flag = quiet ? ConstexprEvaluator::SuppressErrors : 0;
+	for (const auto &dec : n->decls)
+	{
+		const char *cname = dec.name.c_str();
+		C4RefCntPointer<C4String> name = ::Strings.RegString(cname);
+		switch (n->scope)
+		{
+		case ::aul::ast::VarDecl::Scope::Func:
+			// Function-scoped declarations and their initializers are handled by CodegenAstVisitor.
+			break;
+		case ::aul::ast::VarDecl::Scope::Object:
+			if (!host->GetPropList()->HasProperty(name))
+				host->GetPropList()->SetPropertyByS(name, C4VNull);
+			if (dec.init)
+			{
+				assert(host->GetPropList()->IsStatic());
+				try
+				{
+					C4Value v = ConstexprEvaluator::eval_static(host, host->GetPropList()->IsStatic(), dec.name, dec.init.get(), ConstexprEvaluator::IgnoreUnset | quiet_flag, llvmstate);
+					host->GetPropList()->SetPropertyByS(name, v);
+				}
+				catch (C4AulParseError &e)
+				{
+					if (!quiet)
+						host->Engine->ErrorHandler->OnError(e.what());
+				}
+			}
+			break;
+		case ::aul::ast::VarDecl::Scope::Global:
+			if ((dec.init != nullptr) != n->constant)
+			{
+				if (!quiet)
+					host->Engine->ErrorHandler->OnError(Error(host, host, n->loc, nullptr, "global variable must be either constant or uninitialized: %s", cname).what());
+			}
+			else if (dec.init)
+			{
+				try
+				{
+					assert(n->constant && "CodegenAstVisitor: initialized global variable isn't const");
+					C4Value *v = host->Engine->GlobalConsts.GetItem(cname);
+					assert(v && "CodegenAstVisitor: global constant not found in variable table");
+					if (!v)
+						throw Error(host, host, n->loc, nullptr, "internal error: global constant not found in variable table: %s", cname);
+					*v = ConstexprEvaluator::eval_static(host, nullptr, dec.name, dec.init.get(), ConstexprEvaluator::IgnoreUnset | quiet_flag, llvmstate);
+				}
+				catch (C4AulParseError &e)
+				{
+					if (!quiet)
+						host->Engine->ErrorHandler->OnError(e.what());
+				}
+			}
+			break;
+		}
+	}
+}

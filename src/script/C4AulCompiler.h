@@ -32,6 +32,7 @@ private:
 	class ConstantResolver;
 	class PreparseAstVisitor;
 	class CodegenAstVisitor;
+	class LLVMState;
 };
 
 #endif
