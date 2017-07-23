@@ -890,7 +890,13 @@ void C4AulCompiler::Compile(C4ScriptHost *host, C4ScriptHost *source_host, const
 	ConstantResolver::resolve(host, script, &ls);
 
 	CodegenAstVisitor v(host, source_host, &ls);
-	v.visit(script);
+	try {
+		v.visit(script);
+	} catch(const C4AulError& e) {
+		v.DumpLLVM();
+		v.finalize();
+		throw;
+	}
 	v.DumpLLVM();
 	v.finalize();
 }
@@ -958,6 +964,7 @@ extern "C" {
 }
 
 llvmValue* C4AulCompiler::CodegenAstVisitor::C4CompiledValue::buildConversion(C4V_Type t_to) const {
+	assert(valType == C4V_Any);
 	auto& bld = *compiler->m_builder;
 	assert(t_to != C4V_Nil); // That just doesn't make any sense.
 	assert(t_to <= C4V_Last); // This function doesn't make sense for C4V_Any and friends either. TODO: What about those enumerates?
@@ -1016,8 +1023,7 @@ llvmValue *C4AulCompiler::CodegenAstVisitor::C4CompiledValue::getBool() const
 		case C4V_Nil: return compiler->buildBool(false);
 		case C4V_Bool: return llvmVal;
 		case C4V_Int: return zero_comparison(llvmVal);
-		case C4V_Any: return zero_comparison(buildConversion(C4V_Bool));
-		default: throw compiler->Error(n, "Error: value cannot be converted to Bool!");
+		default: return zero_comparison(C4CompiledValue(C4V_Any, getVariant(), n, compiler).buildConversion(C4V_Bool)); // TODO this is playing it way too safe and inefficient. I want unit tests and then an llvm implementation for this and similar stuff.
 	}
 }
 
@@ -1141,6 +1147,15 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::BoolLit *n)
 	tmp_expr = make_unique<C4CompiledValue>(C4V_Bool, buildBool(n->value), n, this);
 }
 
+void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::NilLit *n) {
+	tmp_expr = make_unique<C4CompiledValue>(C4V_Nil, buildBool(false) /* maybe, or maybe not. */, n, this);
+}
+
+void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::ThisLit *n) {
+	assert(context_this); // TODO: Might actually want to throw a proper error
+	tmp_expr = make_unique<C4CompiledValue>(C4V_PropList, context_this->getPropList(), n, this); // TODO… Uh… a copy… this looks like a design flaw
+}
+
 void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::ArrayLit *n)
 {
 	llvmValue* array = m_builder->CreateCall(llvmstate.efunc_CreateValueArray, std::vector<llvmValue*>{ buildInt(n->values.size()) });
@@ -1173,15 +1188,6 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::ProplistLit *n) {
 		m_builder->CreateCall(llvmstate.efunc_SetStructIndex, args);
 	}
 	tmp_expr = make_unique<C4CompiledValue>(C4V_PropList, pl, n, this);
-}
-
-void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::NilLit *n) {
-	tmp_expr = make_unique<C4CompiledValue>(C4V_Nil, buildBool(false) /* maybe, or maybe not. */, n, this);
-}
-
-void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::ThisLit *n) {
-	assert(context_this); // TODO: Might actually want to throw a proper error
-	tmp_expr = make_unique<C4CompiledValue>(C4V_PropList, context_this->getPropList(), n, this); // TODO… Uh… a copy… this looks like a design flaw
 }
 
 void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::If *n)
@@ -1467,7 +1473,8 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::Continue *n)
 
 void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::VarExpr *n)
 {
-	C4String *interned = ::Strings.FindString(n->identifier.c_str());
+	auto cname = n->identifier.c_str();
+	C4String *interned = ::Strings.FindString(cname);
 	C4Value dummy;
 	int32_t global_n = -1;
 
@@ -1481,11 +1488,32 @@ void C4AulCompiler::CodegenAstVisitor::visit(const ::aul::ast::VarExpr *n)
 		auto object = make_unique<C4CompiledValue>(C4V_PropList, context_this->getPropList(), n, this); 
 		auto index = make_unique<C4CompiledValue>(C4V_String, buildString(interned), n, this);
 		tmp_expr = std::make_unique<C4CompiledLStruct>(move(object), move(index), n, this);
-	} else if ((global_n = ScriptEngine.GlobalNamedNames.GetItemNr(n->identifier.c_str())) != -1){
+	} else if ((global_n = ScriptEngine.GlobalNamedNames.GetItemNr(cname)) != -1){
 		tmp_expr = std::make_unique<C4CompiledLGlobalN>(global_n, n, this);
+	} else if (ScriptEngine.GlobalConstNames.GetItemNr(cname) != -1) {
+        C4Value v;
+        if (!ScriptEngine.GetGlobalConstant(cname, &v))
+			throw Error(n, "internal error: global constant not retrievable");
+		auto f = [&v,&n,this](const void* vp) {
+			tmp_expr = make_unique<C4CompiledValue>(v.GetType(), 
+				llvm::ConstantInt::get(llvmcontext, APInt(C4V_Type_LLVM::getVariantVarSize(), reinterpret_cast<intptr_t>(vp), false)),
+				n, this);
+		};
+        switch (v.GetType()) {
+        case C4V_Nil:  visit(make_unique<::aul::ast::NilLit>().get()); break;
+        case C4V_Int:  visit(make_unique<::aul::ast::IntLit>(v.getInt()).get()); break;
+        case C4V_Bool: visit(make_unique<::aul::ast::BoolLit>(v.getBool()).get()); break;
+		case C4V_String: visit(make_unique<::aul::ast::StringLit>(v.getStr()->GetCStr()).get()); break;
+        case C4V_PropList: f(v.getPropList()); break;
+        case C4V_Array: f(v.getArray()); break;
+        case C4V_Function: f(v.getFunction()); break;
+        default:
+			tmp_expr = nullptr;
+            throw Error(n, "internal error: global constant of unexpected type: %s (of type %s)", cname, v.GetTypeName());
+        }
 	 } else {
 		 tmp_expr = nullptr; 
-		 throw Error(n, "symbol not found in any symbol table: %s", n->identifier.c_str());
+		 throw Error(n, "symbol not found in any symbol table: %s", cname);
 	 }
 }
 
@@ -1905,6 +1933,10 @@ void C4AulCompiler::CodegenAstVisitor::EmitFunctionCode(const ::aul::ast::Functi
 {
 	assert(Fn);
 	m_builder = make_unique<IRBuilder<>>(llvmcontext);
+	llvmFunction* lf = Fn->llvmFunc;
+	assert(lf);
+	if(!lf)
+		throw Error(n, "internal error: unable to find LLVM function declaration for function");
 
 	// also add a delegate with "simple" parameter types for easy external calls
 	FunctionType *dft = FunctionType::get(llvmType::getVoidTy(llvmcontext), std::vector<llvmType*>{
@@ -1921,14 +1953,10 @@ void C4AulCompiler::CodegenAstVisitor::EmitFunctionCode(const ::aul::ast::Functi
 	for (int i = 0; i < Fn->GetParCount(); ++i) {
 		delegate_args.push_back(LoadPackVariant(argv, std::vector<llvmValue*>{buildInt(i+1)})->getValue(Fn->GetParType()[i]));
 	}
-	auto dlgret = make_unique<C4CompiledValue>(Fn->GetRetType(), m_builder->CreateCall(Fn->llvmFunc, delegate_args), nullptr, this);
+	auto dlgret = make_unique<C4CompiledValue>(Fn->GetRetType(), m_builder->CreateCall(lf, delegate_args), nullptr, this);
 	StoreUnpacked(UnpackValue(dlgret->getVariant()), argv, std::vector<llvmValue*>{buildInt(0)});
 	m_builder->CreateRet(nullptr);
 
-	llvmFunction* lf = Fn->llvmFunc;
-	assert(lf);
-	if(!lf)
-		throw Error(n, "internal error: unable to find LLVM function declaration for function");
 	SetInsertPoint(CreateBlock("entrybb", lf));
 
 	assert(parameter_array.size() == 2);

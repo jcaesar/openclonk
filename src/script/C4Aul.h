@@ -67,7 +67,7 @@ public:
 	C4AulExecError(const char *szError);
 };
 
-class C4AulFuncMap
+class C4AulFuncMap // TODO: replace by an std::unordered_map. I never want to implement an iterator again.
 {
 private:
 	class iterator;

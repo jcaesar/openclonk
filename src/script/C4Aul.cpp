@@ -344,11 +344,13 @@ C4AulFunc * C4AulFuncMap::iterator::operator *() {
 C4AulFuncMap::iterator& C4AulFuncMap::iterator::operator++() {
 	if(cur && cur->MapNext)
 		cur = cur->MapNext;
-	while(idx < HashSize && !parent_map.Funcs[++idx]);
-	if(idx < HashSize)
-		cur = parent_map.Funcs[idx];
-	else
-		cur = nullptr;
+	else {
+		while(idx < HashSize && !parent_map.Funcs[++idx]);
+		if(idx < HashSize)
+			cur = parent_map.Funcs[idx];
+		else
+			cur = nullptr;
+	}
 	return *this;
 }
 bool C4AulFuncMap::iterator::operator!=(const C4AulFuncMap::iterator& other) {

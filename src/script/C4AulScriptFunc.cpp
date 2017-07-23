@@ -34,6 +34,7 @@ C4AulScriptFunc::C4AulScriptFunc(C4PropListStatic * Parent, C4ScriptHost *pOrgSc
 		pOrgScript(pOrgScript),
 		tProfileTime(0)
 {
+	 for (auto & i : ParType) i = C4V_Any;
 }
 
 C4AulScriptFunc::C4AulScriptFunc(C4PropListStatic * Parent, const C4AulScriptFunc &FromFunc):
