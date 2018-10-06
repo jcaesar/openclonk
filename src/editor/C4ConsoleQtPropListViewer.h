@@ -24,6 +24,7 @@
 #include "editor/C4ConsoleGUI.h" // for glew.h
 #include "editor/C4ConsoleQt.h"
 #include "editor/C4ConsoleQtShapes.h"
+#include "editor/C4ConsoleQtLocalizeString.h"
 #include "editor/C4PropertyPath.h"
 #include "script/C4Value.h"
 

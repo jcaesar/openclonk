@@ -22,9 +22,7 @@
 
 #include <vector>
 
-#ifdef HAVE_CONFIG_H
 #include <config.h>
-#endif // HAVE_CONFIG_H
 
 #if defined(USE_WIN32_WINDOWS)
 #define USE_WGL

@@ -1,0 +1,590 @@
+# OpenClonk, http://www.openclonk.org
+#
+# Copyright (c) 2018, The OpenClonk Team and contributors
+#
+# Distributed under the terms of the ISC license; see accompanying file
+# "COPYING" for details.
+#
+# "Clonk" is a registered trademark of Matthes Bender, used with permission.
+# See accompanying file "TRADEMARK" for details.
+#
+# To redistribute this file separately, substitute the full license texts
+# for the above references.
+project('openclonk', 'c', 'cpp',
+	version : '8.1',
+	default_options : ['c_std=c11', 'cpp_std=c++14']
+)
+
+# oc_clonk_sources: Sources for OpenClonk hat are needed by every build.
+# oc_system_sources: Sources for OpenClonk that are only needed by specific platforms.
+# oc_gui_sources: Sources that are only needed by GUI applications.
+# libopenclonk_sources: Some files that do not need to distinguish being compiled for gui or headless mode. An optimization.
+oc_clonk_sources = [
+	'src/C4Globals.cpp',
+	'src/c4group/C4Components.h',
+	'src/c4group/C4Language.cpp', 'src/c4group/C4Language.h',
+	'src/C4Include.cpp', 'src/C4Include.h',
+	'src/C4Prototypes.h',
+	'src/config/C4Config.cpp', 'src/config/C4Config.h',
+	'src/config/C4Constants.h',
+	'src/config/C4Reloc.cpp', 'src/config/C4Reloc.h',
+	'src/control/C4Control.cpp', 'src/control/C4Control.h',
+	'src/control/C4GameControl.cpp', 'src/control/C4GameControl.h',
+	'src/control/C4GameParameters.cpp', 'src/control/C4GameParameters.h',
+	'src/control/C4GameSave.cpp', 'src/control/C4GameSave.h',
+	'src/control/C4PlayerControl.cpp', 'src/control/C4PlayerControl.h',
+	'src/control/C4PlayerInfo.cpp', 'src/control/C4PlayerInfo.h',
+	'src/control/C4Record.cpp', 'src/control/C4Record.h',
+	'src/control/C4RoundResults.cpp', 'src/control/C4RoundResults.h',
+	'src/control/C4Teams.cpp', 'src/control/C4Teams.h',
+	'src/editor/C4ConsoleGUICommon.h',
+	'src/editor/C4ConsoleGUI.h',
+	'src/editor/C4Console.cpp', 'src/editor/C4Console.h',
+	'src/editor/C4EditCursor.cpp', 'src/editor/C4EditCursor.h',
+	'src/editor/C4ObjectListDlg.cpp', 'src/editor/C4ObjectListDlg.h',
+	'src/editor/C4ToolsDlg.cpp', 'src/editor/C4ToolsDlg.h',
+	'src/editor/C4ViewportWindow.cpp', 'src/editor/C4ViewportWindow.h',
+	'src/game/C4Application.cpp', 'src/game/C4Application.h',
+	'src/game/C4FullScreen.cpp', 'src/game/C4FullScreen.h',
+	'src/game/C4Game.cpp', 'src/game/C4Game.h',
+	'src/game/C4GameScript.cpp', 'src/game/C4GameScript.h',
+	'src/game/C4GameVersion.h',
+	'src/game/C4GraphicsSystem.cpp', 'src/game/C4GraphicsSystem.h',
+	'src/game/C4Physics.h',
+	'src/game/C4Viewport.cpp', 'src/game/C4Viewport.h',
+	'src/graphics/C4Draw.cpp',
+	'src/graphics/C4DrawGL.cpp', 'src/graphics/C4DrawGL.h',
+	'src/graphics/C4DrawGLCtx.cpp',
+	'src/graphics/C4DrawMeshGL.cpp',
+	'src/graphics/C4DrawT.cpp', 'src/graphics/C4DrawT.h',
+	'src/graphics/C4Draw.h',
+	'src/graphics/C4Facet.cpp', 'src/graphics/C4Facet.h',
+	'src/graphics/C4FacetEx.cpp', 'src/graphics/C4FacetEx.h',
+	'src/graphics/C4FontLoader.cpp', 'src/graphics/C4FontLoader.h',
+	'src/graphics/C4GraphicsResource.cpp', 'src/graphics/C4GraphicsResource.h',
+	'src/graphics/C4Shader.cpp', 'src/graphics/C4Shader.h',
+	'src/graphics/C4Surface.cpp', 'src/graphics/C4Surface.h',
+	'src/graphics/C4SurfaceLoaders.cpp',
+	'src/gui/C4ChatDlg.cpp', 'src/gui/C4ChatDlg.h',
+	'src/gui/C4DownloadDlg.cpp', 'src/gui/C4DownloadDlg.h',
+	'src/gui/C4FileSelDlg.cpp', 'src/gui/C4FileSelDlg.h',
+	'src/gui/C4GameDialogs.cpp', 'src/gui/C4GameDialogs.h',
+	'src/gui/C4GameLobby.cpp', 'src/gui/C4GameLobby.h',
+	'src/gui/C4GameMessage.cpp', 'src/gui/C4GameMessage.h',
+	'src/gui/C4GameOptions.cpp', 'src/gui/C4GameOptions.h',
+	'src/gui/C4GameOverDlg.cpp', 'src/gui/C4GameOverDlg.h',
+	'src/gui/C4GfxErrorDlg.cpp', 'src/gui/C4GfxErrorDlg.h',
+	'src/gui/C4GuiButton.cpp',
+	'src/gui/C4GuiCheckBox.cpp',
+	'src/gui/C4GuiComboBox.cpp',
+	'src/gui/C4GuiContainers.cpp',
+	'src/gui/C4GuiDialogs.cpp',
+	'src/gui/C4GuiEdit.cpp',
+	'src/gui/C4GuiLabels.cpp',
+	'src/gui/C4GuiListBox.cpp',
+	'src/gui/C4GuiMenu.cpp',
+	'src/gui/C4GuiTabular.cpp',
+	'src/gui/C4Gui.cpp', 'src/gui/C4Gui.h',
+	'src/gui/C4ScriptGuiWindow.cpp',
+	'src/gui/C4KeyboardInput.cpp', 'src/gui/C4KeyboardInput.h',
+	'src/gui/C4LoaderScreen.cpp', 'src/gui/C4LoaderScreen.h',
+	'src/gui/C4MainMenu.cpp', 'src/gui/C4MainMenu.h',
+	'src/gui/C4Menu.cpp', 'src/gui/C4Menu.h',
+	'src/gui/C4MessageBoard.cpp', 'src/gui/C4MessageBoard.h',
+	'src/gui/C4MessageInput.cpp', 'src/gui/C4MessageInput.h',
+	'src/gui/C4MouseControl.cpp', 'src/gui/C4MouseControl.h',
+	'src/gui/C4PlayerInfoListBox.cpp', 'src/gui/C4PlayerInfoListBox.h',
+	'src/gui/C4Scoreboard.cpp', 'src/gui/C4Scoreboard.h',
+	'src/gui/C4ScriptGuiWindow.cpp', 'src/gui/C4ScriptGuiWindow.h',
+	'src/gui/C4StartupAboutDlg.cpp', 'src/gui/C4StartupAboutDlg.h',
+	'src/gui/C4Startup.cpp', 'src/gui/C4Startup.h',
+	'src/gui/C4StartupMainDlg.cpp', 'src/gui/C4StartupMainDlg.h',
+	'src/gui/C4StartupNetDlg.cpp', 'src/gui/C4StartupNetDlg.h',
+	'src/gui/C4StartupOptionsDlg.cpp', 'src/gui/C4StartupOptionsDlg.h',
+	'src/gui/C4StartupPlrSelDlg.cpp', 'src/gui/C4StartupPlrSelDlg.h',
+	'src/gui/C4StartupScenSelDlg.cpp', 'src/gui/C4StartupScenSelDlg.h',
+	'src/gui/C4UpperBoard.cpp', 'src/gui/C4UpperBoard.h',
+	'src/landscape/fow/C4FoW.cpp', 'src/landscape/fow/C4FoW.h',
+	'src/landscape/fow/C4FoWAmbient.cpp', 'src/landscape/fow/C4FoWAmbient.h',
+	'src/landscape/fow/C4FoWBeam.cpp', 'src/landscape/fow/C4FoWBeam.h',
+	'src/landscape/fow/C4FoWLight.cpp', 'src/landscape/fow/C4FoWLight.h',
+	'src/landscape/fow/C4FoWLightSection.cpp', 'src/landscape/fow/C4FoWLightSection.h',
+	'src/landscape/fow/C4FoWRegion.cpp', 'src/landscape/fow/C4FoWRegion.h',
+	'src/landscape/fow/C4FoWDrawStrategy.cpp', 'src/landscape/fow/C4FoWDrawStrategy.h',
+	'src/landscape/fow/C4FoWBeamTriangle.h',
+	'src/landscape/C4Landscape.cpp', 'src/landscape/C4Landscape.h',
+	'src/landscape/C4LandscapeRender.cpp', 'src/landscape/C4LandscapeRender.h',
+	'src/landscape/C4MapCreatorS2.cpp', 'src/landscape/C4MapCreatorS2.h',
+	'src/landscape/C4Map.cpp', 'src/landscape/C4Map.h',
+	'src/landscape/C4MapScript.cpp', 'src/landscape/C4MapScript.h',
+	'src/landscape/C4Material.cpp', 'src/landscape/C4Material.h',
+	'src/landscape/C4Particles.cpp', 'src/landscape/C4Particles.h',
+	'src/landscape/C4PathFinder.cpp', 'src/landscape/C4PathFinder.h',
+	'src/landscape/C4PXS.cpp', 'src/landscape/C4PXS.h',
+	'src/landscape/C4Sky.cpp', 'src/landscape/C4Sky.h',
+	'src/landscape/C4SolidMask.cpp', 'src/landscape/C4SolidMask.h',
+	'src/landscape/C4Texture.cpp', 'src/landscape/C4Texture.h',
+	'src/landscape/C4TransferZone.cpp', 'src/landscape/C4TransferZone.h',
+	'src/landscape/C4Weather.cpp', 'src/landscape/C4Weather.h',
+	'src/lib/C4Rect.cpp', 'src/lib/C4Rect.h',
+	'src/lib/StdAdaptors.h',
+	'src/lib/StdColors.h',
+	'src/lib/StdMesh.cpp', 'src/lib/StdMesh.h',
+	'src/lib/StdMeshLoaderBinaryChunks.cpp', 'src/lib/StdMeshLoaderBinaryChunks.h',
+	'src/lib/StdMeshLoaderBinary.cpp',
+	'src/lib/StdMeshLoaderDataStream.h',
+	'src/lib/StdMeshLoaderXml.cpp',
+	'src/lib/StdMeshLoader.cpp', 'src/lib/StdMeshLoader.h',
+	'src/lib/StdMeshMaterial.cpp', 'src/lib/StdMeshMaterial.h',
+	'src/lib/StdMeshUpdate.cpp', 'src/lib/StdMeshUpdate.h',
+	'src/network/C4Client.cpp', 'src/network/C4Client.h',
+	'src/network/C4GameControlNetwork.cpp', 'src/network/C4GameControlNetwork.h',
+	'src/network/C4InteractiveThread.cpp', 'src/network/C4InteractiveThread.h',
+	'src/network/C4League.cpp', 'src/network/C4League.h',
+	'src/network/C4Network2Client.cpp', 'src/network/C4Network2Client.h',
+	'src/network/C4Network2Dialogs.cpp', 'src/network/C4Network2Dialogs.h',
+	'src/network/C4Network2.cpp', 'src/network/C4Network2.h',
+	'src/network/C4Network2IO.cpp', 'src/network/C4Network2IO.h',
+	'src/network/C4Network2IRC.cpp', 'src/network/C4Network2IRC.h',
+	'src/network/C4Network2Players.cpp', 'src/network/C4Network2Players.h',
+	'src/network/C4Network2Reference.cpp', 'src/network/C4Network2Reference.h',
+	'src/network/C4Network2ResDlg.cpp',
+	'src/network/C4Network2Res.cpp', 'src/network/C4Network2Res.h',
+	'src/network/C4Network2Stats.cpp', 'src/network/C4Network2Stats.h',
+	'src/network/C4Network2UPnP.h',
+	'src/network/C4Packet2.cpp',
+	'src/network/C4PacketBase.h',
+	'src/object/C4Command.cpp', 'src/object/C4Command.h',
+	'src/object/C4DefGraphics.cpp', 'src/object/C4DefGraphics.h',
+	'src/object/C4Def.cpp', 'src/object/C4Def.h',
+	'src/object/C4DefList.cpp', 'src/object/C4DefList.h',
+	'src/object/C4GameObjects.cpp', 'src/object/C4GameObjects.h',
+	'src/object/C4IDList.cpp', 'src/object/C4IDList.h',
+	'src/object/C4MeshAnimation.cpp', 'src/object/C4MeshAnimation.h',
+	'src/object/C4MeshDenumerator.cpp', 'src/object/C4MeshDenumerator.h',
+	'src/object/C4ObjectCom.cpp', 'src/object/C4ObjectCom.h',
+	'src/object/C4Object.cpp', 'src/object/C4Object.h',
+	'src/object/C4ObjectInfo.cpp', 'src/object/C4ObjectInfo.h',
+	'src/object/C4ObjectInfoList.cpp', 'src/object/C4ObjectInfoList.h',
+	'src/object/C4ObjectList.cpp', 'src/object/C4ObjectList.h',
+	'src/object/C4ObjectMenu.cpp', 'src/object/C4ObjectMenu.h',
+	'src/object/C4ObjectScript.cpp',
+	'src/platform/C4App.cpp', 'src/platform/C4App.h',
+	'src/platform/C4AppWin32Impl.h',
+	'src/platform/C4FileMonitor.cpp', 'src/platform/C4FileMonitor.h',
+	'src/platform/C4GamePadCon.cpp', 'src/platform/C4GamePadCon.h',
+	'src/platform/C4MusicFile.cpp', 'src/platform/C4MusicFile.h',
+	'src/platform/C4MusicSystem.cpp', 'src/platform/C4MusicSystem.h',
+	'src/platform/C4SoundLoaders.cpp', 'src/platform/C4SoundLoaders.h',
+	'src/platform/C4SoundIncludes.h',
+	'src/platform/C4SoundInstance.cpp', 'src/platform/C4SoundInstance.h',
+	'src/platform/C4SoundModifiers.cpp', 'src/platform/C4SoundModifiers.h',
+	'src/platform/C4SoundSystem.cpp', 'src/platform/C4SoundSystem.h',
+	'src/platform/C4Window.h',
+	'src/platform/C4windowswrapper.h',
+	'src/platform/PlatformAbstraction.cpp', 'src/platform/PlatformAbstraction.h',
+	'src/platform/StdSync.h',
+	'src/player/C4Achievement.cpp', 'src/player/C4Achievement.h',
+	'src/player/C4Player.cpp', 'src/player/C4Player.h',
+	'src/player/C4PlayerList.cpp', 'src/player/C4PlayerList.h',
+	'src/player/C4RankSystem.cpp', 'src/player/C4RankSystem.h',
+	'src/player/C4ScenarioParameters.cpp', 'src/player/C4ScenarioParameters.h',
+	'src/script/C4AulDebug.cpp', 'src/script/C4AulDebug.h',
+	'thirdparty/timsort/sort.h',
+	'src/lib/C4LogBuf.cpp', 'src/lib/C4LogBuf.h',
+	'src/lib/C4Log.cpp', 'src/lib/C4Log.h',
+]
+oc_system_sources = []
+oc_gui_sources = []
+qt_editor_ui = [
+	'src/editor/C4ConsoleQtNewScenario.ui',
+	'src/editor/C4ConsoleQtLocalizeString.ui',
+	'src/editor/C4ConsoleQtLocalizeOverview.ui',
+	'src/editor/C4ConsoleQtMainWindow.ui',
+]
+qt_editor_moc_hdr = [
+	'src/editor/C4ConsoleQtDefinitionListViewer.h',
+	'src/editor/C4ConsoleQtLocalizeOverview.h',
+	'src/editor/C4ConsoleQtLocalizeString.h',
+	'src/editor/C4ConsoleQtNewScenario.h',
+	'src/editor/C4ConsoleQtObjectListViewer.h',
+	'src/editor/C4ConsoleQtPropListViewer.h',
+	'src/editor/C4ConsoleQtShapes.h',
+	'src/editor/C4ConsoleQtViewport.h',
+	'src/editor/C4ConsoleQtState.h',
+]
+qt_editor = [
+	'src/editor/C4ConsoleQt.cpp', 'src/editor/C4ConsoleQt.h',
+	'src/editor/C4PropertyPath.cpp', 'src/editor/C4PropertyPath.h',
+	'src/editor/C4ConsoleQtState.cpp',
+	'src/editor/C4ConsoleQtShapes.cpp',
+	'src/editor/C4ConsoleQtPropListViewer.cpp',
+	'src/editor/C4ConsoleQtObjectListViewer.cpp',
+	'src/editor/C4ConsoleQtDefinitionListViewer.cpp',
+	'src/editor/C4ConsoleQtViewport.cpp',
+	'src/editor/C4ConsoleQtNewScenario.cpp',
+	'src/editor/C4ConsoleQtLocalizeString.cpp',
+	'src/editor/C4ConsoleQtLocalizeOverview.cpp',
+]
+libopenclonk_sources = [
+	'src/c4group/C4Extra.cpp', 'src/c4group/C4Extra.h',
+	'src/control/C4PlayerInfoConflicts.cpp',
+	'src/graphics/Bitmap256.cpp', 'src/graphics/Bitmap256.h',
+	'src/graphics/CSurface8.cpp', 'src/graphics/CSurface8.h',
+	'src/graphics/StdPNG.cpp', 'src/graphics/StdPNG.h',
+	'src/gui/C4Folder.cpp', 'src/gui/C4Folder.h',
+	'src/landscape/C4MapScriptAlgo.cpp',
+	'src/landscape/C4MassMover.cpp', 'src/landscape/C4MassMover.h',
+	'src/landscape/C4MaterialList.cpp', 'src/landscape/C4MaterialList.h',
+	'src/landscape/C4Scenario.cpp', 'src/landscape/C4Scenario.h',
+	'src/landscape/C4ScenarioSection.cpp',
+	'src/landscape/C4TextureShape.cpp', 'src/landscape/C4TextureShape.h',
+	'src/lib/C4NameList.cpp', 'src/lib/C4NameList.h',
+	'src/lib/C4Stat.cpp', 'src/lib/C4Stat.h',
+	'src/lib/StdMeshMath.cpp', 'src/lib/StdMeshMath.h',
+	'src/network/C4Network2Discover.cpp', 'src/network/C4Network2Discover.h',
+	'src/object/C4Action.cpp',
+	'src/object/C4FindObject.cpp', 'src/object/C4FindObject.h',
+	'src/object/C4Id.cpp', 'src/object/C4Id.h',
+	'src/object/C4InfoCore.cpp', 'src/object/C4InfoCore.h',
+	'src/object/C4Movement.cpp',
+	'src/object/C4ObjectPtr.cpp', 'src/object/C4ObjectPtr.h',
+	'src/object/C4Sector.cpp', 'src/object/C4Sector.h',
+	'src/object/C4Shape.cpp', 'src/object/C4Shape.h',
+	'src/platform/C4TimeMilliseconds.cpp', 'src/platform/C4TimeMilliseconds.h',
+]
+misc_sources = [
+	'src/C4Include.cpp',
+	'src/c4group/C4Group.cpp',
+	'src/c4group/C4Group.h',
+	'src/c4group/C4Update.cpp',
+	'src/c4group/C4Update.h',
+	'src/c4group/CStdFile.cpp',
+	'src/c4group/CStdFile.h',
+	'src/graphics/C4BltTransform.cpp',
+	'src/graphics/C4BltTransform.h',
+	'src/lib/C4InputValidation.cpp',
+	'src/lib/C4InputValidation.h',
+	'src/lib/C4Markup.cpp',
+	'src/lib/C4Markup.h',
+	'src/lib/C4Random.cpp',
+	'src/lib/C4Random.h',
+	'src/lib/C4SimpleLog.cpp',
+	'src/lib/SHA1.h',
+	'src/lib/Standard.cpp',
+	'src/lib/Standard.h',
+	'src/lib/StdBuf.cpp',
+	'src/lib/StdBuf.h',
+	'src/lib/StdCompiler.cpp',
+	'src/lib/StdCompiler.h',
+	'src/lib/StdResStr2.cpp',
+	'src/netpuncher/C4PuncherPacket.cpp',
+	'src/netpuncher/C4PuncherPacket.h',
+	'src/network/C4NetIO.cpp',
+	'src/network/C4NetIO.h',
+	'src/network/C4Network2Address.cpp',
+	'src/network/C4Network2Address.h',
+	'src/platform/StdFile.cpp',
+	'src/platform/StdFile.h',
+	'src/platform/StdRegistry.cpp',
+	'src/platform/StdRegistry.h',
+	'src/platform/StdScheduler.cpp',
+	'src/platform/StdSchedulerWin32.cpp',
+	'src/platform/StdSchedulerPoll.cpp',
+	'src/platform/StdScheduler.h',
+	'src/platform/C4TimeMilliseconds.cpp',
+	'src/platform/C4TimeMilliseconds.h',
+	'src/zlib/gzio.c',
+	'src/zlib/gzio.h',
+	'src/zlib/zutil.h',
+	'thirdparty/pcg/pcg_extras.hpp',
+	'thirdparty/pcg/pcg_random.hpp',
+	'thirdparty/pcg/pcg_uint128.hpp',
+]
+libc4script_sources = [
+	'src/C4Include.cpp',
+	'src/c4group/C4ComponentHost.cpp', 'src/c4group/C4ComponentHost.h',
+	'src/c4group/C4GroupSet.cpp', 'src/c4group/C4GroupSet.h',
+	'src/c4group/C4LangStringTable.cpp', 'src/c4group/C4LangStringTable.h',
+	'src/lib/C4RandomRecord.cpp',
+	'src/lib/C4Real.cpp', 'src/lib/C4Real.h',
+	'src/script/C4Aul.cpp', 'src/script/C4Aul.h',
+	'src/script/C4AulAST.h',
+	'src/script/C4AulCompiler.cpp', 'src/script/C4AulCompiler.h',
+	'src/script/C4AulDefFunc.h',
+	'src/script/C4AulExec.cpp', 'src/script/C4AulExec.h',
+	'src/script/C4AulFunc.cpp', 'src/script/C4AulFunc.h',
+	'src/script/C4AulLink.cpp',
+	'src/script/C4AulParse.cpp', 'src/script/C4AulParse.h',
+	'src/script/C4AulScriptFunc.cpp', 'src/script/C4AulScriptFunc.h',
+	'src/script/C4AulWarnings.h',
+	'src/script/C4Effect.cpp', 'src/script/C4Effect.h',
+	'src/script/C4PropList.cpp', 'src/script/C4PropList.h',
+	'src/script/C4Script.cpp',
+	'src/script/C4ScriptHost.cpp', 'src/script/C4ScriptHost.h',
+	'src/script/C4ScriptLibraries.cpp', 'src/script/C4ScriptLibraries.h',
+	'src/script/C4StringTable.cpp', 'src/script/C4StringTable.h',
+	'src/script/C4Value.cpp', 'src/script/C4Value.h',
+	'src/script/C4ValueArray.cpp', 'src/script/C4ValueArray.h',
+	'src/script/C4ValueMap.cpp', 'src/script/C4ValueMap.h',
+]
+pch_sources = ['src/C4IncludeInclude.h', 'src/C4Include.cpp']
+
+cpp = meson.get_compiler('cpp')
+conf = configuration_data()
+
+# TODO: should we get rid of this and make sure the build does not change based on wich files exist in the include path?
+check_headers = {
+	'DIRECT_H': 'direct.h',
+	'IO_H': 'io.h',
+	'LOCALE_H': 'locale.h',
+	'SHARE_H': 'share.h',
+	'SIGNAL_H': 'signal.h',
+	'STDINT_H': 'stdint.h',
+	'INTTYPES_H': 'inttypes.h',
+	'SYS_STAT_H': 'sys/stat.h',
+	'SYS_TYPES_H': 'sys/types.h',
+	'UNISTD_H': 'unistd.h',
+	'EXECINFO_H': 'execinfo.h',
+	'POLL_H': 'poll.h', # TODO: doesn't build without, why bother with a define?
+	'SYS_INOTIFY_H': 'sys/inotify.h',
+	'SYS_TIMERFD_H': 'sys/timerfd.h',
+	'SYS_SOCKET_H': 'sys/socket.h',
+	'SYS_EVENTFD_H': 'sys/eventfd.h',
+	'SYS_FILE_H': 'sys/file.h',
+}
+foreach def, hdr : check_headers 
+	conf.set('HAVE_@0@'.format(def), cpp.check_header(hdr), description: hdr)	
+endforeach
+conf.set('HAVE_X11_EXTENSIONS_XRANDR_H',
+	cpp.check_header('X11/extensions/Xrandr.h') and cpp.check_header('X11/Xlib.h'))
+conf.set('HAVE_GETOPT_H', cpp.compiles('''
+#include <getopt.h>
+int main(int argc, char * argv[]) { 
+	getopt_long(argc, argv, "", 0, 0);
+}
+''', name: 'getopt_long test'))
+audio_tk_id_none = 0
+audio_tk_id_openal = 1
+audio_tk_id_sdl = 3
+conf.set('AUDIO_TK_NONE', audio_tk_id_none)
+conf.set('AUDIO_TK_OPENAL', audio_tk_id_openal)
+conf.set('AUDIO_TK_SDL_MIXER', audio_tk_id_sdl)
+oc_system_data_dir = 'share/games/openclonk'
+conf.set('OC_SYSTEM_DATA_DIR', '"@0@"'.format(join_paths(get_option('prefix'), oc_system_data_dir)))
+
+pthread = cpp.find_library('pthread')
+if pthread.found()
+	conf.set('HAVE_PTHREAD', true)
+	threads = pthread
+else
+	threads = dependency('threads')
+endif
+
+zlib = dependency('zlib', version : '>=1.2.8', fallback: ['zlib', 'zlib_dep'])
+png = dependency('libpng')
+jpeg = dependency('libjpeg')
+#execinfo = dependency('libexecinfo') TODO
+#readline = cpp.find_library('readline', required: false)
+#conf.set('HAVE_LIBREADLINE', readline.found())
+readline = declare_dependency() # TODO
+
+conf.set('HAVE_MAKE_UNIQUE', true)
+configure_file(configuration: conf, output: 'config.h')
+
+# TODO: subdir? SSE2?
+libblake2 = static_library('blake2', 
+	include_directories: include_directories('thirdparty/blake2/ref'),
+	sources: [
+		'thirdparty/blake2/ref/blake2.h',
+		'thirdparty/blake2/ref/blake2bp-ref.c',
+		'thirdparty/blake2/ref/blake2b-ref.c',
+		'thirdparty/blake2/ref/blake2sp-ref.c',
+		'thirdparty/blake2/ref/blake2s-ref.c',
+		'thirdparty/blake2/ref/blake2xb-ref.c',
+		'thirdparty/blake2/ref/blake2xs-ref.c',
+		'thirdparty/blake2/ref/blake2-impl.h',
+	]
+)
+blake2 = declare_dependency(
+	link_with: libblake2,
+	include_directories : include_directories('thirdparty/blake2/ref')
+)
+# TODO: subdir, and use dependency/fallback magic
+tinyxml = declare_dependency(link_with: static_library('tinyxml',
+	sources: [
+		'thirdparty/tinyxml/tinystr.cpp', 'thirdparty/tinyxml/tinystr.h',
+		'thirdparty/tinyxml/tinyxml.cpp', 'thirdparty/tinyxml/tinyxml.h',
+		'thirdparty/tinyxml/tinyxmlparser.cpp',
+		'thirdparty/tinyxml/tinyxmlerror.cpp',
+	]
+))
+
+
+# TODO
+oc_build_meta = configuration_data()
+oc_build_meta.set('C4COPYRIGHT_YEAR', '2018')
+oc_build_meta.set('C4ENGINECAPTION', 'OpenClonk')
+oc_build_meta.set('C4ENGINEID', 'org.openclonk.OpenClonk')
+oc_build_meta.set('C4ENGINENAME', 'OpenClonk')
+oc_build_meta.set('C4ENGINENICK', 'openclonk')
+oc_build_meta.set('C4PROJECT', 'OpenClonk Project')
+oc_build_meta.set('C4REVISION', 'lalilutodo')
+oc_build_meta.set('C4REVISION_BRANCH', 'meson')
+oc_build_meta.set('C4REVISION_TS', '2051-01-02 13:37:05')
+oc_build_meta.set('C4VERSION', '9999')
+oc_build_meta.set('C4XVER1', '9')
+oc_build_meta.set('C4XVER2', '0')
+oc_build_meta.set('OC_BUILD_ID', '9.0-alpha unix')
+configure_file(configuration: oc_build_meta, input:'src/C4Version.h.in', output: 'C4Version.h', format: 'cmake@')
+
+# source files specific to an operating system
+if host_machine.system() == 'windows'
+	oc_system_sources += ['src/platform/C4CrashHandlerWin32.cpp', 'src/game/ClonkMain.cpp']
+	oc_gui_sources += ['src/res/engine.rc', 'src/res/resources.h']
+	configure_file(copy: true, input: 'src/res/openclonk.manifest', output: 'openclonk.manifest')
+elif host_machine.system() == 'darwin'
+	oc_system_sources += [
+		'src/platform/C4AppMac.mm',
+		'src/platform/C4FileMonitorMac.mm',
+		'src/platform/C4AppDelegate.h',
+		'src/platform/C4AppDelegate.mm',
+		'src/platform/StdSchedulerMac.mm',
+		'src/platform/ObjectiveCAssociated.h',
+	]
+else
+	oc_system_sources += 'src/game/ClonkMain.cpp'
+endif
+
+if get_option('gui')
+	deps = [
+		dependency('freetype2'),
+		dependency('gl'),
+		dependency('glew', fallback: ['glew', 'glew_dep']),
+		dependency('sdl2', fallback: ['sdl2', 'sdl2_dep']), # Technically speaking optional, except under linux. But required for gamepads, so…
+	]
+	defs = ['-DHAVE_SDL']
+	if host_machine.system() == 'linux'
+		oc_gui_sources += ['src/platform/C4AppSDL.cpp', 'src/platform/C4WindowSDL.cpp']
+		defs += ['-DUSE_SDL_MAINLOOP']
+		deps += [dependency('x11'), dependency('xrandr')]
+	elif host_machine.system() == 'windows'
+		oc_gui_sources += ['src/platform/C4WindowWin32.cpp']
+	elif host_machine.system() == 'darwin'
+		oc_gui_sources += [
+			'src/platform/C4WindowMac.mm',
+			'src/platform/C4AppDelegate+MainMenuActions.h',
+			'src/platform/C4AppDelegate+MainMenuActions.mm',
+			'src/graphics/C4DrawGLMac.h',
+			'src/graphics/C4DrawGLMac.mm',
+			'src/platform/C4WindowController.h',
+			'src/platform/C4WindowController.mm',
+			'src/platform/CocoaKeycodeMap.h',
+		]
+	else
+	  error('platform not implemented')
+	endif
+	if cpp.compiles('''
+		#include <GL/glew.h>
+		void GLAPIENTRY OpenGLDebugProc(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const char* message, const void* userParam) {}
+		int main() { GLDEBUGPROCARB proc = &OpenGLDebugProc; }
+		''')
+		defs += ['-DGLDEBUGPROCARB_USERPARAM_IS_CONST']
+	endif
+	audio_tk = get_option('audio')
+	if audio_tk != 'none'
+		if audio_tk == 'sdl'
+			defs += '-DAUDIO_TK=@0@'.format(audio_tk_id_sdl)
+			deps += dependency('SDL2_mixer')
+		elif audio_tk == 'openal'
+			defs += '-DAUDIO_TK=@0@'.format(audio_tk_id_openal)
+			deps += [
+				dependency('openal', version: '>=1.13'),
+				dependency('vorbis', version: '>=1.3.2', fallback: ['vorbis', 'vorbis_dep']),
+				dependency('vorbisfile', version: '>=1.3.2'),
+				dependency('ogg', version: '>=1.2.2', fallback: ['ogg', 'ogg_dep']),
+				dependency('freealut', version: '>=1.1.0'),
+			]
+		else
+			error('audio tk option error')
+		endif
+	endif
+	if get_option('automatic_update')
+		oc_gui_sources += ['src/gui/C4UpdateDlg.cpp', 'src/gui/C4UpdateDlg.h']
+		defs += '-DWITH_AUTOMATIC_UPDATE'
+	endif
+	if get_option('editor')
+		defs += '-DWITH_QT_EDITOR'
+		deps += dependency('qt5', modules : 'Widgets')
+		qt5_mod = import('qt5')
+		oc_gui_sources += qt5_mod.preprocess(
+			moc_headers: qt_editor_moc_hdr, 
+			moc_sources: [],
+			ui_files   : qt_editor_ui,
+			qresources : 'src/editor/resource.qrc',
+			moc_extra_arguments: defs
+		) + qt_editor
+	endif
+	guidep = declare_dependency(dependencies: deps, compile_args: defs)
+else
+	if get_option('automatic_update') or get_option('audio') != 'none' or get_option('editor')
+		error('configuration clash? no gui? no editor, audio, or automatic_update!')
+	endif
+	guidep = disabler()
+endif
+
+upnp = declare_dependency()
+if host_machine.system() == 'windows'
+	if not cpp.check_header('natupnp.h')
+		upnp = declare_dependency(include_directories: include_directories('thirdparty/natupnp'))
+	endif
+	oc_system_sources += 'src/network/C4Network2UPnPWin32.cpp'
+elif host_machine.system() == 'linux'
+	upnp = dependency('miniupnpc')
+	oc_system_sources += 'src/network/C4Network2UPnPLinux.cpp'
+else
+	oc_system_sources += 'src/network/C4Network2UPnPDummy.cpp'
+endif
+
+allinc = declare_dependency(
+	include_directories: [
+		include_directories('./src'),
+		include_directories('./thirdparty'), # TODO: would be nicer to have separate dependencies for the things in there
+		# TODO: or could even replace them by http://mesonbuild.com/Wrap-dependency-system-manual.html ?
+	]
+)
+no_check_console = declare_dependency(compile_args: '-DCOMPILRED_AS_C4LIBRARY') # will make compilation error if USE_CONSOLE is checked
+
+libmisc = static_library('libmisc', dependencies: [allinc, no_check_console] , sources: misc_sources, cpp_pch: pch_sources)
+libmiscdep = declare_dependency(link_with: libmisc, dependencies: zlib)
+
+c4group = executable('c4group', dependencies: [allinc, libmiscdep, zlib], sources: 'src/c4group/C4GroupMain.cpp', cpp_pch: pch_sources)
+
+libc4script = static_library('c4script', dependencies: [allinc, libmiscdep, blake2, no_check_console], sources: libc4script_sources, cpp_pch: pch_sources)
+libc4scriptdep = declare_dependency(link_with: libc4script, dependencies: libmiscdep)
+
+c4script = executable('c4script', dependencies: [allinc, libc4scriptdep], cpp_pch: pch_sources, sources: [
+	'include/c4script/c4script.h',
+	'src/script/C4ScriptMain.cpp',
+	'src/script/C4ScriptStandalone.cpp',
+	'src/script/C4ScriptStandaloneStubs.cpp',
+])
+
+libopenclonk = static_library('openclonk', dependencies: [allinc, no_check_console], sources: libopenclonk_sources, cpp_pch: pch_sources)
+libopenclonkdep = declare_dependency(link_with: libopenclonk, dependencies: [png, jpeg, libc4scriptdep, tinyxml, threads, upnp]) 
+
+executable('openclonk-server',
+	cpp_args: ['-DUSE_CONSOLE'],
+	dependencies: [allinc, libopenclonkdep, readline], 
+	sources: oc_clonk_sources + oc_system_sources + [
+	  'src/platform/C4AppT.cpp',
+	  'src/platform/C4StdInProc.cpp',
+	  'src/platform/C4StdInProc.h',
+	],
+	cpp_pch: pch_sources
+)
+executable('openclonk',
+	dependencies: [allinc, libopenclonkdep, guidep], 
+	sources: oc_clonk_sources + oc_system_sources + oc_gui_sources,
+	cpp_pch: pch_sources
+)
