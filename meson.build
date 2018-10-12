@@ -329,6 +329,84 @@ libc4script_sources = [
 	'src/script/C4ValueMap.cpp', 'src/script/C4ValueMap.h',
 ]
 pch_sources = ['src/C4IncludeInclude.h', 'src/C4Include.cpp']
+mape_sources = [
+	'src/C4Include.cpp',
+	'src/landscape/C4MapCreatorS2.cpp',
+	'src/landscape/C4MapCreatorS2.h',
+	'src/landscape/C4MapScriptAlgo.cpp',
+	'src/landscape/C4MapScript.cpp',
+	'src/landscape/C4MapScript.h',
+	'src/landscape/C4Material.cpp',
+	'src/landscape/C4Material.h',
+	'src/landscape/C4Texture.cpp',
+	'src/landscape/C4Texture.h',
+	'src/landscape/C4Scenario.cpp',
+	'src/landscape/C4Scenario.h',
+	'src/graphics/Bitmap256.cpp',
+	'src/graphics/Bitmap256.h',
+	'src/graphics/CSurface8.cpp',
+	'src/graphics/CSurface8.h',
+	'src/lib/C4NameList.cpp',
+	'src/lib/C4NameList.h',
+	'src/lib/C4Rect.cpp',
+	'src/lib/C4Rect.h',
+	'src/object/C4Id.cpp',
+	'src/object/C4Id.h',
+	'src/script/C4ScriptStandaloneStubs.cpp',
+	'src/mape/cpp-handles/c4def-handle.cpp',
+	'src/mape/cpp-handles/group-handle.h',
+	'src/mape/cpp-handles/group-handle.cpp',
+	'src/mape/cpp-handles/landscape-handle.cpp',
+	'src/mape/cpp-handles/log-handle.h',
+	'src/mape/cpp-handles/log-handle.cpp',
+	'src/mape/cpp-handles/mapgen-handle.h',
+	'src/mape/cpp-handles/mapgen-handle.cpp',
+	'src/mape/cpp-handles/material-handle.h',
+	'src/mape/cpp-handles/material-handle.cpp',
+	'src/mape/cpp-handles/random-handle.h',
+	'src/mape/cpp-handles/random-handle.cpp',
+	'src/mape/cpp-handles/texture-handle.h',
+	'src/mape/cpp-handles/texture-handle.cpp',
+	'src/mape/cpp-handles/version-handle.h',
+	'src/mape/cpp-handles/version-handle.cpp',
+	'src/mape/cpp-handles/stub-handle.cpp',
+	'src/mape/configfile.c',
+	'src/mape/configfile.h',
+	'src/mape/diskview.c',
+	'src/mape/diskview.h',
+	'src/mape/editview.c',
+	'src/mape/editview.h',
+	'src/mape/fileicon.c',
+	'src/mape/fileicon.h',
+	'src/mape/forward.h',
+	'src/mape/group.c',
+	'src/mape/group.h',
+	'src/mape/header.c',
+	'src/mape/header.h',
+	'src/mape/iconview.c',
+	'src/mape/iconview.h',
+	'src/mape/mape.c',
+	'src/mape/mapgen.c',
+	'src/mape/mapgen.h',
+	'src/mape/material.c',
+	'src/mape/material.h',
+	'src/mape/mattexview.c',
+	'src/mape/mattexview.h',
+	'src/mape/preferences.c',
+	'src/mape/preferences.h',
+	'src/mape/preferencesdialog.c',
+	'src/mape/preferencesdialog.h',
+	'src/mape/preview.c',
+	'src/mape/preview.h',
+	'src/mape/random.c',
+	'src/mape/random.h',
+	'src/mape/statusbar.c',
+	'src/mape/statusbar.h',
+	'src/mape/texture.c',
+	'src/mape/texture.h',
+	'src/mape/window.c',
+	'src/mape/window.h',
+]
 
 cpp = meson.get_compiler('cpp')
 conf = configuration_data()
@@ -588,3 +666,33 @@ executable('openclonk',
 	sources: oc_clonk_sources + oc_system_sources + oc_gui_sources,
 	cpp_pch: pch_sources
 )
+
+executable('netpuncher',
+	sources: [
+	    'src/netpuncher/C4PuncherHash.h',
+		'src/netpuncher/main.cpp',
+	],
+	dependencies: [allinc, libmiscdep, dependency('threads')]
+)
+
+if get_option('mape')
+	executable('mape',
+		dependencies: [
+			dependency('gtk+-3.0'),
+			dependency('gthread-2.0'),
+			dependency('gio-2.0'),
+			dependency('gobject-2.0'),
+			dependency('glib-2.0'),
+			dependency('gtksourceview-3.0'),
+			libc4scriptdep,
+			allinc
+		],
+		sources: [
+			mape_sources,
+			import('gnome').compile_resources(
+				'mape-resources', 'src/res/mape.xml',
+				source_dir: 'src/res',
+			)
+		],
+	)
+endif
