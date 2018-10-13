@@ -11,7 +11,7 @@
 # To redistribute this file separately, substitute the full license texts
 # for the above references.
 project('openclonk', 'c', 'cpp',
-	version : '8.1',
+	version : '9.0-alpha',
 	default_options : ['c_std=c11', 'cpp_std=c++14'],
 	subproject_dir: 'thirdparty/wrap',
 )
@@ -464,7 +464,7 @@ zlib = dependency('zlib', version : '>=1.2.8', fallback: ['zlib', 'zlib_dep'])
 png = dependency('libpng', fallback: ['libpng', 'png_dep'])
 jpeg = dependency('libjpeg', fallback: ['libjpeg', 'jpeg_dep'])
 #execinfo = dependency('libexecinfo') TODO
-#readline = cpp.find_library('readline', required: false)
+#readline = cpp.find_library('readline', required: false) # I've thought about it, and I'd prefer not to have these environment-conditional things. If we have code that uses it, require it. If you don't like it, add an option.
 #conf.set('HAVE_LIBREADLINE', readline.found())
 readline = declare_dependency() # TODO
 
@@ -474,7 +474,7 @@ configure_file(configuration: conf, output: 'config.h')
 blake2 = dependency('blake2', fallback: ['blake2', 'blake2_dep']) # TODO: SSE
 tinyxml = dependency('tinyxml', fallback: ['tinyxml', 'tinyxml_dep'])
 
-# TODO
+# TODO: consolidate into one file with Version.txt
 oc_build_meta = configuration_data()
 oc_build_meta.set('C4COPYRIGHT_YEAR', '2018')
 oc_build_meta.set('C4ENGINECAPTION', 'OpenClonk')
@@ -482,21 +482,26 @@ oc_build_meta.set('C4ENGINEID', 'org.openclonk.OpenClonk')
 oc_build_meta.set('C4ENGINENAME', 'OpenClonk')
 oc_build_meta.set('C4ENGINENICK', 'openclonk')
 oc_build_meta.set('C4PROJECT', 'OpenClonk Project')
-oc_build_meta.set('C4REVISION', 'lalilutodo')
-oc_build_meta.set('C4REVISION_BRANCH', 'meson')
-oc_build_meta.set('C4REVISION_TS', '2051-01-02 13:37:05')
-oc_build_meta.set('C4VERSION', '9999')
+oc_build_meta.set('C4REVISION', 'undefined')
 oc_build_meta.set('C4XVER1', '9')
 oc_build_meta.set('C4XVER2', '0')
-oc_build_meta.set('OC_BUILD_ID', '9.0-alpha unix')
-configure_file(configuration: oc_build_meta, input:'src/C4Version.h.in', output: 'C4Version.h', format: 'cmake@')
+oc_build_meta.set('OC_BUILD_ID', '" C4XVER1 "." C4XVER2 "-alpha @0@'.format(target_machine.system()))
+vcs_tag(input:
+	configure_file(
+		configuration: oc_build_meta,
+		input:'src/C4Version.h.in',
+		output: 'C4Version.h.pre',
+		format: 'cmake@',
+	),
+	output: 'C4Version.h',
+)
 
 # source files specific to an operating system
-if host_machine.system() == 'windows'
+if target_machine.system() == 'windows'
 	oc_system_sources += ['src/platform/C4CrashHandlerWin32.cpp', 'src/game/ClonkMain.cpp']
 	oc_gui_sources += ['src/res/engine.rc', 'src/res/resources.h']
 	configure_file(copy: true, input: 'src/res/openclonk.manifest', output: 'openclonk.manifest')
-elif host_machine.system() == 'darwin'
+elif target_machine.system() == 'darwin'
 	oc_system_sources += [
 		'src/platform/C4AppMac.mm',
 		'src/platform/C4FileMonitorMac.mm',
@@ -517,13 +522,13 @@ if get_option('gui')
 		dependency('sdl2', fallback: ['sdl2', 'sdl2_dep']), # Technically speaking optional, except under linux. But required for gamepads, so…
 	]
 	defs = ['-DHAVE_SDL']
-	if host_machine.system() == 'linux'
+	if target_machine.system() == 'linux'
 		oc_gui_sources += ['src/platform/C4AppSDL.cpp', 'src/platform/C4WindowSDL.cpp']
 		defs += ['-DUSE_SDL_MAINLOOP']
 		deps += [dependency('x11'), dependency('xrandr')]
-	elif host_machine.system() == 'windows'
+	elif target_machine.system() == 'windows'
 		oc_gui_sources += ['src/platform/C4WindowWin32.cpp']
-	elif host_machine.system() == 'darwin'
+	elif target_machine.system() == 'darwin'
 		oc_gui_sources += [
 			'src/platform/C4WindowMac.mm',
 			'src/platform/C4AppDelegate+MainMenuActions.h',
@@ -535,7 +540,7 @@ if get_option('gui')
 			'src/platform/CocoaKeycodeMap.h',
 		]
 	else
-	  error('platform not implemented')
+		error('platform not implemented')
 	endif
 	if cpp.compiles('''
 		#include <GL/glew.h>
@@ -553,7 +558,7 @@ if get_option('gui')
 			defs += '-DAUDIO_TK=@0@'.format(audio_tk_id_openal)
 			deps += [
 				dependency('openal', version: '>=1.13'),
-				dependency('vorbis', version: '>=1.3.2'),#, fallback: ['vorbis', 'vorbis_dep']),
+				dependency('vorbis', version: '>=1.3.2', fallback: ['vorbis', 'vorbis_dep']),
 				dependency('vorbisfile', version: '>=1.3.2'),
 				dependency('ogg', version: '>=1.2.2', fallback: ['ogg', 'libogg_dep']),
 				dependency('freealut', version: '>=1.1.0'),
@@ -587,12 +592,12 @@ else
 endif
 
 upnp = declare_dependency()
-if host_machine.system() == 'windows'
+if target_machine.system() == 'windows'
 	if not cpp.check_header('natupnp.h')
 		upnp = declare_dependency(include_directories: include_directories('thirdparty/natupnp'))
 	endif
 	oc_system_sources += 'src/network/C4Network2UPnPWin32.cpp'
-elif host_machine.system() == 'linux'
+elif target_machine.system() == 'linux'
 	upnp = dependency('miniupnpc')
 	oc_system_sources += 'src/network/C4Network2UPnPLinux.cpp'
 else
@@ -629,9 +634,9 @@ executable('openclonk-server',
 	cpp_args: ['-DUSE_CONSOLE'],
 	dependencies: [allinc, libopenclonkdep, readline], 
 	sources: oc_clonk_sources + oc_system_sources + [
-	  'src/platform/C4AppT.cpp',
-	  'src/platform/C4StdInProc.cpp',
-	  'src/platform/C4StdInProc.h',
+		'src/platform/C4AppT.cpp',
+		'src/platform/C4StdInProc.cpp',
+		'src/platform/C4StdInProc.h',
 	],
 	cpp_pch: pch_sources
 )
@@ -643,10 +648,10 @@ executable('openclonk',
 
 executable('netpuncher',
 	sources: [
-	    'src/netpuncher/C4PuncherHash.h',
+		'src/netpuncher/C4PuncherHash.h',
 		'src/netpuncher/main.cpp',
 	],
-	dependencies: [allinc, libmiscdep, dependency('threads')]
+	dependencies: [allinc, libmiscdep, threads]
 )
 
 if get_option('mape')
