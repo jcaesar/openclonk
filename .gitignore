@@ -152,5 +152,5 @@ resource.qrc.depends
 qt.conf
 
 # Meson
-subprojects/*
-!subprojects/*.wrap
+thirdparty/wrap/*
+!thirdparty/wrap/*.wrap

@@ -1,0 +1,11 @@
+[wrap-file]
+directory = jpeg-9c
+
+#source_url = http://ijg.org/files/jpegsrc.v9c.tar.gz
+source_url = http://cloudflare-ipfs.com/ipfs/QmVbo3ACBDjZppG1nkB5gHYgZPLo2HC2qHeM9FA17FK9dd/jpegsrc.v9c.tar.gz
+source_filename = jpegsrc.v9c.tar.gz
+source_hash = 650250979303a649e21f87b5ccd02672af1ea6954b911342ea491f351ceb7122
+
+patch_url = https://wrapdb.mesonbuild.com/v1/projects/libjpeg/9c/1/get_zip
+patch_filename = libjpeg-9c-1-wrap.zip
+patch_hash = 993c8930a22886c115e08dd0571ccbcda040c52b64723088a7401ecf8fd385f0

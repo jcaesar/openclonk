@@ -12,7 +12,8 @@
 # for the above references.
 project('openclonk', 'c', 'cpp',
 	version : '8.1',
-	default_options : ['c_std=c11', 'cpp_std=c++14']
+	default_options : ['c_std=c11', 'cpp_std=c++14'],
+	subproject_dir: 'thirdparty/wrap',
 )
 
 # oc_clonk_sources: Sources for OpenClonk hat are needed by every build.
@@ -460,8 +461,8 @@ else
 endif
 
 zlib = dependency('zlib', version : '>=1.2.8', fallback: ['zlib', 'zlib_dep'])
-png = dependency('libpng')
-jpeg = dependency('libjpeg')
+png = dependency('libpng', fallback: ['libpng', 'png_dep'])
+jpeg = dependency('libjpeg', fallback: ['libjpeg', 'jpeg_dep'])
 #execinfo = dependency('libexecinfo') TODO
 #readline = cpp.find_library('readline', required: false)
 #conf.set('HAVE_LIBREADLINE', readline.found())
@@ -470,34 +471,8 @@ readline = declare_dependency() # TODO
 conf.set('HAVE_MAKE_UNIQUE', true)
 configure_file(configuration: conf, output: 'config.h')
 
-# TODO: subdir? SSE2?
-libblake2 = static_library('blake2', 
-	include_directories: include_directories('thirdparty/blake2/ref'),
-	sources: [
-		'thirdparty/blake2/ref/blake2.h',
-		'thirdparty/blake2/ref/blake2bp-ref.c',
-		'thirdparty/blake2/ref/blake2b-ref.c',
-		'thirdparty/blake2/ref/blake2sp-ref.c',
-		'thirdparty/blake2/ref/blake2s-ref.c',
-		'thirdparty/blake2/ref/blake2xb-ref.c',
-		'thirdparty/blake2/ref/blake2xs-ref.c',
-		'thirdparty/blake2/ref/blake2-impl.h',
-	]
-)
-blake2 = declare_dependency(
-	link_with: libblake2,
-	include_directories : include_directories('thirdparty/blake2/ref')
-)
-# TODO: subdir, and use dependency/fallback magic
-tinyxml = declare_dependency(link_with: static_library('tinyxml',
-	sources: [
-		'thirdparty/tinyxml/tinystr.cpp', 'thirdparty/tinyxml/tinystr.h',
-		'thirdparty/tinyxml/tinyxml.cpp', 'thirdparty/tinyxml/tinyxml.h',
-		'thirdparty/tinyxml/tinyxmlparser.cpp',
-		'thirdparty/tinyxml/tinyxmlerror.cpp',
-	]
-))
-
+blake2 = dependency('blake2', fallback: ['blake2', 'blake2_dep']) # TODO: SSE
+tinyxml = dependency('tinyxml', fallback: ['tinyxml', 'tinyxml_dep'])
 
 # TODO
 oc_build_meta = configuration_data()
@@ -578,9 +553,9 @@ if get_option('gui')
 			defs += '-DAUDIO_TK=@0@'.format(audio_tk_id_openal)
 			deps += [
 				dependency('openal', version: '>=1.13'),
-				dependency('vorbis', version: '>=1.3.2', fallback: ['vorbis', 'vorbis_dep']),
+				dependency('vorbis', version: '>=1.3.2'),#, fallback: ['vorbis', 'vorbis_dep']),
 				dependency('vorbisfile', version: '>=1.3.2'),
-				dependency('ogg', version: '>=1.2.2', fallback: ['ogg', 'ogg_dep']),
+				dependency('ogg', version: '>=1.2.2', fallback: ['ogg', 'libogg_dep']),
 				dependency('freealut', version: '>=1.1.0'),
 			]
 		else
@@ -628,7 +603,6 @@ allinc = declare_dependency(
 	include_directories: [
 		include_directories('./src'),
 		include_directories('./thirdparty'), # TODO: would be nicer to have separate dependencies for the things in there
-		# TODO: or could even replace them by http://mesonbuild.com/Wrap-dependency-system-manual.html ?
 	]
 )
 no_check_console = declare_dependency(compile_args: '-DCOMPILRED_AS_C4LIBRARY') # will make compilation error if USE_CONSOLE is checked
