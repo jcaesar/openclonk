@@ -610,7 +610,7 @@ allinc = declare_dependency(
 		include_directories('./thirdparty'), # TODO: would be nicer to have separate dependencies for the things in there
 	]
 )
-no_check_console = declare_dependency(compile_args: '-DCOMPILRED_AS_C4LIBRARY') # will make compilation error if USE_CONSOLE is checked
+no_check_console = declare_dependency(compile_args: '-DCOMPILED_AS_C4LIBRARY') # will make compilation error if USE_CONSOLE is checked
 
 libmisc = static_library('libmisc', dependencies: [allinc, no_check_console] , sources: misc_sources, cpp_pch: pch_sources)
 libmiscdep = declare_dependency(link_with: libmisc, dependencies: zlib)

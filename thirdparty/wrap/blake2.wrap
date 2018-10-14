@@ -1,0 +1,4 @@
+[wrap-git]
+directory = blake2
+url = https://github.com/jcaesar/BLAKE2
+revision = 8c9e311d7b4704326dc355ef421270fa821fd997
