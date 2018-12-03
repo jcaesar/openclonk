@@ -484,7 +484,7 @@ oc_build_meta.set('C4REVISION', 'undefined')
 oc_build_meta.set('C4XVER1', '9')
 oc_build_meta.set('C4XVER2', '0')
 oc_build_meta.set('OC_BUILD_ID', '" C4XVER1 "." C4XVER2 "-alpha @0@'.format(target_machine.system()))
-vcs_tag(input:
+c4versionh = vcs_tag(input:
 	configure_file(
 		configuration: oc_build_meta,
 		input:'src/C4Version.h.in',
@@ -610,12 +610,12 @@ allinc = declare_dependency(
 )
 no_check_console = declare_dependency(compile_args: '-DCOMPILED_AS_C4LIBRARY') # will make compilation error if USE_CONSOLE is checked
 
-libmisc = static_library('libmisc', dependencies: [allinc, no_check_console] , sources: misc_sources, cpp_pch: pch_sources)
+libmisc = static_library('libmisc', dependencies: [allinc, no_check_console] , sources: [misc_sources, c4versionh], cpp_pch: pch_sources)
 libmiscdep = declare_dependency(link_with: libmisc, dependencies: zlib)
 
-c4group = executable('c4group', dependencies: [allinc, libmiscdep, zlib], sources: 'src/c4group/C4GroupMain.cpp', cpp_pch: pch_sources)
+c4group = executable('c4group', dependencies: [allinc, libmiscdep, zlib], sources: ['src/c4group/C4GroupMain.cpp', c4versionh], cpp_pch: pch_sources)
 
-libc4script = static_library('c4script', dependencies: [allinc, libmiscdep, blake2, no_check_console], sources: libc4script_sources, cpp_pch: pch_sources)
+libc4script = static_library('c4script', dependencies: [allinc, libmiscdep, blake2, no_check_console], sources: [libc4script_sources, c4versionh], cpp_pch: pch_sources)
 libc4scriptdep = declare_dependency(link_with: libc4script, dependencies: libmiscdep)
 
 c4script = executable('c4script', dependencies: [allinc, libc4scriptdep], cpp_pch: pch_sources, sources: [
@@ -625,7 +625,7 @@ c4script = executable('c4script', dependencies: [allinc, libc4scriptdep], cpp_pc
 	'src/script/C4ScriptStandaloneStubs.cpp',
 ])
 
-libopenclonk = static_library('openclonk', dependencies: [allinc, no_check_console], sources: libopenclonk_sources, cpp_pch: pch_sources)
+libopenclonk = static_library('openclonk', dependencies: [allinc, no_check_console], sources: [libopenclonk_sources, c4versionh], cpp_pch: pch_sources)
 libopenclonkdep = declare_dependency(link_with: libopenclonk, dependencies: [png, jpeg, libc4scriptdep, tinyxml, threads, upnp]) 
 
 executable('openclonk-server',
@@ -635,13 +635,14 @@ executable('openclonk-server',
 		'src/platform/C4AppT.cpp',
 		'src/platform/C4StdInProc.cpp',
 		'src/platform/C4StdInProc.h',
+		c4versionh
 	],
-	cpp_pch: pch_sources
+	cpp_pch: pch_sources,
 )
 executable('openclonk',
 	dependencies: [allinc, libopenclonkdep, guidep], 
-	sources: oc_clonk_sources + oc_system_sources + oc_gui_sources,
-	cpp_pch: pch_sources
+	sources: oc_clonk_sources + oc_system_sources + oc_gui_sources + [c4versionh],
+	cpp_pch: pch_sources,
 )
 
 executable('netpuncher',
