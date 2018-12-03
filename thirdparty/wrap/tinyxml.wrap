@@ -5,6 +5,6 @@ source_url = https://sourceforge.net/projects/tinyxml/files/tinyxml/2.6.2/tinyxm
 source_filename = tinyxml_2_6_2.tar.gz
 source_hash = 15bdfdcec58a7da30adc87ac2b078e4417dbe5392f3afb719f9ba6d062645593
 
-patch_url = http://cloudflare-ipfs.com/ipfs/QmZLjpKvg9uUypzyWZm9AaoPftRNAFvZntRwNF3Jkem1bo
+patch_url = http://cloudflare-ipfs.com/ipfs/QmYCSSHASXMvgRUZRygX9Wvsw8bG7VBP6FJaEXaoBtgUUM
 patch_filename = txmp.tar.gz
-patch_hash = aece0eb89aa8cf369fa537170861bb12009d19935fed09ecce35cf22debccd26 
+patch_hash = 9f258f1db3dea37cc6a36d82543a51d06897ca896fe41be9fa3bf133b4dae342

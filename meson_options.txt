@@ -1,7 +1,7 @@
 option('gui', type: 'boolean', value: true)
 option('editor', type: 'boolean', value: true)
-option('mape', type: 'boolean', value: true) # TODO
+option('mape', type: 'boolean', value: true)
 option('automatic_update', type: 'boolean', value: true) # should be set to false by distros
 option('audio', type: 'combo', choices: ['none', 'openal', 'sdl'], value: 'openal')
-# Note: I'd like to get away from our current, highly customizable build
-# system. For libraries that are annoying to obtain, we can use wrap files.
+# Note: I'd like to get away from our current, highly customizable build system.
+# For libraries that are annoying to obtain, we can use wrap files.

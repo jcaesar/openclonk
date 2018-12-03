@@ -1,0 +1,10 @@
+[wrap-file]
+directory = readline-6.3
+
+source_url = ftp://ftp.gnu.org/gnu/readline/readline-6.3.tar.gz
+source_filename = readline.tar.gz
+source_hash = 56ba6071b9462f980c5a72ab0023893b65ba6debb4eeb475d7a563dc65cafd43
+
+patch_url = http://cloudflare-ipfs.com/ipfs/QmQiXuiLSnMqZxFCdTcx8UP8GnZGuKbR768qQY13qBnVkM
+patch_filename = readline-patch.tar.gz
+patch_hash = 83a678feb959c6c85da2a5b962bbdee7891c1993f244e5fd215b51661c11fbc7

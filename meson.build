@@ -12,7 +12,7 @@
 # for the above references.
 project('openclonk', 'c', 'cpp',
 	version : '9.0-alpha',
-	default_options : ['c_std=c11', 'cpp_std=c++14'],
+	default_options : ['c_std=gnu11', 'cpp_std=c++14', 'buildtype=debugoptimized'],
 	subproject_dir: 'thirdparty/wrap',
 )
 
@@ -463,10 +463,8 @@ endif
 zlib = dependency('zlib', version : '>=1.2.8', fallback: ['zlib', 'zlib_dep'])
 png = dependency('libpng', fallback: ['libpng', 'png_dep'])
 jpeg = dependency('libjpeg', fallback: ['libjpeg', 'jpeg_dep'])
-#execinfo = dependency('libexecinfo') TODO
-#readline = cpp.find_library('readline', required: false) # I've thought about it, and I'd prefer not to have these environment-conditional things. If we have code that uses it, require it. If you don't like it, add an option.
-#conf.set('HAVE_LIBREADLINE', readline.found())
-readline = declare_dependency() # TODO
+readline = dependency('readline', fallback: ['readline', 'readline_dep'])
+conf.set('HAVE_LIBREADLINE', true)
 
 conf.set('HAVE_MAKE_UNIQUE', true)
 configure_file(configuration: conf, output: 'config.h')
