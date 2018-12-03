@@ -638,11 +638,13 @@ executable('openclonk-server',
 		c4versionh
 	],
 	cpp_pch: pch_sources,
+	install: true,
 )
 executable('openclonk',
 	dependencies: [allinc, libopenclonkdep, guidep], 
 	sources: oc_clonk_sources + oc_system_sources + oc_gui_sources + [c4versionh],
 	cpp_pch: pch_sources,
+	install: true,
 )
 
 executable('netpuncher',
@@ -672,5 +674,51 @@ if get_option('mape')
 				source_dir: 'src/res',
 			)
 		],
+		install: true,
 	)
 endif
+
+c4ggen = generator(c4group,
+	output  : '@BASENAME@',
+	arguments : ['@INPUT@', '-p', '-t', '@OUTPUT@']
+)
+
+c4groups_sources = [
+	'Graphics.ocg',
+	'Material.ocg',
+	'Sound.ocg',
+	'System.ocg',
+	'Objects.ocd',
+	'Decoration.ocd',
+	'Arena.ocf',
+	'Parkour.ocf',
+	'Defense.ocf',
+	'Missions.ocf',
+	'Tutorials.ocf',
+	'Worlds.ocf',
+]
+foreach grp : c4groups_sources
+	custom_target(grp,
+		input: join_paths('planet', grp),
+		output: grp,
+		command: [c4group, '@INPUT@', '-t', '@OUTPUT@'],
+		install: true,
+		install_dir: 'share/games/openclonk'
+	)
+endforeach
+
+install_data('openclonk.appdata.xml', install_dir: 'share/appdata')
+install_data('openclonk.desktop', install_dir: 'share/applications')
+icons = {
+	'oc32.png': '32x32',
+	'oc64.png': '64x64',
+	'oc128.png': '128x128',
+	'oc256.png': '256x256',
+	'oc512.png': '512x512',
+}
+foreach src, dst : icons
+	install_data(join_paths('src/res', src),
+		install_dir: join_paths('share/icons/hicolor/', dst, 'apps'),
+		rename: 'openclonk.png',
+	)
+endforeach
