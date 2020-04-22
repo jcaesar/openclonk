@@ -411,6 +411,11 @@ mape_sources = [
 
 cpp = meson.get_compiler('cpp')
 conf = configuration_data()
+static = get_option('static')
+link_args = []
+if static
+	link_args += ['-static']
+endif
 
 # TODO: should we get rid of this and make sure the build does not change based on wich files exist in the include path?
 check_headers = {
@@ -460,17 +465,17 @@ else
 	threads = dependency('threads')
 endif
 
-zlib = dependency('zlib', version : '>=1.2.8', fallback: ['zlib', 'zlib_dep'])
-png = dependency('libpng', fallback: ['libpng', 'png_dep'])
-jpeg = dependency('libjpeg', fallback: ['libjpeg', 'jpeg_dep'])
-readline = dependency('readline', fallback: ['readline', 'readline_dep'])
-conf.set('HAVE_LIBREADLINE', true)
+zlib = dependency('zlib', version : '>=1.2.8', fallback: ['zlib', 'zlib_dep'], static: static)
+png = dependency('libpng', fallback: ['libpng', 'png_dep'], static: static)
+jpeg = dependency('libjpeg', fallback: ['libjpeg', 'jpeg_dep'], static: static)
+readline = dependency('readline', fallback: ['readline', 'readline_dep'], required: get_option('readline'), static: static)
+conf.set('HAVE_LIBREADLINE', readline.found())
 
 conf.set('HAVE_MAKE_UNIQUE', true)
 configure_file(configuration: conf, output: 'config.h')
 
-blake2 = dependency('blake2', fallback: ['blake2', 'blake2_dep']) # TODO: SSE
-tinyxml = dependency('tinyxml', fallback: ['tinyxml', 'tinyxml_dep'])
+blake2 = dependency('blake2', fallback: ['blake2', 'blake2_dep'],  static: static) # TODO: SSE
+tinyxml = dependency('tinyxml', fallback: ['tinyxml', 'tinyxml_dep'], static: static)
 
 # TODO: consolidate into one file with Version.txt
 oc_build_meta = configuration_data()
@@ -514,16 +519,16 @@ endif
 
 if get_option('gui')
 	deps = [
-		dependency('freetype2'),
-		dependency('gl'),
-		dependency('glew', fallback: ['glew', 'glew_dep']),
-		dependency('sdl2', fallback: ['sdl2', 'sdl2_dep']), # Technically speaking optional, except under linux. But required for gamepads, so…
+		dependency('freetype2', static: static),
+		dependency('gl', static: static),
+		dependency('glew', fallback: ['glew', 'glew_dep'], static: static),
+		dependency('sdl2', fallback: ['sdl2', 'sdl2_dep'], static: static), # Technically speaking optional, except under linux. But required for gamepads, so…
 	]
 	defs = ['-DHAVE_SDL']
 	if target_machine.system() == 'linux'
 		oc_gui_sources += ['src/platform/C4AppSDL.cpp', 'src/platform/C4WindowSDL.cpp']
 		defs += ['-DUSE_SDL_MAINLOOP']
-		deps += [dependency('x11'), dependency('xrandr')]
+		deps += [dependency('x11', static: static), dependency('xrandr', static: static)]
 	elif target_machine.system() == 'windows'
 		oc_gui_sources += ['src/platform/C4WindowWin32.cpp']
 	elif target_machine.system() == 'darwin'
@@ -551,15 +556,15 @@ if get_option('gui')
 	if audio_tk != 'none'
 		if audio_tk == 'sdl'
 			defs += '-DAUDIO_TK=@0@'.format(audio_tk_id_sdl)
-			deps += dependency('SDL2_mixer')
+			deps += dependency('SDL2_mixer', static: static)
 		elif audio_tk == 'openal'
 			defs += '-DAUDIO_TK=@0@'.format(audio_tk_id_openal)
 			deps += [
-				dependency('openal', version: '>=1.13'),
-				dependency('vorbis', version: '>=1.3.2', fallback: ['vorbis', 'vorbis_dep']),
-				dependency('vorbisfile', version: '>=1.3.2'),
-				dependency('ogg', version: '>=1.2.2', fallback: ['ogg', 'libogg_dep']),
-				dependency('freealut', version: '>=1.1.0'),
+				dependency('openal', version: '>=1.13', static: static),
+				dependency('vorbis', version: '>=1.3.2', fallback: ['vorbis', 'vorbis_dep'], static: static),
+				dependency('vorbisfile', version: '>=1.3.2', static: static),
+				dependency('ogg', version: '>=1.2.2', fallback: ['ogg', 'libogg_dep'], static: static),
+				dependency('freealut', version: '>=1.1.0', static: static),
 			]
 		else
 			error('audio tk option error')
@@ -571,7 +576,7 @@ if get_option('gui')
 	endif
 	if get_option('editor')
 		defs += '-DWITH_QT_EDITOR'
-		deps += dependency('qt5', modules : 'Widgets')
+		deps += dependency('qt5', modules : 'Widgets', static: static)
 		qt5_mod = import('qt5')
 		oc_gui_sources += qt5_mod.preprocess(
 			moc_headers: qt_editor_moc_hdr, 
@@ -581,7 +586,7 @@ if get_option('gui')
 			moc_extra_arguments: defs
 		) + qt_editor
 	endif
-	guidep = declare_dependency(dependencies: deps, compile_args: defs)
+	guidep = declare_dependency(dependencies: deps, compile_args: defs, static: static)
 else
 	if get_option('automatic_update') or get_option('audio') != 'none' or get_option('editor')
 		error('configuration clash? no gui? no editor, audio, or automatic_update!')
@@ -589,16 +594,22 @@ else
 	guidep = disabler()
 endif
 
-upnp = declare_dependency()
-if target_machine.system() == 'windows'
-	if not cpp.check_header('natupnp.h')
-		upnp = declare_dependency(include_directories: include_directories('thirdparty/natupnp'))
+upnp = false
+if get_option('upnp').enabled() or get_option('upnp').auto()
+	if target_machine.system() == 'windows'
+		if not cpp.check_header('natupnp.h')
+			upnp = declare_dependency(include_directories: include_directories('thirdparty/natupnp'))
+		endif
+		oc_system_sources += 'src/network/C4Network2UPnPWin32.cpp'
+	elif target_machine.system() == 'linux'
+		upnp = dependency('miniupnpc', static: static)
+		oc_system_sources += 'src/network/C4Network2UPnPLinux.cpp'
+	elif get_option('upnp').enabled()
+		error('upnp enabled but not available on this system')
 	endif
-	oc_system_sources += 'src/network/C4Network2UPnPWin32.cpp'
-elif target_machine.system() == 'linux'
-	upnp = dependency('miniupnpc')
-	oc_system_sources += 'src/network/C4Network2UPnPLinux.cpp'
-else
+endif
+if upnp == false
+	upnp = declare_dependency()
 	oc_system_sources += 'src/network/C4Network2UPnPDummy.cpp'
 endif
 
@@ -606,7 +617,9 @@ allinc = declare_dependency(
 	include_directories: [
 		include_directories('./src'),
 		include_directories('./thirdparty'), # TODO: would be nicer to have separate dependencies for the things in there
-	]
+	],
+	link_args: link_args,
+	dependencies: zlib,
 )
 no_check_console = declare_dependency(compile_args: '-DCOMPILED_AS_C4LIBRARY') # will make compilation error if USE_CONSOLE is checked
 
@@ -625,7 +638,7 @@ c4script = executable('c4script', dependencies: [allinc, libc4scriptdep], cpp_pc
 	'src/script/C4ScriptStandaloneStubs.cpp',
 ])
 
-libopenclonk = static_library('openclonk', dependencies: [allinc, no_check_console], sources: [libopenclonk_sources, c4versionh], cpp_pch: pch_sources)
+libopenclonk = static_library('openclonk', dependencies: [allinc, no_check_console, png], sources: [libopenclonk_sources, c4versionh], cpp_pch: pch_sources)
 libopenclonkdep = declare_dependency(link_with: libopenclonk, dependencies: [png, jpeg, libc4scriptdep, tinyxml, threads, upnp]) 
 
 executable('openclonk-server',

@@ -3,5 +3,13 @@ option('editor', type: 'boolean', value: true)
 option('mape', type: 'boolean', value: true)
 option('automatic_update', type: 'boolean', value: true) # should be set to false by distros
 option('audio', type: 'combo', choices: ['none', 'openal', 'sdl'], value: 'openal')
+# For a static server build on alpine
+# apk add alpine-sdk meson linux-headers
+# rm -rf build; meson build --wrap-mode forcefallback -Ddefault_library=static -Dstatic=true -Dreadline=disabled -Dgui=false -Dmape=false -Deditor=false -Daudio=none -Dautomatic_update=false -Dupnp=disabled
+# Sadly, libgl and libdrm are not available as static libraries... the rest are: bzip2-static freetype-dev freetype-static glu-dev libpng-static libpng-static libpng-dev libreadline-dev libx11-static libxrandr-dev libxrandr-static mesa-dev mesa-static ncurses-static readline-dev readline-static sdl2-dev sdl2-dev sdl2-static sdl-static zlib-static
+option('static', type: 'boolean', value: 'false')
 # Note: I'd like to get away from our current, highly customizable build system.
 # For libraries that are annoying to obtain, we can use wrap files.
+option('readline', type: 'feature', value: 'enabled')
+option('upnp', type: 'feature', value: 'enabled')
+
