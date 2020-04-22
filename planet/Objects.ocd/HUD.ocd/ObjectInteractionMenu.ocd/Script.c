@@ -84,7 +84,7 @@ func Construction()
 {
 	current_objects = [];
 	current_menus = [];
-	current_description_box = {target=nil};
+	current_description_box = {target = nil};
 }
 
 func Destruction()
@@ -621,7 +621,7 @@ func GetEntryInformation(proplist menu_info, int entry_index)
 		entry = possible;
 		break;
 	}
-	return {menu=menu, entry=entry};
+	return {menu = menu, entry = entry};
 }
 
 func OnMenuEntryHover(proplist menu_info, int entry_index, int player)
@@ -837,6 +837,12 @@ func FxIntRefreshContentsMenuTimer(object target, effect, int time)
 	var obj, i = 0;
 	while (obj = effect.obj->Contents(i++))
 	{
+		// Ignore objects that do not want to be shown as contents
+		if (obj->~RejectInteractionMenuContentEntry(cursor, effect.obj))
+		{
+			continue;
+		}
+
 		var symbol = obj;
 		var extra_data = {slot = effect.slot, menu_index = effect.menu_index, objects = []};
 

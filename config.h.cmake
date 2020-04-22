@@ -5,17 +5,11 @@
 /* Use backward-cpp to print stack traces on crash */
 #cmakedefine HAVE_BACKWARD 1
 
-/* Define to 1 if you have the <direct.h> header file. */
-#cmakedefine HAVE_DIRECT_H 1
-
 /* The backtrace function is declared in execinfo.h and works */
 #cmakedefine HAVE_EXECINFO_H 1
 
 /* Define to 1 if you have the <history.h> header file. */
 #cmakedefine HAVE_HISTORY_H 1
-
-/* Define to 1 if you have the <inttypes.h> header file. */
-#cmakedefine HAVE_INTTYPES_H 1
 
 /* Define to 1 if you have the <io.h> header file. */
 #cmakedefine HAVE_IO_H 1
@@ -25,9 +19,6 @@
 
 /* Define to 1 if you have the <locale.h> header file. */
 #cmakedefine HAVE_LOCALE_H 1
-
-/* Define to 1 if your stdlib has std::make_unique */
-#cmakedefine HAVE_MAKE_UNIQUE 1
 
 /* Define to 1 if you have the <poll.h> header file. */
 #cmakedefine HAVE_POLL_H 1
@@ -43,9 +34,6 @@
 
 /* Define to 1 if you have the <signal.h> header file. */
 #cmakedefine HAVE_SIGNAL_H 1
-
-/* Define to 1 if you have the <stdint.h> header file. */
-#cmakedefine HAVE_STDINT_H 1
 
 /* Define to 1 if you have the <sys/eventfd.h> header file. */
 #cmakedefine HAVE_SYS_EVENTFD_H 1
@@ -70,9 +58,6 @@
 
 /* Define to 1 if you have the <unistd.h> header file. */
 #cmakedefine HAVE_UNISTD_H 1
-
-/* Define to 1 if your compiler supports variadic templates */
-#cmakedefine HAVE_VARIADIC_TEMPLATES 1
 
 /* Define to 1 if you have the `vasprintf' function. */
 #cmakedefine HAVE_VASPRINTF 1

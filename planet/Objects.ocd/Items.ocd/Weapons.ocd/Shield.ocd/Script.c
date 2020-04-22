@@ -22,7 +22,7 @@ func Hit()
 // Colour by owner
 func Entrance(object container)
 {
-	if(container->GetOwner() != NO_OWNER) SetColor(GetPlayerColor(container->GetOwner()));
+	if (container->GetOwner() != NO_OWNER) SetColor(GetPlayerColor(container->GetOwner()));
 }
 
 
@@ -161,7 +161,7 @@ func UpdateShieldAngle(object clonk, int x, int y)
 	clonk->ReplaceAction("Walk", [Format("ShieldWalkUp.%s",handLR), Format("ShieldWalkDown.%s",handLR), weight]);
 	clonk->ReplaceAction("Run", [Format("ShieldWalkUp.%s",handLR), Format("ShieldWalkDown.%s",handLR), weight]);
 
-	if(angle > 0) clonk->SetTurnForced(DIR_Right);
+	if (angle > 0) clonk->SetTurnForced(DIR_Right);
 	else clonk->SetTurnForced(DIR_Left);
 	
 	clonk->SetAnimationPosition(aim_anim, Anim_Const(Abs(angle) * 11111 / 1000));
@@ -204,14 +204,14 @@ func AdjustSolidMaskHelper()
 
 func FxShieldStopControlStart(object target, effect, temp)
 {
-	target->PushActionSpeed("Walk", 84);
-	if(temp) return;
+	target->PushActionSpeed("Walk", 420, GetID());
+	if (temp) return;
 }
 
 func FxShieldStopControlStop(object target, effect, iCause, temp)
 {
-	target->PopActionSpeed("Walk");
-	if(temp) return;
+	target->PopActionSpeed("Walk", GetID());
+	if (temp) return;
 }
 
 func FxShieldStopControlTimer(object target, effect)
@@ -288,13 +288,13 @@ public func GetCarryTransform(clonk, sec, back)
 		return nil;
 	}
 	
-	if(back) return Trans_Mul(Trans_Mul(Trans_Rotate(90, 0, 1, 0),Trans_Rotate(180, 1, 0, 0)),Trans_Translate(0,-400,1000));
+	if (back) return Trans_Mul(Trans_Mul(Trans_Rotate(90, 0, 1, 0),Trans_Rotate(180, 1, 0, 0)),Trans_Translate(0,-400, 1000));
 	return Trans_Rotate(180, 0, 0, 1);
 }
 
 func Definition(def)
 {
-	SetProperty("PictureTransformation",Trans_Mul(Trans_Translate(1000,-500),Trans_Rotate(20,1,1,-1),Trans_Scale(1200)),def);
+	SetProperty("PictureTransformation",Trans_Mul(Trans_Translate(1000,-500),Trans_Rotate(20, 1, 1,-1),Trans_Scale(1200)),def);
 }
 
 /*-- Properties --*/

@@ -65,7 +65,7 @@ public func ControlUseStart(object clonk, int iX, int iY)
 		x_offs = -x_offs;
 	}
 	
-	if (clonk->IsWalking()) for (var tree in FindObjects(Find_AtPoint(x_offs,0), Find_Func("IsTree"), Sort_Distance(x_offs, 0), Find_NoContainer()))
+	if (clonk->IsWalking()) for (var tree in FindObjects(Find_AtPoint(x_offs, 0), Find_Func("IsTree"), Sort_Distance(x_offs, 0), Find_NoContainer()))
 		{
 			//treedist - the x-distance the clonk is from the centre of a tree-trunk
 			var treedist = Abs(clonk->GetX() + x_offs - tree->GetX());
@@ -82,7 +82,7 @@ public func ControlUseStart(object clonk, int iX, int iY)
 				
 				//Make sure the clonk is holding the axe in the correct position
 				var hand = "Chop.R";
-			if((clonk->GetDir() == 0) != (clonk.Plane < tree.Plane)) hand = "Chop.L";
+			if ((clonk->GetDir() == 0) != (clonk.Plane < tree.Plane)) hand = "Chop.L";
 			swing_anim = clonk->PlayAnimation(hand, CLONK_ANIM_SLOT_Arms, Anim_Linear(0, 0, clonk->GetAnimationLength(hand), SwingTime, ANIM_Loop), Anim_Const(1000));
 
 				//The timed effect for when the axe actually hits the tree
@@ -102,7 +102,7 @@ public func ControlUseStart(object clonk, int iX, int iY)
 				
 				//Make sure the clonk is holding the axe in the correct position
 				var hand = "Chop.R";
-			if(clonk->GetDir() == 0) hand = "Chop.L";
+			if (clonk->GetDir() == 0) hand = "Chop.L";
 			swing_anim = clonk->PlayAnimation(hand, CLONK_ANIM_SLOT_Arms, Anim_Linear(0, 0, clonk->GetAnimationLength("Chop.R"), SwingTime, ANIM_Loop), Anim_Const(1000));
 
 				//clonk cannot turn around to face the screen while chopping
@@ -264,7 +264,7 @@ func FxIntSplitTimer(object clonk, effect, int time)
 	// Tree vanished
 	if (!effect.tree) return -1;
 	// Tree moved away
-	if (ObjectDistance(effect.tree, clonk) > Distance(0,0, effect.tree->GetObjWidth()/2, effect.tree->GetObjHeight()/2)) return -1;
+	if (ObjectDistance(effect.tree, clonk) > Distance(0, 0, effect.tree->GetObjWidth()/2, effect.tree->GetObjHeight()/2)) return -1;
 	// Clonk did something
 	if (!clonk->IsWalking()) return -1;
 
@@ -275,7 +275,7 @@ func FxIntSplitTimer(object clonk, effect, int time)
 		
 		//Which direction does the clonk face?
 		var x = 10;
-		if(clonk->GetDirection() == COMD_Left) x = x * -1;
+		if (clonk->GetDirection() == COMD_Left) x = x * -1;
 
 		//Create the woodchip particle
 		clonk->CreateParticle("WoodChip", x, 4, PV_Random(-12, 12), PV_Random(-13, -6), PV_Random(36 * 3, 36 * 10), Particles_WoodChip(), 10);
@@ -303,7 +303,7 @@ func CheckStrike(iTime)
 {
 	var offset_x = 7;
 	var offset_y = 0;
-	if(Contained()->GetDir() == DIR_Left) offset_x*=-1;
+	if (Contained()->GetDir() == DIR_Left) offset_x*=-1;
 
 	
 	if (!(Contained()->GetContact(-1) & CNAT_Bottom))
@@ -312,7 +312,7 @@ func CheckStrike(iTime)
 	var width = 10;
 	var height = 20;
 	
-	for(var obj in FindObjects(Find_AtRect(offset_x - width/2, offset_y - height/2, width, height),
+	for (var obj in FindObjects(Find_AtRect(offset_x - width/2, offset_y - height/2, width, height),
 							   Find_NoContainer(),
 							   Find_Exclude(Contained()),
 							   Find_Layer(GetObjectLayer())))
@@ -370,15 +370,15 @@ func OnWeaponHitCheckStop(clonk)
 
 func FxAxeStrikeStopStart(pTarget, effect, iTemp)
 {
-	if(iTemp) return;
-	pTarget->PushActionSpeed("Walk", (pTarget.ActMap.Walk.Speed) / 100);
+	if (iTemp) return;
+	pTarget->PushActionSpeed("Walk", 10, GetID());
 }
 
 func FxAxeStrikeStopStop(pTarget, effect, iCause, iTemp)
 {
 	if (iTemp)
 		return;
-	pTarget->PopActionSpeed("Walk");
+	pTarget->PopActionSpeed("Walk", GetID());
 	movement_effect = nil;
 }
 

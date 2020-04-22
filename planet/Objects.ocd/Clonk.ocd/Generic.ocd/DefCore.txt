@@ -1,5 +1,5 @@
 [DefCore]
-id=Library_Tank
+id=Clonk_Generic
 Version=8,0
 Category=C4D_StaticBack
 HideInCreator=true

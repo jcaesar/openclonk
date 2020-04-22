@@ -96,7 +96,7 @@ public func DrawMaterials(proplist rect, proplist surface)
 public func DrawSkyIsland(proplist map, int x, int y, int wdt, int hgt)
 {
 	// An island is just an ellipse with turbulence.
-	var island = {Algo = MAPALGO_Ellipsis, X = x, Y = y, Wdt = wdt / 2, Hgt = hgt / 2};
+	var island = {Algo = MAPALGO_Ellipse, X = x, Y = y, Wdt = wdt / 2, Hgt = hgt / 2};
 	island = {Algo = MAPALGO_Turbulence, Iterations = 4, Amplitude = [8, 18], Seed = Random(65536), Op = island};
 	Draw("Earth", island);
 	
@@ -111,13 +111,13 @@ public func DrawSkyIsland(proplist map, int x, int y, int wdt, int hgt)
 	}
 		
 	// Draw a top border out of sand and top soil.
-	var sand_border = {Algo = MAPALGO_And, Op = [{Algo = MAPALGO_Border, Op = island, Top = [-1,2]}, {Algo = MAPALGO_RndChecker, Ratio = 50, Wdt = 4, Hgt = 3}]};
- 	var topsoil_border = {Algo = MAPALGO_And, Op = [{Algo = MAPALGO_Border, Op = island, Top = [-1,3]}, {Algo = MAPALGO_RndChecker, Ratio = 40, Wdt = 4, Hgt = 2}]};
+	var sand_border = {Algo = MAPALGO_And, Op = [{Algo = MAPALGO_Border, Op = island, Top = [-1, 2]}, {Algo = MAPALGO_RndChecker, Ratio = 50, Wdt = 4, Hgt = 3}]};
+ 	var topsoil_border = {Algo = MAPALGO_And, Op = [{Algo = MAPALGO_Border, Op = island, Top = [-1, 3]}, {Algo = MAPALGO_RndChecker, Ratio = 40, Wdt = 4, Hgt = 2}]};
 	Draw(["Sand", "Rock", "Granite"][Settings_MapType - 1], sand_border);
 	Draw(["Earth-earth_root", "Rock-rock_smooth", "Rock"][Settings_MapType - 1], topsoil_border);	
 	
 	// Draw a bottom border out of granite and rock (or everrock on insane).
-	var granite_border = {Algo = MAPALGO_Border, Op = island, Bottom = [-2,3]};
+	var granite_border = {Algo = MAPALGO_Border, Op = island, Bottom = [-2, 3]};
 	Draw(["Rock", "Granite", "Everrock"][Random(3)], granite_border);
 	var rock_border = {Algo = MAPALGO_RndChecker, Ratio = 20, Wdt = 2, Hgt = 2};
 	Draw(["Granite", "Rock", "Granite"][Random(3)], {Algo = MAPALGO_And, Op = [granite_border, rock_border]});

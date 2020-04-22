@@ -1177,7 +1177,7 @@ void C4Network2::DrawStatus(C4TargetFacet &cgo)
 			                   pClient->getMsgConn()->getPingTime(),
 			                   pClient->getMsgConn()->getPacketLoss());
 			if (pClient->getMsgConn() != pClient->getDataConn())
-				Stat.AppendFormat( ", Data: %s (%s:%d p%d l%d)",
+				Stat.AppendFormat( ", Data: %s (%s p%d l%d)",
 				                   NetIO.getNetIOName(pClient->getDataConn()->getNetClass()),
 								   pClient->getDataConn()->getPeerAddr().ToString().getData(),
 				                   pClient->getDataConn()->getPingTime(),
@@ -2053,7 +2053,8 @@ bool C4Network2::InitLeague(bool *pCancel)
 		MasterServerAddress.Clear();
 		Game.Parameters.League.Clear();
 		Game.Parameters.LeagueAddress.Clear();
-		if (pLeagueClient) delete pLeagueClient; pLeagueClient = nullptr;
+		delete pLeagueClient;
+		pLeagueClient = nullptr;
 
 		// Not needed?
 		if (!Config.Network.MasterServerSignUp && !Config.Network.LeagueServerSignUp)

@@ -590,7 +590,7 @@ void C4Network2IO::OnDisconn(const C4NetIO::addr_t &addr, C4NetIO *pNetIO, const
 
 void C4Network2IO::OnPacket(const class C4NetIOPacket &rPacket, C4NetIO *pNetIO)
 {
-#if C4NET2IO_DUMP_LEVEL > 0
+#if C4NET2IO_DUMP_LEVEL > 1
 	auto tTime = C4TimeMilliseconds::Now();
 #endif
 #if(C4NET2IO_DUMP_LEVEL > 1)
@@ -831,7 +831,8 @@ bool C4Network2IO::doAutoAccept(const C4ClientCore &CCore, const C4Network2IOCon
 bool C4Network2IO::HandlePacket(const C4NetIOPacket &rPacket, C4Network2IOConnection *pConn, bool fThread)
 {
 	// security: add connection reference
-	if (!pConn) return false; pConn->AddRef();
+	if (!pConn) return false;
+	pConn->AddRef();
 	
 	// accept only PID_Conn and PID_Ping on non-accepted connections
 	if(!pConn->isHalfAccepted())

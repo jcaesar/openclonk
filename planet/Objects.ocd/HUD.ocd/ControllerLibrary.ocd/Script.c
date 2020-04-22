@@ -85,14 +85,14 @@ public func Reset()
 		this->~Destruction();
 		Construction();
 		
-		if(GetCursor(GetOwner()))
+		if (GetCursor(GetOwner()))
 			this->~OnCrewSelection(GetCursor(GetOwner()));
 	}
 	else
 	{
 		// Definition call: Reset for all players
 		RemoveAll(Find_ID(GetGUIControllerID()));
-		for (var i=0; i<GetPlayerCount(C4PT_User); ++i)
+		for (var i = 0; i<GetPlayerCount(C4PT_User); ++i)
 		{
 			var plr = GetPlayerByIndex(i, C4PT_User);
 			var controller = CreateObject(GetGUIControllerID(), 0, 0, plr);

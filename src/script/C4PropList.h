@@ -1,7 +1,7 @@
 /*
  * OpenClonk, http://www.openclonk.org
  *
- * Copyright (c) 2009-2016, The OpenClonk Team and contributors
+ * Copyright (c) 2009-2019, The OpenClonk Team and contributors
  *
  * Distributed under the terms of the ISC license; see accompanying file
  * "COPYING" for details.
@@ -53,12 +53,17 @@ public:
 	void CompileFunc(StdCompiler *pComp, C4ValueNumbers *);
 	C4String * Key{nullptr};
 	C4Value Value;
-	operator const void * () const { return Key; }
-	C4Property & operator = (void * p)
-	{ assert(!p); if (Key) Key->DecRef(); Key = nullptr; Value.Set0(); return *this; }
+	explicit operator bool() const { return Key != nullptr; }
 	bool operator < (const C4Property &cmp) const { return strcmp(GetSafeKey(), cmp.GetSafeKey())<0; }
 	const char *GetSafeKey() const { if (Key && Key->GetCStr()) return Key->GetCStr(); return ""; } // get key as C string; return "" if undefined. never return nullptr
 };
+
+template<>
+inline bool C4Set<C4Property>::Equals(const C4Property &a, const C4Property &b)
+{
+	return a.Key == b.Key;
+}
+
 class C4PropListNumbered;
 class C4PropList
 {

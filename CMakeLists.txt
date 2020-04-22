@@ -1,6 +1,6 @@
 # OpenClonk, http://www.openclonk.org
 #
-# Copyright (c) 2009-2016, The OpenClonk Team and contributors
+# Copyright (c) 2009-2018, The OpenClonk Team and contributors
 #
 # Distributed under the terms of the ISC license; see accompanying file
 # "COPYING" for details.
@@ -11,7 +11,7 @@
 # To redistribute this file separately, substitute the full license texts
 # for the above references.
 
-cmake_minimum_required (VERSION 3.0.2)
+cmake_minimum_required (VERSION 3.5.1)
 
 # Don't allow people to build "Release" builds because there's no reason to do that.
 # Use one of RelWithDebInfo or MinSizeRel instead.
@@ -23,20 +23,47 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE RelWithDebInfo)
 endif()
 
-project (openclonk CXX C)
+if(POLICY CMP0067)
+	cmake_policy(SET CMP0067 NEW)
+else()
+	# Wrap try_compile such that it correctly passes the standard flags to the
+	# compiler on CMake versions below 3.8. Remove when you update the minimum
+	# required version to 3.8 or later.
+	macro(try_compile)
+		set(_tc_langs)
+		foreach(_tc_lang CXX C)
+			if(DEFINED CMAKE_${_tc_lang}_STANDARD)
+				list(APPEND _tc_langs ${_tc_lang})
+			endif()
+		endforeach()
+		foreach(_tc_lang ${_tc_langs})
+			if (${CMAKE_${_tc_lang}_EXTENSIONS})
+				set(_tc_ext EXTENSION)
+			else()
+				set(_tc_ext STANDARD)
+			endif()
+			set(_backup_${_tc_lang}_flags "${CMAKE_${_tc_lang}_FLAGS}")
+			set(CMAKE_${_tc_lang}_FLAGS "${CMAKE_${_tc_lang}_FLAGS} ${CMAKE_${_tc_lang}${CMAKE_${_tc_lang}_STANDARD}_${_tc_ext}_COMPILE_OPTION}")
+		endforeach()
 
-# CMP0054: Only interpret if() arguments as variables or keywords when unquoted
-# (since CMake 3.1)
-if(POLICY CMP0054)
-	cmake_policy(SET CMP0054 NEW)
+		_try_compile(${ARGN})
+	
+		foreach(_tc_lang ${_tc_langs})
+			set(CMAKE_${_tc_lang}_FLAGS "${_backup_${_tc_lang}_flags}")
+		endforeach()
+	endmacro()
 endif()
+
+project (openclonk CXX C)
 
 set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 include(Version)
 
-set(CMAKE_ADDITIONAL_DEPS_PATH "${CMAKE_CURRENT_BINARY_DIR}/deps" CACHE PATH "Additional directory to search for libraries and headers")
-list(APPEND CMAKE_PREFIX_PATH ${CMAKE_ADDITIONAL_DEPS_PATH})
+if(DEFINED CMAKE_ADDITIONAL_DEPS_PATH)
+	message(WARNING "CMAKE_ADDITIONAL_DEPS_PATH is deprecated and will be removed in a future version. Set CMAKE_PREFIX_PATH instead.")
+	set(CMAKE_PREFIX_PATH ${CMAKE_ADDITIONAL_DEPS_PATH})
+endif()
 
 ############################################################################
 # User selectable options
@@ -59,73 +86,25 @@ set_property(GLOBAL PROPERTY USE_FOLDERS ${PROJECT_FOLDERS})
 ############################################################################
 include(CheckCXXCompilerFlag)
 
-# Required for CMake >= 3.1.0 and Qt >= 5.7
 set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-CHECK_CXX_COMPILER_FLAG("-std=gnu++14" USE_GCC_STD_14)
-if(USE_GCC_STD_14)
-	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=gnu++14")
-endif()
+# Try to enable link-time optimization / link-time code generation /
+# interprocedural optimization for release builds.
+if(POLICY CMP0069)
+	cmake_policy(SET CMP0069 NEW)
 
-# Enable link-time code generation. We have to do this manually because while
-# there is a INTERPROCEDURAL_OPTIMIZATION cmake flag, it's only implemented
-# for icc so far; https://cmake.org/Bug/view.php?id=15939
-function(add_linker_flags)
-	include(CMakeParseArguments)
-	set(options optimized debug)
-	set(oneValueArgs FLAGS)
-	set(multiValueArgs MODULES)
-
-	cmake_parse_arguments(_alf "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
-	# Adds some linker flags to all optimized build configurations
-	set(_configurations "")
-	if(_alf_optimized)
-		list(APPEND _configurations MINSIZEREL RELWITHDEBINFO RELEASE)
-	endif()
-	if(_alf_debug)
-		list(APPEND _configurations DEBUG)
-	endif()
-
-	foreach(_module ${_alf_MODULES})
-		string(TOUPPER "${_module}" _obj_type)
-		foreach(_config ${_configurations})
-			set(CMAKE_${_obj_type}_LINKER_FLAGS_${_config} "${CMAKE_${_obj_type}_LINKER_FLAGS_${_config}} ${_alf_FLAGS}" PARENT_SCOPE)
+	include(CheckIPOSupported)
+	check_ipo_supported(RESULT result OUTPUT output)
+	if(result)
+		foreach(_config MINSIZEREL RELWITHDEBINFO RELEASE)
+			set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_${_config} TRUE)
 		endforeach()
-	endforeach()
-endfunction()
-
-CHECK_CXX_COMPILER_FLAG("-flto" USE_GCC_STYLE_LTCG)
-if(USE_GCC_STYLE_LTCG)
-	set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -flto")
-	set(CMAKE_CXX_FLAGS_MINSIZEREL "${CMAKE_CXX_FLAGS_MINSIZEREL} -flto")
-	add_linker_flags(optimized MODULES exe shared FLAGS -flto)
-
-	# Use GCC's ar and ranlib wrappers if necessary, because the plain ones 
-	# don't understand lto objects without an explicit plugin parameter
-	# Note that versioned gcc executables need splitting: gcc-5 -> gcc-ar-5
-	if(CMAKE_C_COMPILER MATCHES "^(.*gcc)(-[0-9.])?$")
-		set(LTCG_NEEDS_AR_WRAPPER 1)
-		set(LTCG_AR_WRAPPER_PREFIX "${CMAKE_MATCH_1}")
-		set(LTCG_AR_WRAPPER_SUFFIX "${CMAKE_MATCH_2}")
-	elseif(CMAKE_C_COMPILER MATCHES "cc$")
-		set(LTCG_NEEDS_AR_WRAPPER 1)
-		set(LTCG_AR_WRAPPER_PREFIX "gcc")
 	else()
-		set(LTCG_NEEDS_AR_WRAPPER 0)
+		message(WARNING "IPO is not supported: ${output}")
 	endif()
-
-	if(LTCG_NEEDS_AR_WRAPPER)
-		find_program(AR_WRAPPER "${LTCG_AR_WRAPPER_PREFIX}-ar${LTCG_AR_WRAPPER_SUFFIX}")
-		if (AR_WRAPPER)
-			message("Using ${AR_WRAPPER} instead of ${CMAKE_AR} to support lto objects.")
-			set(CMAKE_AR "${AR_WRAPPER}" CACHE FILEPATH "Path to an ar that supports lto objects." FORCE)
-		endif()
-		find_program(RANLIB_WRAPPER "${LTCG_AR_WRAPPER_PREFIX}-ranlib${LTCG_AR_WRAPPER_SUFFIX}")
-		if (RANLIB_WRAPPER)
-			message("Using ${RANLIB_WRAPPER} instead of ${CMAKE_RANLIB} to support lto objects.")
-			set(CMAKE_RANLIB "${RANLIB_WRAPPER}" CACHE FILEPATH "Path to a ranlib that supports lto objects." FORCE)
-		endif()
-	endif()
+else()
+	message(WARNING "IPO is not supported because CMake is too old")
 endif()
 
 if(MSVC)
@@ -143,10 +122,9 @@ if(MSVC)
 	# Enable multi-core builds
 	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /MP")
 
-	# Enable LTCG for release builds
-	set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} /Ob2 /GL")
-	set(CMAKE_CXX_FLAGS_MINSIZEREL "${CMAKE_CXX_FLAGS_MINSIZEREL} /Ob2 /GL")
-	add_linker_flags(optimized MODULES exe shared static FLAGS "/LTCG:incremental")
+	# Fix inlining option that CMake overrides per default.
+	set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} /Ob2")    
+	set(CMAKE_CXX_FLAGS_MINSIZEREL "${CMAKE_CXX_FLAGS_MINSIZEREL} /Ob2")
 
 	# do not link the release CRT in debug builds
 	set(CMAKE_EXE_LINKER_FLAGS_DEBUG "${CMAKE_EXE_LINKER_FLAGS_DEBUG} /NODEFAULTLIB:MSVCRT")
@@ -166,13 +144,21 @@ elseif(CMAKE_COMPILER_IS_GNUCXX)
 	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -Wredundant-decls -Wendif-labels -Wpointer-arith -Wcast-qual -Wcast-align -Wwrite-strings -Winit-self -Wsign-promo -Wno-reorder -Wno-unused-parameter -Wnon-virtual-dtor -Woverloaded-virtual -Wformat-security")
 endif()
 
+# Deleting a pointer to an incomplete type is undefined behavior in almost all cases, so we don't want that to happen
+if(MSVC)
+	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /we4150")
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR CMAKE_COMPILER_IS_GNUCXX)
+	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror=delete-incomplete")
+endif()
+
 if(WIN32 AND MINGW)
 	# Activate DEP and ASLR
 	set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--nxcompat -Wl,--dynamicbase")
 endif()
 
 if(APPLE)
-	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fobjc-arc -headerpad_max_install_names")
+	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fobjc-arc")
+	set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -headerpad_max_install_names")
 endif()
 
 ############################################################################
@@ -207,13 +193,9 @@ check_cxx_symbol_exists(vasprintf stdio.h HAVE_VASPRINTF)
 ############################################################################
 include(CheckIncludeFileCXX)
 include(CheckIncludeFilesCXX)
-CHECK_INCLUDE_FILE_CXX(direct.h HAVE_DIRECT_H)
 CHECK_INCLUDE_FILE_CXX(io.h HAVE_IO_H)
-CHECK_INCLUDE_FILE_CXX(locale.h HAVE_LOCALE_H)
 CHECK_INCLUDE_FILE_CXX(share.h HAVE_SHARE_H)
 CHECK_INCLUDE_FILE_CXX(signal.h HAVE_SIGNAL_H)
-CHECK_INCLUDE_FILE_CXX(stdint.h HAVE_STDINT_H)
-CHECK_INCLUDE_FILE_CXX(inttypes.h HAVE_INTTYPES_H)
 CHECK_INCLUDE_FILE_CXX(sys/stat.h HAVE_SYS_STAT_H)
 CHECK_INCLUDE_FILE_CXX(sys/types.h HAVE_SYS_TYPES_H)
 CHECK_INCLUDE_FILE_CXX(unistd.h HAVE_UNISTD_H)
@@ -366,10 +348,9 @@ if(NOT C4GROUP_TOOL_ONLY)
 	include_directories(SYSTEM ${SDL2_INCLUDE_DIRS})
 
 	# Qt5 for editor
-	find_path(Qt5DIR qt.pro PATHS ${CMAKE_ADDITIONAL_DEPS_PATH}/qt-5.5.0)
-	find_package(Qt5Widgets 5.4 PATHS ${Qt5DIR}/qtbase/lib/cmake/Qt5Widgets)
-	if(Qt5Widgets_FOUND)
-		SET(WITH_QT_EDITOR ${Qt5Widgets_FOUND} "Qt editor dialogues available")
+	find_package(Qt5 5.4 CONFIG COMPONENTS Core Widgets)
+	if(TARGET Qt5::Core)
+		SET(WITH_QT_EDITOR ON "Qt editor dialogues available")
 		set(CMAKE_AUTOMOC ON)
 		set(CMAKE_AUTOUIC ON)
 		# As moc files are generated in the binary dir, tell CMake
@@ -715,8 +696,12 @@ set(OC_CLONK_SOURCES
 	src/object/C4MeshDenumerator.h
 	src/object/C4ObjectCom.cpp
 	src/object/C4ObjectCom.h
+	src/object/C4ObjectCommand.cpp
+	src/object/C4ObjectContents.cpp
 	src/object/C4Object.cpp
 	src/object/C4Object.h
+	src/object/C4ObjectAction.cpp
+	src/object/C4ObjectGraphics.cpp
 	src/object/C4ObjectInfo.cpp
 	src/object/C4ObjectInfo.h
 	src/object/C4ObjectInfoList.cpp
@@ -725,7 +710,12 @@ set(OC_CLONK_SOURCES
 	src/object/C4ObjectList.h
 	src/object/C4ObjectMenu.cpp
 	src/object/C4ObjectMenu.h
+	src/object/C4ObjectMenuLogic.cpp
+	src/object/C4ObjectOCF.cpp
+	src/object/C4ObjectPhysics.cpp
+	src/object/C4ObjectRank.cpp
 	src/object/C4ObjectScript.cpp
+	src/object/C4ObjectVisibility.cpp
 	src/platform/C4App.cpp
 	src/platform/C4App.h
 	src/platform/C4AppWin32Impl.h
@@ -886,6 +876,7 @@ set(MAPE_SOURCES
 	src/mape/window.h
 	mape-resource.c
 )
+set_property(SOURCE mape-resource.c PROPERTY SKIP_AUTOGEN ON)
 
 # source files specific to an operating system
 if(APPLE)
@@ -894,7 +885,6 @@ if(APPLE)
 		src/platform/C4FileMonitorMac.mm
 		src/platform/C4AppDelegate.h
 		src/platform/C4AppDelegate.mm
-		src/platform/StdSchedulerMac.mm
 		src/platform/ObjectiveCAssociated.h
 	)
 	list(APPEND OC_GUI_SOURCES ${OC_BUNDLE_RESOURCES})
@@ -1039,6 +1029,7 @@ src/platform/StdFile.h
 src/platform/StdRegistry.cpp
 src/platform/StdRegistry.h
 src/platform/StdScheduler.cpp
+$<$<BOOL:${APPLE}>:src/platform/StdSchedulerMac.mm>
 src/platform/StdSchedulerWin32.cpp
 src/platform/StdSchedulerPoll.cpp
 src/platform/StdScheduler.h
@@ -1228,7 +1219,7 @@ if(NOT HEADLESS_ONLY AND NOT C4GROUP_TOOL_ONLY)
 				windeployqt(openclonk)
 			elseif(APPLE)
 				include(DeployQt)
-				macdeployqt(nitroshare-client)
+				macdeployqt(openclonk)
 			endif()
 		endif()
 	endif()
@@ -1269,6 +1260,7 @@ if(NOT C4GROUP_TOOL_ONLY)
 	if(HAVE_BACKWARD)
 		target_link_libraries(openclonk-server Backward::Backward)
 	endif()
+	install(TARGETS openclonk-server DESTINATION bin)
 endif()
 
 if(GTK3_FOUND AND GTK3_gtksourceview_FOUND AND NOT HEADLESS_ONLY AND NOT C4GROUP_TOOL_ONLY)
@@ -1276,6 +1268,10 @@ if(GTK3_FOUND AND GTK3_gtksourceview_FOUND AND NOT HEADLESS_ONLY AND NOT C4GROUP
 	target_compile_options(mape PRIVATE ${GTK3_COMPILE_DEFINITIONS} ${GTK3_gtksourceview_COMPILE_DEFINITIONS})
 	set_property(TARGET mape PROPERTY FOLDER "Utilities")
 	target_include_directories(mape PRIVATE ${GTK3_INCLUDE_DIRS} ${GTK3_gtksourceview_INCLUDE_DIRS})
+	target_link_directories(mape PRIVATE
+		${GTK3_LIBRARY_DIRS}
+		${GTK3_gtksourceview_LIBRARY_DIRS}
+	)
 	target_link_libraries(mape
 		${GTK3_LIBRARIES}
 		${GTK3_gtksourceview_LIBRARIES}
