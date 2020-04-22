@@ -1,10 +1,6 @@
 [wrap-file]
-directory = BLAKE2-20160619
+directory = BLAKE2-meson-1
 
-source_url = https://github.com/BLAKE2/BLAKE2/archive/20160619.tar.gz
+source_url = https://github.com/jcaesar/BLAKE2/archive/meson-1.tar.gz
 source_filename = blake2.tar.gz
-source_hash = 56ba6071b9462f980c5a72ab0023893b65ba6debb4eeb475d7a563dc65cafd43
-
-patch_url = https://github.com/jcaesar/crappywraps/releases/download/14/blake2-patch.tgz
-patch_filename = blake2-patch.tar.gz
-patch_hash = 9cb31536019cbeda2aa8629e0c936b728a603ddead1ab440291603eb3b6f3c6a
+source_hash = 4068175ceeb3ce3ace922d5c9e3eb0276cbcd4c8a0cd9303f22284fbc0cef1b0
