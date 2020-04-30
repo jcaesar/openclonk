@@ -75,7 +75,14 @@ C4Window * C4Window::Init(WindowKind windowKind, C4AbstractApp * pApp, const cha
 	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, /*REQUESTED_GL_CTX_MINOR*/ 2);
 	SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, (Config.Graphics.DebugOpenGL ? SDL_GL_CONTEXT_DEBUG_FLAG : 0));
 	SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
-	SetMultisamplingAttributes(Config.Graphics.MultiSampling);
+	std::vector<int> available_samples {};
+	if (Config.Graphics.MultiSampling > 0)
+		EnumerateMultiSamples(available_samples);
+	int samples = 0; // Default to initializing without AA if nothing was available
+	for (auto e : available_samples)
+		if (samples < e && e <= Config.Graphics.MultiSampling)
+			samples = e;
+	SetMultisamplingAttributes(samples);
 	uint32_t flags = SDL_WINDOW_OPENGL;
 	if (windowKind == W_Fullscreen && size->Wdt == -1)
 		flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
